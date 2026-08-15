@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- hardened runtime の下では、この entitlement が無いと Apple Event が
+         ランタイムに弾かれる。弾かれた場合は TCC まで届かないため、
+         システム設定のオートメーション一覧に Taskhub が出てこない。
+         iTerm2 のタブへフォーカスするのにこれが要る -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>

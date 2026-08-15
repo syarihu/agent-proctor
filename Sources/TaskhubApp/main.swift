@@ -1,0 +1,93 @@
+import AppKit
+import SwiftUI
+import TaskhubKit
+
+/// アプリの組み立て。
+///
+/// 画面は2つだけ持つ。
+///   - サイドバー … iTerm2 のウィンドウの左隣に吸着して一覧を出す
+///   - メニューバー … 要約と、サイドバーの表示切替や終了の入口
+///
+/// Dock には出さない (LSUIElement)。端末に寄り添う道具なので、
+/// 切り替え対象として並ぶと邪魔になる。
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var store: TaskStore!
+    private var appearance: Appearance!
+    private var sidebar: SidebarPanel!
+    private var menuBar: MenuBarController!
+    private var reaper: Reaper!
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)  // Dock アイコンを出さない
+
+        store = TaskStore()
+        appearance = Appearance()
+        let store = store!
+        let appearance = appearance!
+
+        sidebar = SidebarPanel(
+            content: TaskListView(store: store, appearance: appearance,
+                                  onOpen: { [weak self] task in
+                self?.open(taskID: task.id)
+            }))
+        sidebar.onVisibilityChange = { [weak self] visible in
+            // 見えていない間は git を起動しない
+            self?.store.setCollecting(visible)
+        }
+
+        menuBar = MenuBarController(store: store, appearance: appearance)
+        menuBar.onToggleSidebar = { [weak self] in self?.sidebar.toggle() }
+        menuBar.onOpenTask = { [weak self] id in self?.open(taskID: id) }
+
+        reaper = Reaper { [weak self] in self?.store.refreshNow() }
+
+        // 背景色は iTerm2 が起きてウィンドウを持つまで取れない。
+        // 一度取れれば十分なので、取れるまで少し粘る
+        chaseBackground(remaining: 30)
+    }
+
+    /// 一覧の行を開く。
+    ///
+    /// そのセッションが今もタブで生きていればそのタブにフォーカスし、
+    /// いなければ新しいタブで `taskhub attach` を実行して会話の続きから開く。
+    private func open(taskID: String) {
+        // 台帳から引き直す。一覧を数えたときからタブが閉じている場合があるので、
+        // 押した瞬間の itermSession を見たい
+        guard let task = Ledger.task(id: taskID) else { return }
+
+        if let session = task.itermSession, ItermBridge.focus(sessionID: session) {
+            return
+        }
+        // 押しても何も起きないと手掛かりが無くなるので、失敗は伝える
+        if !ItermBridge.openTab(runningCommand: "taskhub attach \(task.id)") {
+            let alert = NSAlert()
+            alert.messageText = "\(task.name ?? task.id) を開けませんでした"
+            alert.informativeText = "iTerm2 が起動しているか、"
+                + "オートメーションが許可されているか確かめてください。"
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
+    }
+
+    private func chaseBackground(remaining: Int) {
+        if let color = ItermBridge.backgroundColor() {
+            sidebar.applyBackground(color)
+            return
+        }
+        sidebar.applyBackground(nil)
+        guard remaining > 0 else { return }
+        Timer.scheduledTimer(withTimeInterval: 1, repeats: false) { _ in
+            Task { @MainActor in self.chaseBackground(remaining: remaining - 1) }
+        }
+    }
+}
+
+// トップレベルのコードはメインスレッドで動くが、静的にはそう見えていないので
+// 明示して @MainActor の AppDelegate を組み立てる
+MainActor.assumeIsolated {
+    let app = NSApplication.shared
+    let delegate = AppDelegate()
+    app.delegate = delegate
+    app.run()
+}
