@@ -42,7 +42,6 @@ func cmdAttach(_ args: Args) throws -> Int32 {
     }
 
     let isAgy = task.agent == "agy"
-        || (task.agent == nil && task.sessionId.flatMap(UUID.init(uuidString:)) != nil)
     let binary = isAgy ? "agy" : "claude"
 
     var argv = [binary]

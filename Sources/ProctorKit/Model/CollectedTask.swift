@@ -37,7 +37,13 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     /// エージェント種別の解決 ("agy" または "claude")
     public var resolvedAgent: String {
         if let agent, !agent.isEmpty { return agent }
-        if let session = sessionId, UUID(uuidString: session) != nil { return "agy" }
+        if let model {
+            let lower = model.lowercased()
+            if lower.contains("gemini") { return "agy" }
+            if lower.contains("claude") || lower.contains("sonnet") || lower.contains("opus") || lower.contains("haiku") {
+                return "claude"
+            }
+        }
         return "claude"
     }
 
