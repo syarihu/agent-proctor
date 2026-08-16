@@ -1,6 +1,5 @@
 import AppKit
 import Combine
-import ServiceManagement
 import ProctorKit
 
 /// メニューバーの要約。
@@ -15,16 +14,17 @@ import ProctorKit
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let item: NSStatusItem
     private let store: TaskStore
-    private let appearance: Appearance
     private var cancellable: AnyCancellable?
     private var appearanceObserver: NSKeyValueObservation?
 
     var onToggleSidebar: (() -> Void)?
+    /// 手で閉じられているか。メニューの文言を決めるのに使う
+    var isSidebarHidden: (() -> Bool)?
     var onOpenTask: ((String) -> Void)?
+    var onOpenSettings: (() -> Void)?
 
-    init(store: TaskStore, appearance: Appearance) {
+    init(store: TaskStore) {
         self.store = store
-        self.appearance = appearance
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
         item.button?.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
@@ -108,47 +108,23 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
-        let toggle = NSMenuItem(title: "サイドバーの表示",
+        // 「表示」のままだと、出ているのか消えているのか字面で分からない。
+        // 押したら何が起きるかを書く (macOS のツールバー表示と同じ流儀)
+        let hidden = isSidebarHidden?() ?? false
+        let toggle = NSMenuItem(title: hidden ? "サイドバーを表示" : "サイドバーを隠す",
                                 action: #selector(toggleSidebar), keyEquivalent: "")
         toggle.target = self
         menu.addItem(toggle)
 
-        // 文字の大きさ。余白も追従するので、行の高さごと変わる
-        let size = NSMenuItem(title: "文字の大きさ (\(Int(appearance.fontSize)))",
-                              action: nil, keyEquivalent: "")
-        let sizeMenu = NSMenu()
-        // 上限・下限に達したら選べなくしたい。既定のままだと
-        // target/action があるだけで有効になってしまう
-        sizeMenu.autoenablesItems = false
-        let bigger = NSMenuItem(title: "大きく", action: #selector(growFont),
-                                keyEquivalent: "+")
-        bigger.target = self
-        bigger.isEnabled = appearance.canGrow
-        sizeMenu.addItem(bigger)
-
-        let smaller = NSMenuItem(title: "小さく", action: #selector(shrinkFont),
-                                 keyEquivalent: "-")
-        smaller.target = self
-        smaller.isEnabled = appearance.canShrink
-        sizeMenu.addItem(smaller)
-
-        sizeMenu.addItem(.separator())
-        let reset = NSMenuItem(title: "もとに戻す (\(Int(Appearance.defaultSize)))",
-                               action: #selector(resetFont), keyEquivalent: "0")
-        reset.target = self
-        sizeMenu.addItem(reset)
-
-        size.submenu = sizeMenu
-        menu.addItem(size)
-
-        let login = NSMenuItem(title: "ログイン時に起動",
-                               action: #selector(toggleLoginItem), keyEquivalent: "")
-        login.target = self
-        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        menu.addItem(login)
+        // 設定はここには並べない。文字の大きさのように少しずつ動かして
+        // 確かめたいものは、メニューだと開き直すたびに手が止まる
+        let settings = NSMenuItem(title: "設定...",
+                                  action: #selector(openSettings), keyEquivalent: ",")
+        settings.target = self
+        menu.addItem(settings)
 
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Proctor を終了",
+        let quit = NSMenuItem(title: "Agent Proctor を終了",
                               action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
@@ -162,24 +138,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func toggleSidebar() { onToggleSidebar?() }
 
-    @objc private func growFont() { appearance.grow() }
-    @objc private func shrinkFont() { appearance.shrink() }
-    @objc private func resetFont() { appearance.reset() }
-
-    @objc private func toggleLoginItem() {
-        do {
-            if SMAppService.mainApp.status == .enabled {
-                try SMAppService.mainApp.unregister()
-            } else {
-                try SMAppService.mainApp.register()
-            }
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "ログイン項目を変更できませんでした"
-            alert.informativeText = "\(error.localizedDescription)"
-            alert.runModal()
-        }
-    }
+    @objc private func openSettings() { onOpenSettings?() }
 
     @objc private func quit() { NSApp.terminate(nil) }
 }

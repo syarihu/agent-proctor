@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var sidebar: SidebarPanel!
     private var menuBar: MenuBarController!
     private var reaper: Reaper!
+    private var settings: SettingsWindow!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)  // Dock アイコンを出さない
@@ -27,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appearance = appearance!
 
         sidebar = SidebarPanel(
+            appearance: appearance,
             content: TaskListView(store: store, appearance: appearance,
                                   onOpen: { [weak self] task in
                 self?.open(taskID: task.id)
@@ -36,9 +38,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.store.setCollecting(visible)
         }
 
-        menuBar = MenuBarController(store: store, appearance: appearance)
+        settings = SettingsWindow(appearance: appearance)
+
+        menuBar = MenuBarController(store: store)
         menuBar.onToggleSidebar = { [weak self] in self?.sidebar.toggle() }
+        menuBar.isSidebarHidden = { [weak self] in self?.sidebar.userHidden ?? false }
         menuBar.onOpenTask = { [weak self] id in self?.open(taskID: id) }
+        menuBar.onOpenSettings = { [weak self] in self?.settings.show() }
 
         reaper = Reaper { [weak self] in self?.store.refreshNow() }
 

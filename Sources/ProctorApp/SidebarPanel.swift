@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import CoreGraphics
+import Combine
 
 /// 左端でドラッグして幅を変えるための取っ手。
 ///
@@ -26,7 +27,9 @@ final class ResizeHandleView: NSView {
         guard dragging else { return }
         // 左端を外側 (左) にドラッグすると幅が広がり、内側 (右) だと狭まる
         let delta = initialMouseX - NSEvent.mouseLocation.x
-        onResize?(max(180, min(1200, initialWidth + delta)))
+        // 範囲は Appearance が持つ。ここに数字を書くと設定画面とずれる
+        let range = Appearance.widthRange
+        onResize?(max(range.lowerBound, min(range.upperBound, initialWidth + delta)))
     }
 
     override func mouseUp(with event: NSEvent) { dragging = false }
@@ -43,11 +46,16 @@ final class SidebarPanel: NSObject {
     private var handle: ResizeHandleView!
     private var timer: Timer?
 
-    private var width: CGFloat = 280
+    private let appearance: Appearance
+    private var widthObserver: AnyCancellable?
+
     private var lastTarget: NSRect = .zero
     private(set) var isShowing = false
     /// メニューから手で閉じたかどうか。iTerm2 の追従が勝手に開き直さないための札
-    private var userHidden = false
+    private(set) var userHidden = false
+
+    /// 幅の正本は Appearance。設定画面からも端のドラッグからも同じ値を動かす
+    private var width: CGFloat { appearance.sidebarWidth }
 
     /// 追従の細かさ。動いている間は 60fps、止まったら 0.5 秒に落として省電力化する
     private var pollInterval: TimeInterval = 0.5
@@ -57,11 +65,9 @@ final class SidebarPanel: NSObject {
     /// 見えていない間は git を起動したくないので、集計の入切に使う
     var onVisibilityChange: ((Bool) -> Void)?
 
-    private static let widthKey = "proctor_sidebar_width"
-
-    init(content: some View) {
+    init(appearance: Appearance, content: some View) {
+        self.appearance = appearance
         super.init()
-        width = Self.initialWidth()
 
         // 枠なし・最前面・影付きのフローティングパネル。
         // nonactivatingPanel なので、触っても iTerm2 からフォーカスを奪わない
@@ -91,13 +97,15 @@ final class SidebarPanel: NSObject {
                                                 height: container.bounds.height))
         handle.autoresizingMask = [.maxXMargin, .height]
         handle.onResize = { [weak self] newWidth in
-            guard let self else { return }
-            self.width = newWidth
-            UserDefaults.standard.set(Double(newWidth), forKey: Self.widthKey)
-            self.wakeUp()
+            self?.appearance.sidebarWidth = newWidth
         }
         container.addSubview(handle)
         panel.contentView = container
+
+        // 幅は設定画面からも変わる。どちらから変わっても置き直す
+        widthObserver = appearance.$sidebarWidth.sink { [weak self] _ in
+            self?.wakeUp()
+        }
 
         // iTerm2 がアクティブになった瞬間に即座に復帰したい
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -111,11 +119,6 @@ final class SidebarPanel: NSObject {
     func applyBackground(_ color: NSColor?) {
         let base = color ?? NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 1)
         panel.contentView?.layer?.backgroundColor = base.withAlphaComponent(0.95).cgColor
-    }
-
-    private static func initialWidth() -> CGFloat {
-        let saved = UserDefaults.standard.double(forKey: widthKey)
-        return saved >= 180 ? CGFloat(saved) : 280
     }
 
     @objc private func appActivated() { wakeUp() }

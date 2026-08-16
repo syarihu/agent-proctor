@@ -1,5 +1,5 @@
 #!/bin/bash
-# Proctor.app を組み立てて /Applications に置き、CLI へのリンクを張る。
+# Agent Proctor.app を組み立てて /Applications に置き、CLI へのリンクを張る。
 #
 # SwiftPM は .app を作らないので、実行ファイルを2つ焼いてからここで包む。
 # CLI をバンドルの中に同梱するのは、配る物を1つにするため。
@@ -7,7 +7,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="Proctor"
+APP_NAME="Agent Proctor"
 BUNDLE_ID="net.syarihu.proctor"
 VERSION="1.0.0"
 
@@ -85,5 +85,5 @@ echo "完了しました。"
 echo "  アプリ : $APP"
 echo "  CLI    : $CLI_LINK -> $(readlink "$CLI_LINK")"
 echo
-echo "起動するには: open -a $APP_NAME"
+echo "起動するには: open -a \"$APP_NAME\""
 echo "初回はメニューバーの「ログイン時に起動」を入れておくと、次からは自動で立ち上がります。"

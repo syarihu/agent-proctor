@@ -10,7 +10,7 @@ worktree で働くコーディングエージェントを見張り、手が挙�
                    --all              全リポジトリを対象にする
                    --json             JSON で出す (AI・サイドバー向け)
   attach <ID>    そのセッションの claude を開く (続きから)
-  sidebar        iTerm2 に吸着するサイドバー (Proctor.app) を起動する
+  sidebar        iTerm2 に吸着するサイドバー (Agent Proctor.app) を起動する
 
 worktree を作ったり片付けたりはしない。それは proctor を呼ぶ側の仕事で、
 ここは走っているものを見せることに徹する。

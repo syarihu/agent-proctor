@@ -54,17 +54,17 @@ func cmdAttach(_ args: Args) throws -> Int32 {
     throw ProctorError("claude を起動できません")
 }
 
-/// iTerm2 の左側に吸着するサイドバー (Proctor.app) を起動する。
+/// iTerm2 の左側に吸着するサイドバー (Agent Proctor.app) を起動する。
 ///
 /// 描画も iTerm2 との連携もアプリ側が持つので、ここは起動して渡すだけ。
 func cmdSidebar(_ args: Args) throws -> Int32 {
-    let bundle = "/Applications/Proctor.app"
+    let bundle = "/Applications/Agent Proctor.app"
     guard FileManager.default.fileExists(atPath: bundle) else {
         throw ProctorError(
-            "Proctor.app が見つかりません。scripts/install.sh でインストールしてください")
+            "Agent Proctor.app が見つかりません。scripts/install.sh でインストールしてください")
     }
     guard ProcessRunner.inherit(["open", "-a", bundle]) == 0 else {
-        throw ProctorError("Proctor.app を起動できませんでした")
+        throw ProctorError("Agent Proctor.app を起動できませんでした")
     }
     return 0
 }

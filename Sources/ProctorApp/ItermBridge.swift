@@ -165,7 +165,7 @@ enum ItermBridge {
             alert.messageText = "iTerm2 の操作が許可されていません"
             alert.informativeText = """
                 システム設定 → プライバシーとセキュリティ → オートメーション で
-                Proctor に iTerm2 の操作を許可してください。
+                Agent Proctor に iTerm2 の操作を許可してください。
                 許可するまで、一覧をクリックしてもタブに移動できません。
                 """
             alert.alertStyle = .warning
