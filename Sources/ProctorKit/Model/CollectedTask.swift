@@ -16,6 +16,7 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     public var createdAt: Int
     public var updatedAt: Int
     public var subagents: Int
+    public var agent: String?
     public var name: String?
     public var model: String?
     public var contextPercent: Int?
@@ -33,6 +34,18 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     /// 一覧に出す見出し。セッション名が付いていればそれを、無ければ ID を使う
     public var displayName: String { name ?? id }
 
+    /// エージェント種別の解決 ("agy" または "claude")
+    public var resolvedAgent: String {
+        if let agent, !agent.isEmpty { return agent }
+        if let session = sessionId, UUID(uuidString: session) != nil { return "agy" }
+        return "claude"
+    }
+
+    /// 一覧に出すエージェントの表示名
+    public var agentDisplayName: String {
+        resolvedAgent == "agy" ? "Antigravity" : "Claude Code"
+    }
+
     public init(record: TaskRecord, repoName: String, exists: Bool, status: String,
                 diff: DiffCounts, ageSeconds: Int, idleSeconds: Int) {
         id = record.id
@@ -45,6 +58,7 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         createdAt = record.createdAt
         updatedAt = record.updatedAt
         subagents = record.subagents ?? 0
+        agent = record.agent
         name = record.name
         model = record.model
         contextPercent = record.contextPercent

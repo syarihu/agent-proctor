@@ -87,11 +87,29 @@ private struct TaskRow: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: base * 0.4) {
+        HStack(alignment: .top, spacing: base * 0.4) {
             mark
                 .frame(width: base * 1.3, alignment: .center)
+                .padding(.top, base * 0.1)
 
             VStack(alignment: .leading, spacing: base * 0.15) {
+                // エージェント名とアイコン
+                HStack(alignment: .center, spacing: base * 0.25) {
+                    agentIcon
+                    Text(task.agentDisplayName)
+                        .font(.system(size: base * 0.7, weight: .medium))
+                        .foregroundStyle(Palette.dim)
+                    if let model = task.model {
+                        Text("·")
+                            .font(.system(size: base * 0.7))
+                            .foregroundStyle(Palette.dim)
+                        Text(model)
+                            .font(.system(size: base * 0.7))
+                            .foregroundStyle(Palette.dim)
+                            .lineLimit(1)
+                    }
+                }
+
                 HStack(alignment: .firstTextBaseline, spacing: base * 0.5) {
                     Text(task.displayName)
                         .font(.system(size: base, weight: .semibold))
@@ -134,6 +152,19 @@ private struct TaskRow: View {
         .onHover { hovering = $0 }
         .onTapGesture { onOpen(task) }
         .help(task.worktree)
+    }
+
+    @ViewBuilder
+    private var agentIcon: some View {
+        if task.resolvedAgent == "agy" {
+            Image(systemName: "atom")
+                .font(.system(size: base * 0.7))
+                .foregroundStyle(Palette.antigravity)
+        } else {
+            Image(systemName: "terminal.fill")
+                .font(.system(size: base * 0.7))
+                .foregroundStyle(Palette.claude)
+        }
     }
 
     /// 実行中は回っているものを出す。動きがあるだけで「止まっていない」ことが一目で分かる。
@@ -235,6 +266,8 @@ enum Palette {
     static let removed = Color(red: 0.937, green: 0.325, blue: 0.314)   // #ef5350
     static let untracked = Color(red: 0.161, green: 0.714, blue: 0.965) // #29b6f6
     static let spinner = Color(red: 0.310, green: 0.765, blue: 0.969)   // #4fc3f7
+    static let claude = Color(red: 0.878, green: 0.478, blue: 0.345)       // #e07a58 (テラコッタ)
+    static let antigravity = Color(red: 0.353, green: 0.647, blue: 0.980)  // #5aa5fa (ブルー)
 
     /// 残りが少なくなってきたら色で知らせる (statusline と同じ考え方)
     static func context(_ percent: Int) -> Color {
