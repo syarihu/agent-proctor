@@ -108,6 +108,11 @@ private struct TaskRow: View {
                             .foregroundStyle(Palette.dim)
                             .lineLimit(1)
                     }
+                    if let percent = task.contextPercent {
+                        Text("(context: \(percent)%)")
+                            .font(.system(size: base * 0.7).monospacedDigit())
+                            .foregroundStyle(Palette.context(percent))
+                    }
                 }
 
                 HStack(alignment: .firstTextBaseline, spacing: base * 0.5) {
@@ -117,12 +122,6 @@ private struct TaskRow: View {
                         .foregroundStyle(task.status == TaskStatus.waiting ? Palette.waiting : Palette.fg)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                    if let percent = task.contextPercent {
-                        Text("(context: \(percent)%)")
-                            .font(.system(size: base * 0.8).monospacedDigit())
-                            .foregroundStyle(Palette.context(percent))
-                            .layoutPriority(1)
-                    }
                 }
 
                 HStack(alignment: .firstTextBaseline, spacing: base * 0.6) {
