@@ -1,112 +1,120 @@
 # taskhub
 
-git worktree ごとにコーディングエージェントを走らせ、動いているエージェントを
-一箇所で見るための Mac アプリと CLI。
+*[日本語版はこちら](README.ja.md)*
 
-タブを1枚ずつ確かめなくても、どのセッションが確認待ちで止まっているか、
-どれが裏で動き続けているかが分かる。
+A Mac app and CLI for running a coding agent per git worktree and watching all of
+them in one place.
+
+Instead of checking tabs one by one, you can see which session is blocked waiting
+for you and which one is still working in the background.
 
 ```
-⏳ サイドバーの空状態の表示を直す  (context: 13%)
-   develop · 経過: 59s
-▶ Kit を層に分ける  (context: 32%)
-   main · 経過: 1m  🤖2              +74 -3 ?2
+⏳ Fix the empty state of the sidebar  (context: 13%)
+   develop · elapsed: 59s
+▶ Split the kit into layers  (context: 32%)
+   main · elapsed: 1m  🤖2              +74 -3 ?2
 ```
 
-セッション名・コンテキスト使用率・サブエージェントの数は、タブを見ても分からない情報。
-`経過` は最後に状態が変わってからの時間で、実行中のまま長ければ考え込んでいるか
-止まっているかの手がかりになる。
+The session name, context usage and subagent count are things a tab cannot tell
+you. `elapsed` is the time since the status last changed — if something has been
+running for a long time, that is a hint that it is either thinking hard or stuck.
 
-## かたち
+## Structure
 
-ロジックを CLI とアプリの両方から使えるように、`TaskhubKit` を3層に分けている。
-**表示の都合を Kit に持ち込まない**のが境界の引き方で、たとえば端末の ANSI 色は
-CLI 側 (`Terminal.swift`)、SwiftUI の色はアプリ側 (`Palette`) がそれぞれ持つ。
-Kit が知っているのは「どんな状態があり、どんな記号と名前で呼ぶか」まで。
+`TaskhubKit` is split into three layers so that the logic can be used from both
+the CLI and the app. The boundary rule is that **presentation concerns never
+enter the Kit**: terminal ANSI colors live in the CLI (`Terminal.swift`) and
+SwiftUI colors live in the app (`Palette`). All the Kit knows is which statuses
+exist and what symbol and name to call them by.
 
 ```
 TaskhubKit/
-  Model/       データと語彙。I/O を持たない
+  Model/       Data and vocabulary. No I/O
                TaskRecord, DiffCounts, CollectedTask, TaskStatus, RepoConfig, TaskID
-  Repository/  外の世界との出入り口。ここだけが台帳・git・環境を触る
+  Repository/  The only door to the outside: the ledger, git and the environment
                LedgerStore, GitClient, ProcessRunner, ConfigStore,
                EnvironmentSource, Paths
-  UseCase/     やりたいこと1つに1つ。判断はすべてここが持つ
+  UseCase/     One per thing you want to do. Every decision lives here
                CollectTasks, CreateWorktree, RemoveWorktree,
                CleanMergedWorktrees, RecordHookEvent, RecordSessionStats,
                ReapClosedSessions, HookPayload
 
-taskhub/       CLI (View)。引数を読んで UseCase を呼び、結果を端末向けに整える
-TaskhubApp/    アプリ (View)。SwiftUI と AppKit。TaskStore が Repository を包む
+taskhub/       CLI (view). Reads arguments, calls a use case, formats for a terminal
+TaskhubApp/    App (view). SwiftUI and AppKit. TaskStore wraps the repository
 ```
 
-| ファイル | 役割 |
+| File | Role |
 | --- | --- |
-| `~/.local/state/taskhub/state.json` | 台帳。リポジトリを横断して1つ。実行時に自動で作られる |
+| `~/.local/state/taskhub/state.json` | The ledger. One across all repositories. Created on first use |
 
-### 守っていること
+### Invariants
 
-- **集計は `CollectTasks.run()` だけを通る。** CLI の表もサイドバーもこの戻り値を
-  整形するだけにして、表示側にロジックが漏れないようにしている。
-  集計を足したくなったらそこに書く
-- **View は Repository を直接触らない。** アプリ側は `TaskStore` が台帳を包み、
-  メニューも「開く」もそこを経由する。台帳の読み方が変わっても直すのは1箇所で済む
-- **台帳は排他ロック (`LedgerStore.withLock`) で守り、中身が変わらなかったときは
-  書かない。** 台帳の更新時刻はサイドバーが変化を知る合図なので、無変更で触ると
-  その都度 git を起動して数え直してしまう。hooks は何度も呼ばれ、多くは何も変えずに
-  終わるため、ここが効く
-- **`ls --json` のキーは名前順に固定してある。** Swift の辞書はプロセスごとに
-  並びが変わるので、指定しないと同じ内容でも実行のたびに順序が入れ替わる。
-  この出力は AI やツールが差分を取るので揺れると扱いにくい
+- **Aggregation only happens in `CollectTasks.run()`.** Both the CLI table and
+  the sidebar just format its return value, so no logic leaks into the views.
+  When you need another number, add it there
+- **Views never touch the repository directly.** In the app, `TaskStore` wraps
+  the ledger and both the menu and the open action go through it, so a change in
+  how the ledger is read only has to be made in one place
+- **The ledger is guarded by an exclusive lock (`LedgerStore.withLock`) and is
+  not written when nothing changed.** The ledger's modification time is the
+  signal the sidebar watches, so touching it without a change makes it recount
+  by spawning git every time. Hooks fire constantly and most of them change
+  nothing, which is exactly why this matters
+- **`ls --json` emits keys in sorted order.** Swift dictionaries are ordered per
+  process, so without this the same content comes out in a different order on
+  every run. This output is diffed by AI and other tools, so it must be stable
 
-### 振る舞いを確かめる
+### Checking behaviour
 
-`scripts/baseline.sh` が主要なコマンドを一通り叩いて出力を書き出す。
-作り替える前後で見比べれば、壊していないことを確かめられる。
+`scripts/baseline.sh` runs the main commands and writes their output to a file.
+Compare before and after a change to confirm nothing broke.
 
 ```bash
-scripts/baseline.sh before   # 変更前
-scripts/baseline.sh after    # 変更後
+scripts/baseline.sh before
+scripts/baseline.sh after
 diff -u /tmp/taskhub-baseline/{before,after}.txt
 ```
 
-使い捨ての git リポジトリと台帳を相手にするので、実際に使っている台帳には触らない。
+It works against a throwaway git repository and ledger, so your real ledger is
+never touched.
 
-## 入れる
-
-```bash
-scripts/create-signing-cert.sh   # 初回だけ。ローカル署名用の証明書を作る
-scripts/install.sh               # /Applications に入れ、~/bin/taskhub を張る
-```
-
-証明書を先に作るのは、オートメーション（Apple Events）の許可が
-「バンドルID + コード署名」に紐づくため。アドホック署名だとビルドのたびに
-署名の中身が変わり、そのつど iTerm2 の操作許可を聞き直される。
-
-初回起動時に iTerm2 の操作許可を求められるので、許可する。
-メニューバーの「ログイン時に起動」を入れておくと、次からは自動で立ち上がる。
-
-## 使う
+## Install
 
 ```bash
-taskhub ls              # 一覧（--all で全リポジトリ、--json で機械向け）
-taskhub new <名前>      # worktree を作る
-taskhub open <ID>       # worktree のパスを出す（cd "$(taskhub open x)"）
-taskhub attach <ID>     # そのタスクの claude を開く（続きから）
-taskhub diff <ID>       # ベースからの差分
-taskhub clean           # マージ済みの worktree を片付ける（--yes で実行）
-taskhub sidebar         # サイドバー（アプリ）を起動する
+scripts/create-signing-cert.sh   # once. Creates a local code signing certificate
+scripts/install.sh               # installs to /Applications and links ~/bin/taskhub
 ```
 
-破壊的な操作は既定で何もしない。`clean` は一覧を出すだけで、消すには `--yes` が要る。
-未コミットの変更がある worktree は `clean` の対象から外れる。
+The certificate comes first because Automation (Apple Events) permission is tied
+to the pair of bundle identifier and code signature. With an ad-hoc signature the
+signature changes on every build, so macOS asks you to approve controlling iTerm2
+again each time.
 
-サイドバーの行をクリックすると、そのタブが生きていればフォーカスし、
-閉じていれば新しいタブで会話の続きから開く。
+On first launch macOS asks for permission to control iTerm2 — allow it.
+Turn on *Launch at login* in the menu bar and it will start on its own from then on.
 
-## リポジトリごとの設定
+## Usage
 
-リポジトリ直下に `.taskhub.json` を置くと `new` の挙動を変えられる。無くても動く。
+```bash
+taskhub ls              # list (--all for every repository, --json for machines)
+taskhub new <name>      # create a worktree
+taskhub open <id>       # print the worktree path (cd "$(taskhub open x)")
+taskhub attach <id>     # open claude for that task, resuming the conversation
+taskhub diff <id>       # diff against the base branch
+taskhub clean           # clean up merged worktrees (--yes to actually do it)
+taskhub sidebar         # launch the sidebar app
+```
+
+Destructive operations do nothing by default. `clean` only prints a list; it needs
+`--yes` to remove anything, and worktrees with uncommitted changes are left out.
+
+Clicking a row in the sidebar focuses that tab if it is still alive, and otherwise
+opens a new tab resuming the conversation.
+
+## Per-repository settings
+
+Put a `.taskhub.json` at the root of a repository to change how `new` behaves.
+It works fine without one.
 
 ```json
 {
@@ -118,54 +126,64 @@ taskhub sidebar         # サイドバー（アプリ）を起動する
 }
 ```
 
-`copyFiles` は gitignore されていて worktree に引き継がれないファイルを持ち込むためのもの。
-`worktreeDir` は初回に `.git/info/exclude` へ自動で追加されるので、親リポジトリの
-`git status` は汚れない。
+`copyFiles` carries over files that are gitignored and therefore do not reach the
+new worktree. `worktreeDir` is added to `.git/info/exclude` on first use, so the
+parent repository's `git status` stays clean.
 
-## エージェントとの連携
+## Wiring up your agent
 
-**入れただけでは一覧は空のまま。** taskhub は台帳を読んで表示するだけの受け身の道具で、
-状態を書き込むのは Claude Code の hooks のほう。
+**Installing it is not enough — the list stays empty.** taskhub is a passive tool
+that reads the ledger and displays it; the thing that writes state into the ledger
+is your Claude Code hooks.
 
-繋ぎ方は環境によって変わる（すでに hooks や statusLine を使っていれば混ぜる必要がある）ので、
-手順書ではなく **AI に渡す指示**にしてある。
+How to wire it up depends on your setup (if you already use hooks or a statusLine,
+they have to be merged rather than replaced), so instead of a procedure this is
+written as **instructions to hand to an AI**.
 
-→ [docs/setup-prompt.md](docs/setup-prompt.md) を Claude Code に貼る
+→ paste [docs/setup-prompt.md](docs/setup-prompt.md) into Claude Code
 
-hooks から呼ばれるのは次の3つ。人が打つものではないのでヘルプには出していない。
-どれも stdin にフックの JSON を受ける。
+Hooks call these three. They are not meant to be typed by a person, so they are
+not listed in the help. All of them read the hook JSON from stdin.
 
-| コマンド | 呼ぶ側 | 中身 |
+| Command | Caller | Purpose |
 | --- | --- | --- |
-| `taskhub _touch <状態>` | hooks | running / waiting / done / clear / notification |
-| `taskhub _subagent start\|stop` | hooks | サブエージェントの増減 |
-| `taskhub _stats` | statusline | セッション名・モデル・コンテキスト使用率 |
+| `taskhub _touch <status>` | hooks | running / waiting / done / clear / notification |
+| `taskhub _subagent start\|stop` | hooks | subagent count |
+| `taskhub _stats` | statusline | session name, model, context usage |
 
-`_touch` は**記録した状態を stdout に返す**。呼び出し側が「結局どうなったか」を
-使えるようにするため（タブの色を変えるなど）。
+`_touch` **prints the status it recorded to stdout** so the caller can use what
+actually happened (to set a tab color, for example).
 
-`notification` だけは特別で、権限確認なのか「60秒入力なし」のアイドル通知なのかを
-taskhub 側が payload の `message` を見て切り分ける。アイドルなら何も記録せず、
-何も返さない。区別せず確認待ちにすると、終わったあと放置しただけで印が付いてしまう。
-この判断を呼び出し側に書き写すと、片方だけ直したときに食い違う。
+`notification` is the special one: taskhub looks at the payload's `message` and
+decides whether it is a permission prompt or the *no input for 60 seconds* idle
+notification. For an idle notification it records nothing and prints nothing.
+Treating both as waiting would mark a session as blocked just because you walked
+away after it finished. Copying that decision into the caller means the two can
+drift apart when only one is fixed.
 
-taskhub 経由で作った worktree だけでなく、普通に開いた対話セッションも
-`_touch` の呼び出しから拾って一覧に載せる。
+Interactive sessions you opened normally are picked up from `_touch` too, not just
+worktrees created through taskhub.
 
-## iTerm2 との連携
+## iTerm2 integration
 
-タブへのフォーカスと新しいタブの作成は AppleScript で行う。
-`id of session` は `ITERM_SESSION_ID` の `:` 以降と同じ値（どちらも
-PTYSession の guid）なので、台帳に持っておけばそのまま突き合わせられる。
+Focusing a tab and opening a new one are done through AppleScript.
+`id of session` is the same value as the part of `ITERM_SESSION_ID` after the `:`
+(both are the PTYSession guid), so keeping it in the ledger is enough to match them.
 
-hardened runtime の下では `com.apple.security.automation.apple-events` の
-entitlement が要る。これが無いと Apple Event がランタイムに弾かれ、
-TCC まで届かないためシステム設定のオートメーション一覧にも出てこない。
+Under the hardened runtime the `com.apple.security.automation.apple-events`
+entitlement is required. Without it Apple Events are blocked by the runtime before
+they reach TCC, which means taskhub never even appears in the Automation list in
+System Settings.
 
-サイドバーの位置合わせは CGWindowList で iTerm2 のウィンドウ枠を読む。
-こちらはオートメーションの許可が要らないので、許可を出す前でも吸着だけは動く。
+The sidebar positions itself by reading iTerm2's window frame from CGWindowList.
+That needs no Automation permission, so snapping works even before you grant it.
 
-## 依存
+## Dependencies
 
-`git` のほかに、`clean` が `gh`（マージ済み PR の判定）を使う。
-Swift の外部パッケージには依存していない。
+`git`, plus `gh` for `clean` (to find merged pull requests).
+There are no external Swift package dependencies.
+
+## Contributing
+
+See [CLAUDE.md](CLAUDE.md) for the conventions used in this repository
+(English commit messages, Japanese code comments).
