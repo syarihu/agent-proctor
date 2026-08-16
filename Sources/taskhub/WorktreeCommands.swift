@@ -1,86 +1,43 @@
 import Foundation
 import TaskhubKit
 
-/// ABC-123 のようなチケットキー。name がこの形なら ticket として扱う
-private let ticketPattern = "^[A-Z][A-Z0-9]+-[0-9]+$"
+/// worktree を扱うコマンド。
+/// どれも UseCase を呼んで、返ってきたものを端末向けに整えるだけにする。
 
 func cmdNew(_ args: Args) throws -> Int32 {
-    guard let repo = try Config.repoRoot() else {
-        throw TaskhubError("git リポジトリの中で実行してください")
-    }
-    let config = try Config.load(repo: repo)
-    let base = args.value("--base") ?? config.baseBranch ?? "main"
-    let asJSON = args.has("--json")
+    guard let repo = GitClient.mainWorktree(from: EnvironmentSource.currentDirectory())
+    else { throw TaskhubError("git リポジトリの中で実行してください") }
 
-    let name = try args.require(0, "ブランチ名またはチケットキー")
-    let isTicket = name.range(of: ticketPattern, options: .regularExpression) != nil
-    let ticket = args.value("--ticket") ?? (isTicket ? name : nil)
-    // "/" を含むならフルのブランチ名を指定したものとみなし、prefix を足さない
-    let branch = name.contains("/") ? name : config.branchPrefix + name
+    let fetch = !args.has("--no-fetch")
+    if fetch { Terminal.note("origin を取得中...") }
 
-    let worktree = URL(fileURLWithPath: repo)
-        .appendingPathComponent(config.worktreeDir)
-        .appendingPathComponent(branch.replacingOccurrences(of: "/", with: "-"))
-        .standardizedFileURL.resolvingSymlinksInPath()
-    if FileManager.default.fileExists(atPath: worktree.path) {
-        throw TaskhubError("すでに worktree があります: \(worktree.path)")
-    }
+    let result = try CreateWorktree.run(in: repo, .init(
+        name: try args.require(0, "ブランチ名またはチケットキー"),
+        base: args.value("--base"),
+        ticket: args.value("--ticket"),
+        fetch: fetch))
 
-    if !args.has("--no-fetch") {
-        info("origin を取得中...")
-        _ = try? git(repo, "fetch", "origin", "--quiet", check: false)
-    }
+    for note in result.notes { Terminal.note("  \(note)") }
 
-    try Worktree.ensureIgnored(repo: repo, relativeDir: config.worktreeDir)
-    try FileManager.default.createDirectory(
-        at: worktree.deletingLastPathComponent(), withIntermediateDirectories: true)
-
-    let hasLocal = gitOK(repo, "rev-parse", "--verify", "refs/heads/\(branch)")
-    let hasRemote = gitOK(repo, "rev-parse", "--verify", "refs/remotes/origin/\(branch)")
-    if hasLocal {
-        try git(repo, "worktree", "add", worktree.path, branch)
-    } else if hasRemote {
-        try git(repo, "worktree", "add", "--track", "-b", branch,
-                worktree.path, "origin/\(branch)")
-    } else {
-        guard gitOK(repo, "rev-parse", "--verify", "refs/remotes/origin/\(base)") else {
-            throw TaskhubError("ベースブランチが見つかりません: origin/\(base)")
-        }
-        try git(repo, "worktree", "add", "-b", branch, worktree.path, "origin/\(base)")
-    }
-
-    try Worktree.setup(repo: repo, worktree: worktree.path, config: config)
-
-    let now = Int(Date().timeIntervalSince1970)
-    let task = try Ledger.withLocked { state -> TaskRecord in
-        let record = TaskRecord(
-            id: try Ledger.uniqueID(base: slugify(ticket ?? name), taken: state.tasks),
-            repo: repo, branch: branch, worktree: worktree.path, base: base,
-            ticket: ticket, kind: "manual", status: "idle",
-            createdAt: now, updatedAt: now)
-        state.tasks.append(record)
-        return record
-    }
-
-    if asJSON {
-        print(try prettyJSON(task))
+    if args.has("--json") {
+        print(try prettyJSON(result.task))
         return 0
     }
-    print("\n\(color("32", "✅ worktree を用意しました"))  [\(task.id)]")
-    print("  ブランチ : \(branch)  (ベース: origin/\(base))")
-    print("  パス     : \(worktree.path)")
-    print("\n  cd \"$(taskhub open \(task.id))\" で移動できます")
+    print("\n\(Terminal.color("32", "✅ worktree を用意しました"))  [\(result.task.id)]")
+    print("  ブランチ : \(result.task.branch)  (ベース: origin/\(result.baseBranch))")
+    print("  パス     : \(result.task.worktree)")
+    print("\n  cd \"$(taskhub open \(result.task.id))\" で移動できます")
     return 0
 }
 
 func cmdLs(_ args: Args) throws -> Int32 {
     let all = args.has("--all")
-    let repo = all ? nil : try Config.repoRoot(strict: false)
+    let repo = all ? nil : GitClient.mainWorktree(from: EnvironmentSource.currentDirectory())
     if !all && repo == nil && !args.has("--json") {
         // 黙って全件出すと、絞り込めているのか区別がつかない
-        info("git リポジトリの外なので、すべてのタスクを表示します")
+        Terminal.note("git リポジトリの外なので、すべてのタスクを表示します")
     }
-    let tasks = Collect.tasks(repo: repo, allRepos: all)
+    let tasks = CollectTasks.run(repo: repo, allRepos: all)
 
     if args.has("--json") {
         print(try prettyJSON(tasks))
@@ -91,38 +48,29 @@ func cmdLs(_ args: Args) throws -> Int32 {
         return 0
     }
 
-    let headers = ["ID", "STATUS", "BRANCH", "DIFF", "AGE"]
-    let rows = tasks.map { task -> [String] in
-        let (label, code) = Status.style(task.status)
-        return [task.id, color(code, label), task.branch,
-                Worktree.format(task.diff), humanAge(task.createdAt)]
-    }
-    let widths = (0..<headers.count).map { i in
-        max(displayWidth(headers[i]), rows.map { displayWidth($0[i]) }.max() ?? 0)
-    }
-    print(color("2", headers.enumerated()
-        .map { pad($0.element, widths[$0.offset]) }.joined(separator: "  ")))
-    for row in rows {
-        let line = row.enumerated()
-            .map { pad($0.element, widths[$0.offset]) }.joined(separator: "  ")
-        print(line.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression))
-    }
+    Terminal.table(
+        headers: ["ID", "STATUS", "BRANCH", "DIFF", "AGE"],
+        rows: tasks.map { task in
+            let (label, code) = Terminal.style(task.status)
+            return [task.id, Terminal.color(code, label), task.branch,
+                    Terminal.diff(task.diff), Terminal.age(task.createdAt)]
+        })
     return 0
 }
 
 func cmdOpen(_ args: Args) throws -> Int32 {
-    let task = try Ledger.find(id: try args.require(0, "タスクID"))
+    let task = try LedgerStore.find(id: try args.require(0, "タスクID"))
     // cd "$(taskhub open x)" で使うので、無いパスを返すと
     // 意味の分かりにくい cd のエラーになる。ここで止める
     guard FileManager.default.fileExists(atPath: task.worktree) else {
         throw TaskhubError("worktree がありません: \(task.worktree)")
     }
     if args.has("--studio") {
-        guard which("studio") else {
+        guard ProcessRunner.exists("studio") else {
             throw TaskhubError("studio コマンドが見つかりません")
         }
-        _ = runInherit(["studio", task.worktree])
-        info("Android Studio で開きました: \(task.worktree)")
+        _ = ProcessRunner.inherit(["studio", task.worktree])
+        Terminal.note("Android Studio で開きました: \(task.worktree)")
         return 0
     }
     // cd "$(taskhub open x)" で使うので、パス以外は stdout に出さない
@@ -135,7 +83,7 @@ func cmdOpen(_ args: Args) throws -> Int32 {
 /// 自分のプロセスを claude に置き換えるので、成功した場合ここから戻らない。
 /// サイドバーの「開く」は新しいタブでこれを実行する。
 func cmdAttach(_ args: Args) throws -> Int32 {
-    let task = try Ledger.find(id: try args.require(0, "タスクID"))
+    let task = try LedgerStore.find(id: try args.require(0, "タスクID"))
     guard FileManager.default.fileExists(atPath: task.worktree) else {
         throw TaskhubError("worktree がありません: \(task.worktree)")
     }
@@ -154,23 +102,23 @@ func cmdAttach(_ args: Args) throws -> Int32 {
 }
 
 func cmdDiff(_ args: Args) throws -> Int32 {
-    let task = try Ledger.find(id: try args.require(0, "タスクID"))
+    let task = try LedgerStore.find(id: try args.require(0, "タスクID"))
     guard FileManager.default.fileExists(atPath: task.worktree) else {
         throw TaskhubError("worktree がありません: \(task.worktree)")
     }
-    let point = Worktree.mergeBase(worktree: task.worktree, base: task.base)
+    let point = GitClient.mergeBase(task.worktree, base: task.base)
     guard !point.isEmpty else {
         throw TaskhubError("origin/\(task.base) との分岐点が見つかりません")
     }
     var cmd = ["git", "-C", task.worktree, "diff"]
     if args.has("--stat") { cmd.append("--stat") }
     cmd.append(point)
-    let code = runInherit(cmd)
+    let code = ProcessRunner.inherit(cmd)
 
     // 新規ファイルは git diff に現れないので、名前だけでも見せて見落としを防ぐ
-    let newFiles = Worktree.untrackedFiles(worktree: task.worktree)
+    let newFiles = GitClient.untrackedFiles(task.worktree)
     if !newFiles.isEmpty {
-        print(color("36", "\n追跡外の新規ファイルが \(newFiles.count) 件あります:"))
+        print(Terminal.color("36", "\n追跡外の新規ファイルが \(newFiles.count) 件あります:"))
         for name in newFiles { print("  \(name)") }
     }
     return code

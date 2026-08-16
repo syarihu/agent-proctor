@@ -2,7 +2,10 @@ import Foundation
 import Combine
 import TaskhubKit
 
-/// 台帳を見張って、表示に使う一覧を配る。
+/// 台帳を見張って、表示に使うものを配る。
+///
+/// **View から Repository を直接触らせないための層**でもある。台帳の読み方が
+/// 変わっても、直すのはここだけで済むようにしておく。
 ///
 /// 見張りを2段に分けているのは、値段が違うから。
 ///
@@ -15,7 +18,10 @@ import TaskhubKit
 final class TaskStore: ObservableObject {
     /// サイドバーが出ている間だけ更新される、git まで数えた一覧
     @Published private(set) var tasks: [CollectedTask] = []
-    /// メニューバーの要約。git を呼ばないので常に持っておける
+    /// 台帳そのもの。git を呼ばないので常に持っておける。
+    /// メニューの一覧や「開く」の照合はこちらを使う
+    @Published private(set) var records: [TaskRecord] = []
+    /// メニューバーの要約
     @Published private(set) var summary: [(status: String, count: Int)] = []
 
     /// 台帳の更新時刻を見に行く間隔。stat を叩くだけなので軽い
@@ -31,7 +37,7 @@ final class TaskStore: ObservableObject {
     private var collecting = false
 
     init() {
-        refreshSummary()
+        reloadRecords()
         pollTimer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) {
             [weak self] _ in
             Task { @MainActor in self?.tick() }
@@ -39,6 +45,11 @@ final class TaskStore: ObservableObject {
     }
 
     deinit { pollTimer?.invalidate() }
+
+    /// ID から台帳の1件を引く。View はここを通す
+    func record(id: String) -> TaskRecord? {
+        records.first { $0.id == id }
+    }
 
     /// サイドバーの表示が切り替わったときに呼ぶ。
     func setCollecting(_ on: Bool) {
@@ -49,19 +60,16 @@ final class TaskStore: ObservableObject {
 
     /// 台帳が外から変わったかもしれないときに呼ぶ (自分で書き換えた直後など)。
     func refreshNow() {
-        refreshSummary()
+        reloadRecords()
         if collecting { recount() }
     }
 
     private func tick() {
-        let modified = try? FileManager.default
-            .attributesOfItem(atPath: Paths.stateFile.path)[.modificationDate] as? Date
-        let current = modified ?? nil
-
-        let changed = current != lastModified
+        let modified = LedgerStore.lastModified()
+        let changed = modified != lastModified
         if changed {
-            lastModified = current
-            refreshSummary()
+            lastModified = modified
+            reloadRecords()
         }
         guard collecting else { return }
         if changed || Date().timeIntervalSince(lastRecount) >= recountInterval {
@@ -69,15 +77,16 @@ final class TaskStore: ObservableObject {
         }
     }
 
-    private func refreshSummary() {
-        summary = Status.counts(Ledger.loadTasks())
+    private func reloadRecords() {
+        records = LedgerStore.tasks()
+        summary = TaskStatus.counts(records)
     }
 
     private func recount() {
         lastRecount = Date()
         // git の起動を待つ間 UI を止めない。数え終わったらメインに戻して差し替える
         Task.detached(priority: .utility) {
-            let collected = Collect.tasks(allRepos: true)
+            let collected = CollectTasks.run(allRepos: true)
             await MainActor.run { self.tasks = collected }
         }
     }

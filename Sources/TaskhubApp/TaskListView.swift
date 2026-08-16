@@ -96,7 +96,7 @@ private struct TaskRow: View {
                     Text(task.displayName)
                         .font(.system(size: base, weight: .semibold))
                         // 待たせているものは目に留まってほしいので少し強く出す
-                        .foregroundStyle(task.status == "waiting" ? Palette.waiting : Palette.fg)
+                        .foregroundStyle(task.status == TaskStatus.waiting ? Palette.waiting : Palette.fg)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     if let percent = task.contextPercent {
@@ -141,16 +141,16 @@ private struct TaskRow: View {
     @ViewBuilder
     private var mark: some View {
         switch task.status {
-        case "running":
+        case TaskStatus.running:
             ProgressView()
                 .progressViewStyle(.circular)
                 .controlSize(.small)
                 .scaleEffect(0.5)
                 .frame(width: base, height: base)
-        case "waiting":
-            Text(Status.mark(task.status)).font(.system(size: base)).pulsing()
+        case TaskStatus.waiting:
+            Text(TaskStatus.mark(task.status)).font(.system(size: base)).pulsing()
         default:
-            Text(Status.mark(task.status)).font(.system(size: base))
+            Text(TaskStatus.mark(task.status)).font(.system(size: base))
         }
     }
 

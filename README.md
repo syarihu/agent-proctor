@@ -19,21 +19,58 @@ git worktree ごとにコーディングエージェントを走らせ、動い�
 
 ## かたち
 
-| 部分 | 役割 |
+ロジックを CLI とアプリの両方から使えるように、`TaskhubKit` を3層に分けている。
+**表示の都合を Kit に持ち込まない**のが境界の引き方で、たとえば端末の ANSI 色は
+CLI 側 (`Terminal.swift`)、SwiftUI の色はアプリ側 (`Palette`) がそれぞれ持つ。
+Kit が知っているのは「どんな状態があり、どんな記号と名前で呼ぶか」まで。
+
+```
+TaskhubKit/
+  Model/       データと語彙。I/O を持たない
+               TaskRecord, DiffCounts, CollectedTask, TaskStatus, RepoConfig, TaskID
+  Repository/  外の世界との出入り口。ここだけが台帳・git・環境を触る
+               LedgerStore, GitClient, ProcessRunner, ConfigStore,
+               EnvironmentSource, Paths
+  UseCase/     やりたいこと1つに1つ。判断はすべてここが持つ
+               CollectTasks, CreateWorktree, RemoveWorktree,
+               CleanMergedWorktrees, RecordHookEvent, RecordSessionStats,
+               ReapClosedSessions, HookPayload
+
+taskhub/       CLI (View)。引数を読んで UseCase を呼び、結果を端末向けに整える
+TaskhubApp/    アプリ (View)。SwiftUI と AppKit。TaskStore が Repository を包む
+```
+
+| ファイル | 役割 |
 | --- | --- |
-| `Sources/TaskhubKit` | 台帳の読み書き・git の集計・設定。アプリと CLI の両方がここを通る |
-| `Sources/taskhub` | CLI。worktree の作成・一覧・後片付けと、hooks からの状態の受け口 |
-| `Sources/TaskhubApp` | メニューバー常駐アプリ。iTerm2 に吸着するサイドバーを出す |
 | `~/.local/state/taskhub/state.json` | 台帳。リポジトリを横断して1つ。実行時に自動で作られる |
 
-集計は `Collect.tasks()` に閉じ込めてある。CLI の表もサイドバーもこの戻り値を
-整形するだけにして、表示側にロジックが漏れないようにしている。
-集計を足したくなったらそこに書く。
+### 守っていること
 
-台帳は排他ロック (`Ledger.withLocked`) で守っていて、**中身が変わらなかったときは
-書かない**。台帳の更新時刻はサイドバーが変化を知る合図なので、無変更で触ると
-その都度 git を起動して数え直してしまう。hooks は何度も呼ばれ、多くは何も変えずに
-終わるため、ここが効く。
+- **集計は `CollectTasks.run()` だけを通る。** CLI の表もサイドバーもこの戻り値を
+  整形するだけにして、表示側にロジックが漏れないようにしている。
+  集計を足したくなったらそこに書く
+- **View は Repository を直接触らない。** アプリ側は `TaskStore` が台帳を包み、
+  メニューも「開く」もそこを経由する。台帳の読み方が変わっても直すのは1箇所で済む
+- **台帳は排他ロック (`LedgerStore.withLock`) で守り、中身が変わらなかったときは
+  書かない。** 台帳の更新時刻はサイドバーが変化を知る合図なので、無変更で触ると
+  その都度 git を起動して数え直してしまう。hooks は何度も呼ばれ、多くは何も変えずに
+  終わるため、ここが効く
+- **`ls --json` のキーは名前順に固定してある。** Swift の辞書はプロセスごとに
+  並びが変わるので、指定しないと同じ内容でも実行のたびに順序が入れ替わる。
+  この出力は AI やツールが差分を取るので揺れると扱いにくい
+
+### 振る舞いを確かめる
+
+`scripts/baseline.sh` が主要なコマンドを一通り叩いて出力を書き出す。
+作り替える前後で見比べれば、壊していないことを確かめられる。
+
+```bash
+scripts/baseline.sh before   # 変更前
+scripts/baseline.sh after    # 変更後
+diff -u /tmp/taskhub-baseline/{before,after}.txt
+```
+
+使い捨ての git リポジトリと台帳を相手にするので、実際に使っている台帳には触らない。
 
 ## 入れる
 

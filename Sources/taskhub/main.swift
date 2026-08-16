@@ -29,9 +29,14 @@ worktree ごとにエージェントを走らせて一箇所で管理する。
 /// 値を1つ取るオプション。ここに無いものは真偽値のフラグとして扱う
 let valueOptions: Set<String> = ["--base", "--ticket", "-w", "--width"]
 
+/// --json の出力。
+///
+/// キーは名前順に固定する。Swift の辞書はプロセスごとに並びが変わるため、
+/// 指定しないと同じ内容でも実行のたびに順序が入れ替わる。
+/// この出力は AI やツールが読んで差分を取るので、揺れると扱いにくい。
 func prettyJSON<T: Encodable>(_ value: T) throws -> String {
     let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     return String(decoding: try encoder.encode(value), as: UTF8.self)
 }
 
@@ -44,7 +49,7 @@ func cmdSidebar(_ args: Args) throws -> Int32 {
         throw TaskhubError(
             "Taskhub.app が見つかりません。scripts/install.sh でインストールしてください")
     }
-    guard runInherit(["open", "-a", bundle]) == 0 else {
+    guard ProcessRunner.inherit(["open", "-a", bundle]) == 0 else {
         throw TaskhubError("Taskhub.app を起動できませんでした")
     }
     return 0

@@ -11,6 +11,13 @@ import Foundation
 /// encodeIfPresent で扱う)。台帳を読む側はどれも `null` と欠落を区別していないので、
 /// 無い項目はキーごと出さないほうが素直に読める。
 public struct TaskRecord: Codable, Equatable {
+    public enum Kind {
+        /// taskhub new が作った worktree。実体を持つので消すまで残る
+        public static let manual = "manual"
+        /// hooks が見つけた対話セッション。タブが閉じれば消える
+        public static let session = "session"
+    }
+
     public var id: String
     public var repo: String
     public var branch: String

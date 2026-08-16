@@ -44,7 +44,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
         item.isVisible = true
         item.button?.title = summary
-            .map { "\(Status.mark($0.status))\($0.count)" }
+            .map { "\(TaskStatus.mark($0.status))\($0.count)" }
             .joined(separator: " ")
     }
 
@@ -60,14 +60,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
-        // 一覧は台帳から直に作る。ここで git を起動すると
-        // メニューを開くたびに固まる
-        let tasks = Ledger.loadTasks()
+        // 一覧は Store が持っている台帳から作る。ここで git を起動すると
+        // メニューを開くたびに固まるので、数えた一覧 (store.tasks) は使わない
+        let tasks = store.records
         if tasks.isEmpty {
             menu.addItem(withTitle: "動いているエージェントはいません", action: nil, keyEquivalent: "")
         } else {
             for task in tasks {
-                let title = "\(Status.mark(task.status))  \(task.name ?? task.id)"
+                let title = "\(TaskStatus.mark(task.status))  \(task.name ?? task.id)"
                 let entry = NSMenuItem(title: title,
                                        action: #selector(openTask(_:)), keyEquivalent: "")
                 entry.target = self

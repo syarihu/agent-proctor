@@ -52,9 +52,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// そのセッションが今もタブで生きていればそのタブにフォーカスし、
     /// いなければ新しいタブで `taskhub attach` を実行して会話の続きから開く。
     private func open(taskID: String) {
-        // 台帳から引き直す。一覧を数えたときからタブが閉じている場合があるので、
-        // 押した瞬間の itermSession を見たい
-        guard let task = Ledger.task(id: taskID) else { return }
+        // Store が持つ台帳から引き直す。数えた一覧 (tasks) は10秒ごとにしか
+        // 更新されないので、押した瞬間に近い itermSession はこちらで見る
+        guard let task = store.record(id: taskID) else { return }
 
         if let session = task.itermSession, ItermBridge.focus(sessionID: session) {
             return
