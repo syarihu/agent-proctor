@@ -97,7 +97,7 @@ Turn on *Launch at login* in the menu bar and it will start on its own from then
 
 ```bash
 proctor ls              # list (--all for every repository, --json for machines)
-proctor attach <id>     # open claude for that session, resuming the conversation
+proctor attach <id>     # open the agent (claude / agy) for that session, resuming the conversation
 proctor sidebar         # launch the sidebar app
 ```
 
@@ -114,13 +114,13 @@ still alive, and otherwise opens a new tab resuming the conversation.
 
 **Installing it is not enough — the list stays empty.** agent-proctor is a passive tool
 that reads the ledger and displays it; the thing that writes state into the ledger
-is your Claude Code hooks.
+is your agent hooks (Claude Code or Antigravity).
 
 How to wire it up depends on your setup (if you already use hooks or a statusLine,
 they have to be merged rather than replaced), so instead of a procedure this is
 written as **instructions to hand to an AI**.
 
-→ paste [docs/setup-prompt.md](docs/setup-prompt.md) into Claude Code
+→ paste [docs/setup-prompt.md](docs/setup-prompt.md) into Claude Code or Antigravity
 
 Hooks call these three. They are not meant to be typed by a person, so they are
 not listed in the help. All of them read the hook JSON from stdin.

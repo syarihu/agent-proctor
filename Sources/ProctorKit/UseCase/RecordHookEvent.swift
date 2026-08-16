@@ -53,6 +53,18 @@ public enum RecordHookEvent {
                ledger.tasks[index].itermSession != iterm {
                 ledger.tasks[index].itermSession = iterm
             }
+            if let agent = payload.agent, ledger.tasks[index].agent != agent {
+                ledger.tasks[index].agent = agent
+            }
+            if let name = payload.sessionName, ledger.tasks[index].name != name {
+                ledger.tasks[index].name = name
+            }
+            if let model = payload.modelName, ledger.tasks[index].model != model {
+                ledger.tasks[index].model = model
+            }
+            if let ctx = payload.contextPercent, ledger.tasks[index].contextPercent != ctx {
+                ledger.tasks[index].contextPercent = ctx
+            }
             if status == TaskStatus.done, (ledger.tasks[index].subagents ?? 0) != 0 {
                 // ターンが終わればサブエージェントは残らない。
                 // 取りこぼしでずれた数をここで戻す
@@ -100,7 +112,11 @@ public enum RecordHookEvent {
             itermSession: EnvironmentSource.itermSessionID(),
             status: status,
             createdAt: now,
-            updatedAt: now))
+            updatedAt: now,
+            agent: payload.agent,
+            name: payload.sessionName,
+            model: payload.modelName,
+            contextPercent: payload.contextPercent))
     }
 
     /// hook の情報から対象のタスクを引く。

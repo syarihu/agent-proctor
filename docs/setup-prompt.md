@@ -104,6 +104,58 @@ you had to coexist with existing configuration.
 
 ---
 
+---
+
+## Wiring proctor up to Antigravity (`agy`)
+
+Antigravity uses `hooks.json` (placed in `~/.gemini/config/hooks.json` or `.agents/hooks.json`) and statusline configured in `~/.gemini/antigravity-cli/settings.json`.
+
+Session titles for Antigravity are resolved automatically in the following priority order:
+1. AI-generated conversation summary title from `~/.gemini/antigravity-cli/conversation_summaries.db`
+2. H1 heading of artifact files (e.g. Plan / Task markdown in `brain/<conversationId>/`)
+3. The first non-empty line of the user's initial prompt from `transcript.jsonl`
+
+### Setup prompt for Antigravity
+
+Paste the following into Antigravity (or `agy`) as-is.
+
+```
+Please set up my Antigravity / agy configuration so that it works with proctor
+(https://github.com/syarihu/agent-proctor).
+
+## Check first
+
+Confirm that `~/bin/proctor`, or `proctor` on PATH, can be executed. If it cannot,
+agent-proctor is not installed — stop there and tell me.
+
+## What to do
+
+1. Add lifecycle hooks to `~/.gemini/config/hooks.json` (or `.agents/hooks.json`).
+   Antigravity hooks expect JSON on stdout, so pass the `--json` flag to `proctor _touch`.
+
+| Event | Matcher | Command | Meaning |
+| --- | --- | --- | --- |
+| `PostToolUse` | `*` | `[ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _touch running --json` | back to running |
+| `PreToolUse` | `ask_question` | `[ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _touch waiting --json` | waiting for user response |
+| `PreToolUse` | `invoke_subagent` | `[ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _subagent start` | a subagent started |
+| `Stop` | none | `[ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _touch done --json` | the turn finished |
+
+2. If using statusline in `~/.gemini/antigravity-cli/settings.json`, pass the stdin JSON to `proctor _stats`:
+   ```python
+   # Inside statusline script:
+   try:
+       proctor = os.path.expanduser('~/bin/proctor')
+       if os.access(proctor, os.X_OK):
+           subprocess.run([proctor, '_stats'], input=raw, text=True,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                          timeout=2)
+   except Exception:
+       pass
+   ```
+```
+
+---
+
 ## Other agents
 
 `_touch`, `_subagent` and `_stats` all just read JSON from stdin, so any tool with

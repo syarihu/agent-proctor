@@ -22,6 +22,9 @@ public struct TaskRecord: Codable, Equatable {
     public var createdAt: Int
     public var updatedAt: Int
     public var subagents: Int?
+    /// セッションを動かしているエージェント ("claude" や "agy")。
+    /// タブを開き直すとき (attach) にどの CLI を呼ぶかの分岐に使う
+    public var agent: String?
 
     // ここから下は statusline だけが知っている情報。
     // hooks の payload には来ないので RecordSessionStats が横流しする
@@ -32,8 +35,9 @@ public struct TaskRecord: Codable, Equatable {
     public init(id: String, repo: String, branch: String, worktree: String,
                 sessionId: String? = nil, itermSession: String? = nil,
                 status: String, createdAt: Int, updatedAt: Int,
-                subagents: Int? = nil, name: String? = nil,
-                model: String? = nil, contextPercent: Int? = nil) {
+                subagents: Int? = nil, agent: String? = nil,
+                name: String? = nil, model: String? = nil,
+                contextPercent: Int? = nil) {
         self.id = id
         self.repo = repo
         self.branch = branch
@@ -44,6 +48,7 @@ public struct TaskRecord: Codable, Equatable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.subagents = subagents
+        self.agent = agent
         self.name = name
         self.model = model
         self.contextPercent = contextPercent

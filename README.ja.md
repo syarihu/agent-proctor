@@ -91,7 +91,7 @@ scripts/install.sh               # /Applications に入れ、~/bin/proctor を�
 
 ```bash
 proctor ls              # 一覧（--all で全リポジトリ、--json で機械向け）
-proctor attach <ID>     # そのセッションの claude を開く（続きから）
+proctor attach <ID>     # そのセッションのエージェント (claude / agy) を開く（続きから）
 proctor sidebar         # サイドバー（アプリ）を起動する
 ```
 
@@ -106,12 +106,12 @@ proctor sidebar         # サイドバー（アプリ）を起動する
 ## エージェントとの連携
 
 **入れただけでは一覧は空のまま。** agent-proctor は台帳を読んで表示するだけの受け身の道具で、
-状態を書き込むのは Claude Code の hooks のほう。
+状態を書き込むのはエージェント（Claude Code または Antigravity）の hooks のほう。
 
 繋ぎ方は環境によって変わる（すでに hooks や statusLine を使っていれば混ぜる必要がある）ので、
 手順書ではなく **AI に渡す指示**にしてある。
 
-→ [docs/setup-prompt.ja.md](docs/setup-prompt.ja.md) を Claude Code に貼る
+→ [docs/setup-prompt.ja.md](docs/setup-prompt.ja.md) を Claude Code または Antigravity に貼る
 
 hooks から呼ばれるのは次の3つ。人が打つものではないのでヘルプには出していない。
 どれも stdin にフックの JSON を受ける。

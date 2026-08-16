@@ -38,12 +38,27 @@ public struct HookPayload {
 
     public var message: String { box["message"] as? String ?? "" }
 
+    /// セッションを動かしているエージェント ("claude" または "agy")。
+    public var agent: String? {
+        if let explicit = box["agent"] as? String, !explicit.isEmpty { return explicit }
+        if box["conversationId"] != nil || box["conversation_id"] != nil
+            || box["transcriptPath"] != nil || box["artifactDirectoryPath"] != nil {
+            return "agy"
+        }
+        if box["session_id"] != nil { return "claude" }
+        return nil
+    }
+
     public var sessionName: String? {
-        for key in ["session_name", "title", "session_title"] {
+        for key in ["session_name", "title", "session_title", "preview"] {
             if let value = box[key] as? String {
                 let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty { return trimmed }
             }
+        }
+        // Antigravity は payload にタイトルが入ってこないため、DB/アーティファクト/プロンプトから解決する
+        if agent == "agy", let session = sessionID {
+            return AntigravityMetadataReader.resolveTitle(conversationID: session)
         }
         return nil
     }

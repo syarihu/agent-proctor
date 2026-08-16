@@ -27,4 +27,8 @@ public enum EnvironmentSource {
     public static func currentDirectory() -> String {
         FileManager.default.currentDirectoryPath
     }
+
+    public static func homeDirectory() -> String {
+        NSHomeDirectory()
+    }
 }

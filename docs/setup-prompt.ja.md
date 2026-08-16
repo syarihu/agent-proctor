@@ -97,6 +97,58 @@ Claude Code は既定でそうするので、パイプなどを自分で足す�
 
 ---
 
+---
+
+## Antigravity (`agy`) との連携
+
+Antigravity は `hooks.json`（`~/.gemini/config/hooks.json` または `.agents/hooks.json`）および `~/.gemini/antigravity-cli/settings.json` の statusLine を使って連携します。
+
+Antigravity のセッション名（タイトル）は、以下の優先順で自動解決されます:
+1. `~/.gemini/antigravity-cli/conversation_summaries.db` に記録された AI 自動生成の会話要約タイトル
+2. `brain/<conversationId>/` 配下のアーティファクト（Plan等のMarkdown）の H1 見出し
+3. `transcript.jsonl` に記録されたユーザーの最初のプロンプトの1行目
+
+### 使い方 (Antigravity 向け)
+
+Antigravity（または `agy`）で以下をそのまま貼る。
+
+```
+agent-proctor (https://github.com/syarihu/agent-proctor) と連携するように、
+私の Antigravity / agy の設定を整えてください。
+
+## 前提の確認
+
+まず `~/bin/proctor` または PATH 上の `proctor` が実行できることを確認してください。
+無ければ proctor をインストールしていないので、そこで止めて教えてください。
+
+## やってほしいこと
+
+1. `~/.gemini/config/hooks.json`（または `.agents/hooks.json`）に以下のフックを用意してください。
+   Antigravity のフックは stdout に JSON を期待するため、`proctor _touch` には `--json` フラグを付けてください。
+
+| イベント | matcher | コマンド | 意味 |
+| --- | --- | --- | --- |
+| `PostToolUse` | `*` | `[ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _touch running --json` | 実行中に戻す |
+| `PreToolUse` | `ask_question` | `[ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _touch waiting --json` | ユーザーの確認待ち |
+| `PreToolUse` | `invoke_subagent` | `[ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _subagent start` | サブエージェントが増えた |
+| `Stop` | なし | `[ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _touch done --json` | ターンが終わった |
+
+2. `~/.gemini/antigravity-cli/settings.json` で statusLine を使っている場合は、スクリプト内で stdin の JSON を `proctor _stats` に渡してください:
+   ```python
+   # statusline スクリプト内:
+   try:
+       proctor = os.path.expanduser('~/bin/proctor')
+       if os.access(proctor, os.X_OK):
+           subprocess.run([proctor, '_stats'], input=raw, text=True,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                          timeout=2)
+   except Exception:
+       pass
+   ```
+```
+
+---
+
 ## 他のエージェントとの連携
 
 `_touch` / `_subagent` / `_stats` はどれも stdin の JSON を読むだけなので、

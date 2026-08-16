@@ -31,9 +31,9 @@ func cmdLs(_ args: Args) throws -> Int32 {
     return 0
 }
 
-/// そのセッションの claude を開く。会話の続きから始める。
+/// そのセッションのエージェント (claude または agy) を開く。会話の続きから始める。
 ///
-/// 自分のプロセスを claude に置き換えるので、成功した場合ここから戻らない。
+/// 自分のプロセスをエージェントに置き換えるので、成功した場合ここから戻らない。
 /// サイドバーの行をクリックしたとき、タブが既に閉じていればこれが新しいタブで走る。
 func cmdAttach(_ args: Args) throws -> Int32 {
     let task = try LedgerStore.find(id: try args.require(0, "セッションID"))
@@ -41,17 +41,27 @@ func cmdAttach(_ args: Args) throws -> Int32 {
         throw ProctorError("作業していた場所がありません: \(task.worktree)")
     }
 
-    var argv = ["claude"]
-    if let session = task.sessionId { argv += ["--resume", session] }
+    let isAgy = task.agent == "agy"
+        || (task.agent == nil && task.sessionId.flatMap(UUID.init(uuidString:)) != nil)
+    let binary = isAgy ? "agy" : "claude"
+
+    var argv = [binary]
+    if let session = task.sessionId {
+        if isAgy {
+            argv += ["--conversation", session]
+        } else {
+            argv += ["--resume", session]
+        }
+    }
 
     guard FileManager.default.changeCurrentDirectoryPath(task.worktree) else {
         throw ProctorError("作業していた場所に移動できません: \(task.worktree)")
     }
     var cargs: [UnsafeMutablePointer<CChar>?] = argv.map { strdup($0) }
     cargs.append(nil)
-    execvp("claude", &cargs)
+    execvp(binary, &cargs)
     // execvp は成功すれば戻らない。ここに来たのは起動できなかったということ
-    throw ProctorError("claude を起動できません")
+    throw ProctorError("\(binary) を起動できません")
 }
 
 /// iTerm2 の左側に吸着するサイドバー (Agent Proctor.app) を起動する。

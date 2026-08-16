@@ -20,13 +20,19 @@ func cmdTouch(_ args: Args) throws -> Int32 {
     // どちらなのかの判断は UseCase が持つ
     if status == "notification" {
         guard let resolved = RecordHookEvent.resolveNotification(payload) else {
+            if args.has("--json") { print("{}") }
             return 0  // アイドル通知。何も出さないことで「変えない」を伝える
         }
         status = resolved
     }
     // 台帳を触る前に返す。git の外での実行など、記録しない場合でも
-    // 「このイベントは確認待ちを意味する」ことは呼び出し側に伝わってほしい
-    print(status)
+    // 「このイベントは確認待ちを意味する」ことは呼び出し側に伝わってほしい。
+    // Antigravity (agy) の hooks.json から呼ばれる場合は --json で空 JSON を返す
+    if args.has("--json") {
+        print("{}")
+    } else {
+        print(status)
+    }
 
     try RecordHookEvent.touch(status: status, payload: payload)
     return 0
