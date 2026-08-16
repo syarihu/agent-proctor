@@ -10,6 +10,12 @@ import ProctorKit
 /// 状態の語彙そのものは ProctorKit の TaskStatus が正本で、
 /// ここが決めるのは「メニューバーではどう描くか」だけ。
 enum StatusGlyph {
+    /// 記号と数字の太さ。
+    ///
+    /// メニューバーは壁紙が透けるので、既定の太さだと細くて沈む。
+    /// 記号と数字を別々に決めると字面がちぐはぐになるので、まとめてここで持つ。
+    static let weight: NSFont.Weight = .semibold
+
     /// 状態に対応する SF Symbol 名と色。
     ///
     /// 色は必ず決める。テンプレート画像にして OS に任せる手もあるが、
@@ -45,7 +51,8 @@ enum StatusGlyph {
 
         if let image = NSImage(systemSymbolName: name, accessibilityDescription:
                                 TaskStatus.label(status)) {
-            let config = NSImage.SymbolConfiguration(pointSize: fontSize, weight: .regular)
+            let config = NSImage.SymbolConfiguration(pointSize: fontSize,
+                                                     weight: Self.weight)
             var sized = image.withSymbolConfiguration(config) ?? image
             // SF Symbols は記号ごとに幅が違う (play.fill は 12pt、hand.raised.fill は 16pt)。
             // そのまま並べると、状態が変わるたびにメニューバーの幅が動いて落ち着かない。
@@ -66,7 +73,7 @@ enum StatusGlyph {
 
         // 記号と数字をくっつけない。地続きだと1つの字のように見える
         line.append(NSAttributedString(string: " \(count)", attributes: [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .regular),
+            .font: NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: Self.weight),
             .foregroundColor: tint,
         ]))
         return line
