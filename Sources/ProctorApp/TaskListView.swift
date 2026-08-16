@@ -142,11 +142,7 @@ private struct TaskRow: View {
     private var mark: some View {
         switch task.status {
         case TaskStatus.running:
-            ProgressView()
-                .progressViewStyle(.circular)
-                .controlSize(.small)
-                .scaleEffect(0.5)
-                .frame(width: base, height: base)
+            Spinner(size: base)
         case TaskStatus.waiting:
             Text(TaskStatus.mark(task.status)).font(.system(size: base)).pulsing()
         default:
@@ -178,6 +174,38 @@ private struct TaskRow: View {
     }
 }
 
+/// 回っているリング。実行中の印。
+///
+/// macOS 標準の ProgressView は細く薄いので、小さな行の中では何が起きているのか
+/// 分かりにくい。元の iTerm2 パネルが CSS で描いていたリングをそのまま起こす。
+/// 薄い輪を下敷きにして、その一部だけ色を付けて回す形。
+private struct Spinner: View {
+    let size: CGFloat
+    @State private var spinning = false
+
+    /// 線の太さは直径に対する比で持つ。文字を大きくしても細くならない
+    private var lineWidth: CGFloat { max(1.5, size * 0.16) }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.gray.opacity(0.25), lineWidth: lineWidth)
+            Circle()
+                // 4分の1だけ描いて回す。全周だと止まって見える
+                .trim(from: 0, to: 0.25)
+                .stroke(Palette.spinner,
+                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(spinning ? 360 : 0))
+                .animation(.linear(duration: 0.8).repeatForever(autoreverses: false),
+                           value: spinning)
+        }
+        // 線が枠からはみ出さないよう、太さの分だけ内側に描く
+        .padding(lineWidth / 2)
+        .frame(width: size, height: size)
+        .onAppear { spinning = true }
+    }
+}
+
 /// ゆっくり明滅させる。確認待ちとサブエージェントの「まだ動いている」印に使う。
 private struct Pulsing: ViewModifier {
     @State private var faded = false
@@ -206,6 +234,7 @@ enum Palette {
     static let added = Color(red: 0.298, green: 0.686, blue: 0.314)     // #4caf50
     static let removed = Color(red: 0.937, green: 0.325, blue: 0.314)   // #ef5350
     static let untracked = Color(red: 0.161, green: 0.714, blue: 0.965) // #29b6f6
+    static let spinner = Color(red: 0.310, green: 0.765, blue: 0.969)   // #4fc3f7
 
     /// 残りが少なくなってきたら色で知らせる (statusline と同じ考え方)
     static func context(_ percent: Int) -> Color {
