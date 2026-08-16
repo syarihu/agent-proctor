@@ -132,7 +132,7 @@ taskhub sidebar         # サイドバー（アプリ）を起動する
 繋ぎ方は環境によって変わる（すでに hooks や statusLine を使っていれば混ぜる必要がある）ので、
 手順書ではなく **AI に渡す指示**にしてある。
 
-→ [docs/setup-prompt.md](docs/setup-prompt.md) を Claude Code に貼る
+→ [docs/setup-prompt.ja.md](docs/setup-prompt.ja.md) を Claude Code に貼る
 
 hooks から呼ばれるのは次の3つ。人が打つものではないのでヘルプには出していない。
 どれも stdin にフックの JSON を受ける。

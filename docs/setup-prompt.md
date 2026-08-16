@@ -1,107 +1,116 @@
-# Claude Code と繋ぐ
+# Wiring taskhub up to Claude Code
 
-taskhub は台帳 (`~/.local/state/taskhub/state.json`) を読んで表示するだけの受け身の道具で、
-そこに状態を書き込むのは Claude Code の hooks。**繋がないと一覧は空のまま**になる。
+*[日本語版はこちら](setup-prompt.ja.md)*
 
-繋ぎ方は環境によって変わる。すでに hooks や statusLine を使っていれば、
-上書きせずに混ぜないといけない。手順書やスクリプトにすると
-「既存の設定がある場合」を全部書き切れないので、**AI に読ませる指示**にしてある。
+taskhub is a passive tool: it reads the ledger
+(`~/.local/state/taskhub/state.json`) and displays it. The thing that writes state
+into that ledger is your Claude Code hooks. **Without wiring it up, the list stays
+empty.**
 
-## 使い方
+How to wire it up depends on your setup. If you already use hooks or a statusLine
+they have to be merged rather than replaced, and a procedure or a script cannot
+cover every existing configuration. So this is written as **instructions for an
+AI to follow**.
 
-Claude Code で以下をそのまま貼る。
+## How to use it
+
+Paste the following into Claude Code as-is.
 
 ---
 
 ```
-taskhub (https://github.com/syarihu/taskhub) と連携するように、
-私の Claude Code の設定を整えてください。
+Please set up my Claude Code configuration so that it works with taskhub
+(https://github.com/syarihu/taskhub).
 
-## 前提の確認
+## Check first
 
-まず `~/bin/taskhub` または PATH 上の `taskhub` が実行できることを確認してください。
-無ければ taskhub をインストールしていないので、そこで止めて教えてください。
+Confirm that `~/bin/taskhub`, or `taskhub` on PATH, can be executed. If it cannot,
+taskhub is not installed — stop there and tell me.
 
-## やってほしいこと
+## What to do
 
-`~/.claude/settings.json` に以下の hooks と statusLine を用意してください。
-**既存の設定は消さないこと。** 同じイベントに別のフックが登録されていれば、
-配列に足す形で共存させてください。
+Add the following hooks and statusLine to `~/.claude/settings.json`.
+**Do not remove any existing configuration.** If another hook is already
+registered for the same event, keep both by appending to the array.
 
-taskhub のコマンドは `$HOME/bin/taskhub` のように絶対パスで書いてください。
-フックの実行環境では PATH に ~/bin が乗らないことがあり、PATH 頼みだと
-ここだけ静かに落ちます。また `[ -x "$HOME/bin/taskhub" ] &&` で存在を確かめてから
-呼ぶようにして、taskhub を消したときに Claude Code 側がエラーにならないようにしてください。
+Write the taskhub command as an absolute path such as `$HOME/bin/taskhub`.
+The hook execution environment does not always have ~/bin on PATH, and relying on
+PATH makes this silently fail here only. Also guard the call with
+`[ -x "$HOME/bin/taskhub" ] &&` so that Claude Code does not error out if taskhub
+is ever removed.
 
-| イベント | matcher | コマンド | 意味 |
+| Event | Matcher | Command | Meaning |
 | --- | --- | --- | --- |
-| `UserPromptSubmit` | なし | `taskhub _touch running` | 動き出した |
-| `PostToolUse` | `*` | `taskhub _touch running` | 実行中に戻す |
-| `Notification` | なし | `taskhub _touch notification` | 確認待ちかもしれない |
-| `Stop` | なし | `taskhub _touch done` | ターンが終わった |
-| `SessionEnd` | なし | `taskhub _touch clear` | セッションが終わった |
-| `PreToolUse` | `Task\|Agent` | `taskhub _subagent start` | サブエージェントが増えた |
-| `SubagentStop` | なし | `taskhub _subagent stop` | サブエージェントが減った |
+| `UserPromptSubmit` | none | `taskhub _touch running` | started working |
+| `PostToolUse` | `*` | `taskhub _touch running` | back to running |
+| `Notification` | none | `taskhub _touch notification` | possibly waiting for me |
+| `Stop` | none | `taskhub _touch done` | the turn finished |
+| `SessionEnd` | none | `taskhub _touch clear` | the session ended |
+| `PreToolUse` | `Task\|Agent` | `taskhub _subagent start` | a subagent started |
+| `SubagentStop` | none | `taskhub _subagent stop` | a subagent stopped |
 
-いずれも stdin にフックの JSON がそのまま渡る必要があります。
-Claude Code は既定でそうするので、パイプなどを自分で足す必要はありません。
+Each of these needs the hook JSON passed through on stdin. Claude Code does this
+by default, so you do not need to add any piping yourself.
 
-### それぞれの理由 (省くと壊れるので消さないでください)
+### Why each one is there (do not drop them)
 
-- **`PostToolUse` を入れる理由**: 権限確認で確認待ちになった後、承認して実行に戻ったことを
-  伝える経路がこれしかありません。抜くと、承認したのに確認待ちの表示のまま止まって見えます。
-  何度も呼ばれますが、taskhub は中身の変わらない書き込みを捨てるので負荷にはなりません。
-- **`Notification` に `waiting` ではなく `notification` を渡す理由**: このイベントは
-  権限確認のほかに「60秒入力なし」のアイドル通知でも発火します。区別せず確認待ちにすると、
-  終わったあと放置しただけで印が付きます。`notification` を渡すと taskhub 側が
-  メッセージを見て切り分けます。
-- **`SessionEnd` を同期で呼ぶ理由**: バックグラウンドに投げると Claude 本体の終了に
-  巻き込まれて、書き終わる前に殺されることがあります。他のイベントは末尾に `&` を付けて
-  非同期にして構いませんが、`SessionEnd` だけは同期にしてください。
+- **Why `PostToolUse` is included**: it is the only path that reports going back
+  to running after a permission prompt was approved. Without it, a session that
+  you approved keeps looking like it is still waiting for you. It fires very
+  often, but taskhub discards writes that would not change anything, so it costs
+  nothing.
+- **Why `Notification` passes `notification` rather than `waiting`**: this event
+  also fires for the *no input for 60 seconds* idle notification, not just
+  permission prompts. Treating both the same marks a session as blocked simply
+  because you walked away after it finished. Passing `notification` lets taskhub
+  look at the message and tell them apart.
+- **Why `SessionEnd` must be synchronous**: if you background it, it can be
+  killed along with Claude itself before it finishes writing. The other events
+  may be backgrounded with a trailing `&`, but leave `SessionEnd` synchronous.
 
 ### statusLine
 
-セッション名・モデル・コンテキスト使用率は hooks では取れず、statusLine にしか届きません。
-一覧に出したいので、statusLine から taskhub に横流ししてください。
+The session name, model and context usage are not available to hooks — they only
+reach the statusLine. taskhub wants to show them, so pass them along from there.
 
-- **statusLine をまだ使っていない場合**: stdin の JSON をそのまま
-  `taskhub _stats` に渡すだけのコマンドを設定してください。
-- **すでに statusLine を使っている場合**: 既存の表示を壊さないこと。
-  stdin は一度しか読めないので、既存のスクリプトの中で JSON を先に読み切り、
-  同じ内容を `taskhub _stats` にも渡す形にしてください。
-  taskhub への受け渡しが失敗しても表示が止まらないよう、失敗は握りつぶしてください。
-  描画のたびに呼ばれますが、taskhub は内容が変わらないときは書き込まないので
-  台帳の更新時刻は動きません。
+- **If you do not use a statusLine yet**: configure a command that simply passes
+  the stdin JSON to `taskhub _stats`.
+- **If you already use a statusLine**: do not break the existing display. stdin
+  can only be read once, so read the JSON to completion inside your existing
+  script and hand the same content to `taskhub _stats` as well. Swallow any
+  failure so the display never stops. It is called on every render, but taskhub
+  does not write when nothing changed, so the ledger's modification time stays put.
 
-## 確認
+## Verify
 
-設定したら、新しい Claude Code のセッションを開いて `taskhub ls` を実行し、
-そのセッションが一覧に出ることを確かめてください。出なければ設定が効いていません。
+Once configured, open a new Claude Code session and run `taskhub ls` to confirm
+that the session shows up in the list. If it does not, the configuration is not
+taking effect.
 
-`taskhub _touch` は状態を stdout に返します。手で確かめるときは次のように叩けます
-(`waiting` と出れば正しい)。
+`taskhub _touch` prints the status it recorded to stdout. To check by hand
+(printing `waiting` is correct):
 
     printf '{"session_id":"test","cwd":"'"$PWD"'","message":"needs your permission"}' | taskhub _touch notification
 
-アイドル通知のほうは何も出ないのが正しい挙動です。
+For the idle notification, printing nothing is the correct behaviour:
 
     printf '{"session_id":"test","cwd":"'"$PWD"'","message":"Claude is waiting for your input"}' | taskhub _touch notification
 
-## 変更した内容を最後に教えてください
+## Report back
 
-どのファイルの何を変えたか、既存の設定と共存させた箇所があればそれも含めて
-報告してください。
+Tell me which files you changed and what you changed in them, including anywhere
+you had to coexist with existing configuration.
 ```
 
 ---
 
-## 他のエージェントと繋ぐ
+## Other agents
 
-`_touch` / `_subagent` / `_stats` はどれも stdin の JSON を読むだけなので、
-同じ形のライフサイクルフックを持つツールなら同様に繋げる。
-セッションIDは `session_id` のほか `conversationId` / `conversation_id` も見る
-(Antigravity 向け)。
+`_touch`, `_subagent` and `_stats` all just read JSON from stdin, so any tool with
+similar lifecycle hooks can be wired up the same way. Besides `session_id`, the
+session identifier is also read from `conversationId` and `conversation_id`
+(for Antigravity).
 
-すでに同じイベントで別のことをしている場合（端末のタブに色を付けるなど）は、
-stdin が一度しか読めないことに注意する。先に JSON を読み切ってから、
-同じ内容を `proctor` にも渡す。
+If your hook script already does something else with the same event — colouring
+the terminal tab, for instance — remember that stdin can only be read once. Read
+the JSON to completion first, then hand the same content to `proctor`.
