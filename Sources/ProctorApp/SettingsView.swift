@@ -72,7 +72,14 @@ struct SettingsView: View {
                         isDefault: Bool, reset: @escaping () -> Void) -> some View {
         LabeledContent(title) {
             HStack(spacing: 12) {
-                Slider(value: value, in: range, step: step)
+                // Slider に step を渡すと macOS は目盛りを描く。
+                // 幅は 180〜1200 を 1pt 刻みにしているので目盛りが 1021 本並び、
+                // つまみの下が白い線で埋まってしまう。
+                // 刻みは書き込み側で丸めて、部品には連続値として渡す
+                Slider(value: Binding(
+                    get: { value.wrappedValue },
+                    set: { value.wrappedValue = (($0 / step).rounded() * step) }
+                ), in: range)
                 Text("\(Int(value.wrappedValue))pt")
                     .font(.system(.body, design: .monospaced))
                     .foregroundStyle(.secondary)
