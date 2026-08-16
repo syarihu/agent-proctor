@@ -1,9 +1,9 @@
-# Wiring taskhub up to Claude Code
+# Wiring proctor up to Claude Code
 
 *[日本語版はこちら](setup-prompt.ja.md)*
 
-taskhub is a passive tool: it reads the ledger
-(`~/.local/state/taskhub/state.json`) and displays it. The thing that writes state
+agent-proctor is a passive tool: it reads the ledger
+(`~/.local/state/proctor/state.json`) and displays it. The thing that writes state
 into that ledger is your Claude Code hooks. **Without wiring it up, the list stays
 empty.**
 
@@ -19,13 +19,13 @@ Paste the following into Claude Code as-is.
 ---
 
 ```
-Please set up my Claude Code configuration so that it works with taskhub
-(https://github.com/syarihu/taskhub).
+Please set up my Claude Code configuration so that it works with proctor
+(https://github.com/syarihu/agent-proctor).
 
 ## Check first
 
-Confirm that `~/bin/taskhub`, or `taskhub` on PATH, can be executed. If it cannot,
-taskhub is not installed — stop there and tell me.
+Confirm that `~/bin/proctor`, or `proctor` on PATH, can be executed. If it cannot,
+agent-proctor is not installed — stop there and tell me.
 
 ## What to do
 
@@ -33,21 +33,21 @@ Add the following hooks and statusLine to `~/.claude/settings.json`.
 **Do not remove any existing configuration.** If another hook is already
 registered for the same event, keep both by appending to the array.
 
-Write the taskhub command as an absolute path such as `$HOME/bin/taskhub`.
+Write the proctor command as an absolute path such as `$HOME/bin/proctor`.
 The hook execution environment does not always have ~/bin on PATH, and relying on
 PATH makes this silently fail here only. Also guard the call with
-`[ -x "$HOME/bin/taskhub" ] &&` so that Claude Code does not error out if taskhub
+`[ -x "$HOME/bin/proctor" ] &&` so that Claude Code does not error out if proctor
 is ever removed.
 
 | Event | Matcher | Command | Meaning |
 | --- | --- | --- | --- |
-| `UserPromptSubmit` | none | `taskhub _touch running` | started working |
-| `PostToolUse` | `*` | `taskhub _touch running` | back to running |
-| `Notification` | none | `taskhub _touch notification` | possibly waiting for me |
-| `Stop` | none | `taskhub _touch done` | the turn finished |
-| `SessionEnd` | none | `taskhub _touch clear` | the session ended |
-| `PreToolUse` | `Task\|Agent` | `taskhub _subagent start` | a subagent started |
-| `SubagentStop` | none | `taskhub _subagent stop` | a subagent stopped |
+| `UserPromptSubmit` | none | `proctor _touch running` | started working |
+| `PostToolUse` | `*` | `proctor _touch running` | back to running |
+| `Notification` | none | `proctor _touch notification` | possibly waiting for me |
+| `Stop` | none | `proctor _touch done` | the turn finished |
+| `SessionEnd` | none | `proctor _touch clear` | the session ended |
+| `PreToolUse` | `Task\|Agent` | `proctor _subagent start` | a subagent started |
+| `SubagentStop` | none | `proctor _subagent stop` | a subagent stopped |
 
 Each of these needs the hook JSON passed through on stdin. Claude Code does this
 by default, so you do not need to add any piping yourself.
@@ -57,12 +57,12 @@ by default, so you do not need to add any piping yourself.
 - **Why `PostToolUse` is included**: it is the only path that reports going back
   to running after a permission prompt was approved. Without it, a session that
   you approved keeps looking like it is still waiting for you. It fires very
-  often, but taskhub discards writes that would not change anything, so it costs
+  often, but proctor discards writes that would not change anything, so it costs
   nothing.
 - **Why `Notification` passes `notification` rather than `waiting`**: this event
   also fires for the *no input for 60 seconds* idle notification, not just
   permission prompts. Treating both the same marks a session as blocked simply
-  because you walked away after it finished. Passing `notification` lets taskhub
+  because you walked away after it finished. Passing `notification` lets proctor
   look at the message and tell them apart.
 - **Why `SessionEnd` must be synchronous**: if you background it, it can be
   killed along with Claude itself before it finishes writing. The other events
@@ -71,30 +71,30 @@ by default, so you do not need to add any piping yourself.
 ### statusLine
 
 The session name, model and context usage are not available to hooks — they only
-reach the statusLine. taskhub wants to show them, so pass them along from there.
+reach the statusLine. proctor wants to show them, so pass them along from there.
 
 - **If you do not use a statusLine yet**: configure a command that simply passes
-  the stdin JSON to `taskhub _stats`.
+  the stdin JSON to `proctor _stats`.
 - **If you already use a statusLine**: do not break the existing display. stdin
   can only be read once, so read the JSON to completion inside your existing
-  script and hand the same content to `taskhub _stats` as well. Swallow any
-  failure so the display never stops. It is called on every render, but taskhub
+  script and hand the same content to `proctor _stats` as well. Swallow any
+  failure so the display never stops. It is called on every render, but proctor
   does not write when nothing changed, so the ledger's modification time stays put.
 
 ## Verify
 
-Once configured, open a new Claude Code session and run `taskhub ls` to confirm
+Once configured, open a new Claude Code session and run `proctor ls` to confirm
 that the session shows up in the list. If it does not, the configuration is not
 taking effect.
 
-`taskhub _touch` prints the status it recorded to stdout. To check by hand
+`proctor _touch` prints the status it recorded to stdout. To check by hand
 (printing `waiting` is correct):
 
-    printf '{"session_id":"test","cwd":"'"$PWD"'","message":"needs your permission"}' | taskhub _touch notification
+    printf '{"session_id":"test","cwd":"'"$PWD"'","message":"needs your permission"}' | proctor _touch notification
 
 For the idle notification, printing nothing is the correct behaviour:
 
-    printf '{"session_id":"test","cwd":"'"$PWD"'","message":"Claude is waiting for your input"}' | taskhub _touch notification
+    printf '{"session_id":"test","cwd":"'"$PWD"'","message":"Claude is waiting for your input"}' | proctor _touch notification
 
 ## Report back
 

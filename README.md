@@ -1,12 +1,14 @@
-# taskhub
+# agent-proctor
 
 *[日本語版はこちら](README.ja.md)*
 
-A Mac app and CLI for running a coding agent per git worktree and watching all of
-them in one place.
+A Mac app and CLI that acts as your **proctor**, watching over every coding agent
+at work across your git worktrees and telling you the moment one raises its hand.
 
-Instead of checking tabs one by one, you can see which session is blocked waiting
-for you and which one is still working in the background.
+A proctor does not sit the exam. They watch the room, and they go to whoever
+raises a hand. That is exactly the job here: instead of checking tabs one by one,
+you see which session is blocked waiting for you and which one is still working
+in the background.
 
 ```
 ⏳ Fix the empty state of the sidebar  (context: 13%)
@@ -21,14 +23,14 @@ running for a long time, that is a hint that it is either thinking hard or stuck
 
 ## Structure
 
-`TaskhubKit` is split into three layers so that the logic can be used from both
+`ProctorKit` is split into three layers so that the logic can be used from both
 the CLI and the app. The boundary rule is that **presentation concerns never
 enter the Kit**: terminal ANSI colors live in the CLI (`Terminal.swift`) and
 SwiftUI colors live in the app (`Palette`). All the Kit knows is which statuses
 exist and what symbol and name to call them by.
 
 ```
-TaskhubKit/
+ProctorKit/
   Model/       Data and vocabulary. No I/O
                TaskRecord, DiffCounts, CollectedTask, TaskStatus, RepoConfig, TaskID
   Repository/  The only door to the outside: the ledger, git and the environment
@@ -39,13 +41,13 @@ TaskhubKit/
                CleanMergedWorktrees, RecordHookEvent, RecordSessionStats,
                ReapClosedSessions, HookPayload
 
-taskhub/       CLI (view). Reads arguments, calls a use case, formats for a terminal
-TaskhubApp/    App (view). SwiftUI and AppKit. TaskStore wraps the repository
+proctor/       CLI (view). Reads arguments, calls a use case, formats for a terminal
+ProctorApp/    App (view). SwiftUI and AppKit. TaskStore wraps the repository
 ```
 
 | File | Role |
 | --- | --- |
-| `~/.local/state/taskhub/state.json` | The ledger. One across all repositories. Created on first use |
+| `~/.local/state/proctor/state.json` | The ledger. One across all repositories. Created on first use |
 
 ### Invariants
 
@@ -72,7 +74,7 @@ Compare before and after a change to confirm nothing broke.
 ```bash
 scripts/baseline.sh before
 scripts/baseline.sh after
-diff -u /tmp/taskhub-baseline/{before,after}.txt
+diff -u /tmp/proctor-baseline/{before,after}.txt
 ```
 
 It works against a throwaway git repository and ledger, so your real ledger is
@@ -82,7 +84,7 @@ never touched.
 
 ```bash
 scripts/create-signing-cert.sh   # once. Creates a local code signing certificate
-scripts/install.sh               # installs to /Applications and links ~/bin/taskhub
+scripts/install.sh               # installs to /Applications and links ~/bin/proctor
 ```
 
 The certificate comes first because Automation (Apple Events) permission is tied
@@ -96,13 +98,13 @@ Turn on *Launch at login* in the menu bar and it will start on its own from then
 ## Usage
 
 ```bash
-taskhub ls              # list (--all for every repository, --json for machines)
-taskhub new <name>      # create a worktree
-taskhub open <id>       # print the worktree path (cd "$(taskhub open x)")
-taskhub attach <id>     # open claude for that task, resuming the conversation
-taskhub diff <id>       # diff against the base branch
-taskhub clean           # clean up merged worktrees (--yes to actually do it)
-taskhub sidebar         # launch the sidebar app
+proctor ls              # list (--all for every repository, --json for machines)
+proctor new <name>      # create a worktree
+proctor open <id>       # print the worktree path (cd "$(proctor open x)")
+proctor attach <id>     # open claude for that task, resuming the conversation
+proctor diff <id>       # diff against the base branch
+proctor clean           # clean up merged worktrees (--yes to actually do it)
+proctor sidebar         # launch the sidebar app
 ```
 
 Destructive operations do nothing by default. `clean` only prints a list; it needs
@@ -113,7 +115,7 @@ opens a new tab resuming the conversation.
 
 ## Per-repository settings
 
-Put a `.taskhub.json` at the root of a repository to change how `new` behaves.
+Put a `.proctor.json` at the root of a repository to change how `new` behaves.
 It works fine without one.
 
 ```json
@@ -132,7 +134,7 @@ parent repository's `git status` stays clean.
 
 ## Wiring up your agent
 
-**Installing it is not enough — the list stays empty.** taskhub is a passive tool
+**Installing it is not enough — the list stays empty.** agent-proctor is a passive tool
 that reads the ledger and displays it; the thing that writes state into the ledger
 is your Claude Code hooks.
 
@@ -147,14 +149,14 @@ not listed in the help. All of them read the hook JSON from stdin.
 
 | Command | Caller | Purpose |
 | --- | --- | --- |
-| `taskhub _touch <status>` | hooks | running / waiting / done / clear / notification |
-| `taskhub _subagent start\|stop` | hooks | subagent count |
-| `taskhub _stats` | statusline | session name, model, context usage |
+| `proctor _touch <status>` | hooks | running / waiting / done / clear / notification |
+| `proctor _subagent start\|stop` | hooks | subagent count |
+| `proctor _stats` | statusline | session name, model, context usage |
 
 `_touch` **prints the status it recorded to stdout** so the caller can use what
 actually happened (to set a tab color, for example).
 
-`notification` is the special one: taskhub looks at the payload's `message` and
+`notification` is the special one: proctor looks at the payload's `message` and
 decides whether it is a permission prompt or the *no input for 60 seconds* idle
 notification. For an idle notification it records nothing and prints nothing.
 Treating both as waiting would mark a session as blocked just because you walked
@@ -162,7 +164,7 @@ away after it finished. Copying that decision into the caller means the two can
 drift apart when only one is fixed.
 
 Interactive sessions you opened normally are picked up from `_touch` too, not just
-worktrees created through taskhub.
+worktrees created through proctor.
 
 ## iTerm2 integration
 
@@ -172,7 +174,7 @@ Focusing a tab and opening a new one are done through AppleScript.
 
 Under the hardened runtime the `com.apple.security.automation.apple-events`
 entitlement is required. Without it Apple Events are blocked by the runtime before
-they reach TCC, which means taskhub never even appears in the Automation list in
+they reach TCC, which means proctor never even appears in the Automation list in
 System Settings.
 
 The sidebar positions itself by reading iTerm2's window frame from CGWindowList.

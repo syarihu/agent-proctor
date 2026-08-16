@@ -10,7 +10,7 @@
 # 信頼設定には管理者認証が要るので、要らないものは求めない。
 set -euo pipefail
 
-NAME="${TASKHUB_CERT_NAME:-Taskhub Local Signing}"
+NAME="${PROCTOR_CERT_NAME:-Proctor Local Signing}"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 
 # -v を付けると信頼済みのものしか出ない。信頼はしない方針なので付けない
@@ -24,7 +24,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 # Security framework は空パスワードの PKCS12 を読めないので、使い捨てを噛ませる
-PASS="taskhub-$RANDOM$RANDOM"
+PASS="proctor-$RANDOM$RANDOM"
 
 echo "==> 鍵と証明書を作る"
 # macOS 同梱の LibreSSL を明示して使う。Homebrew の OpenSSL 3 が作る PKCS12 は

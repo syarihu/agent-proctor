@@ -1,4 +1,4 @@
-# taskhub のルール
+# agent-proctor のルール
 
 ## 言語
 
@@ -34,7 +34,7 @@ Conventional Commits のプレフィックスは使わない。何をしたか�
 
 ## 設計
 
-`TaskhubKit` は3層に分かれている。層をまたぐ変更をするときは、
+`ProctorKit` は3層に分かれている。層をまたぐ変更をするときは、
 どこに置くべきかを先に決める。
 
 | 層 | 置くもの | 置かないもの |
@@ -61,7 +61,7 @@ View（CLI とアプリ）は UseCase を呼んで整形するだけにする。
 ```bash
 scripts/baseline.sh before   # 変更前
 scripts/baseline.sh after    # 変更後
-diff -u /tmp/taskhub-baseline/{before,after}.txt
+diff -u /tmp/proctor-baseline/{before,after}.txt
 ```
 
 アプリの見た目を変えたときは `scripts/install.sh` で入れ直して実機で確かめる。

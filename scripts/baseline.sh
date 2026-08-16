@@ -6,22 +6,22 @@
 #
 #   scripts/baseline.sh before   # リファクタ前に取る
 #   scripts/baseline.sh after    # リファクタ後に取る
-#   diff -u /tmp/taskhub-baseline/{before,after}.txt
+#   diff -u /tmp/proctor-baseline/{before,after}.txt
 set -uo pipefail
 
 LABEL="${1:-before}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT_DIR=/tmp/taskhub-baseline
+OUT_DIR=/tmp/proctor-baseline
 OUT="$OUT_DIR/$LABEL.txt"
 mkdir -p "$OUT_DIR"
 
 swift build --package-path "$ROOT" >/dev/null 2>&1 || {
     echo "ビルドに失敗しました" >&2; exit 1
 }
-BIN="$(swift build --package-path "$ROOT" --show-bin-path)/taskhub"
+BIN="$(swift build --package-path "$ROOT" --show-bin-path)/proctor"
 
 LAB="$(mktemp -d)"
-export TASKHUB_STATE_DIR="$LAB/state"
+export PROCTOR_STATE_DIR="$LAB/state"
 
 # 時刻に依存する項目 (経過秒・AGE) は毎回変わるので伏せる。
 # 見たいのは構造と文言であって、何秒経ったかではない
@@ -51,8 +51,8 @@ say() { echo; echo "### $*"; }
     echo hello > README.md; echo secret > local.properties
     git add README.md; git commit -qm init; git push -q origin HEAD:main
     git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
-    printf '{"branchPrefix":"syarihu/","copyFiles":["local.properties"]}\n' > .taskhub.json
-    git add .taskhub.json; git commit -qm cfg; git push -q origin HEAD:main
+    printf '{"branchPrefix":"syarihu/","copyFiles":["local.properties"]}\n' > .proctor.json
+    git add .proctor.json; git commit -qm cfg; git push -q origin HEAD:main
 
     say "new (チケットキー)"
     "$BIN" new ABC-123 --no-fetch
@@ -84,10 +84,10 @@ say() { echo; echo "### $*"; }
 
     say "_touch running (1回目)"
     printf '{"session_id":"s1","cwd":"%s"}' "$LAB/work" | "$BIN" _touch running
-    M1=$(stat -f %Fm "$TASKHUB_STATE_DIR/state.json")
+    M1=$(stat -f %Fm "$PROCTOR_STATE_DIR/state.json")
     say "_touch running (2回目: 無変更なので台帳の更新時刻が動かない)"
     printf '{"session_id":"s1","cwd":"%s"}' "$LAB/work" | "$BIN" _touch running
-    M2=$(stat -f %Fm "$TASKHUB_STATE_DIR/state.json")
+    M2=$(stat -f %Fm "$PROCTOR_STATE_DIR/state.json")
     [ "$M1" = "$M2" ] && echo "mtime: 動かない" || echo "mtime: 動いた"
 
     say "_touch notification (アイドル通知: 何も出ない)"

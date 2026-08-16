@@ -1,12 +1,13 @@
-# taskhub
+# agent-proctor
 
 *[English](README.md) が正本です。こちらはその訳なので、内容がずれていたら英語版が正しい。*
 
-git worktree ごとにコーディングエージェントを走らせ、動いているエージェントを
-一箇所で見るための Mac アプリと CLI。
+git worktree で働くコーディングエージェントたちの**試験監督**として振る舞い、
+どれかが手を挙げた瞬間に教えてくれる Mac アプリと CLI。
 
-タブを1枚ずつ確かめなくても、どのセッションが確認待ちで止まっているか、
-どれが裏で動き続けているかが分かる。
+試験監督は自分では問題を解かない。部屋を見渡して、手を挙げた人のところへ行く。
+ここでやることも同じで、タブを1枚ずつ確かめなくても、どのセッションが確認待ちで
+止まっているか、どれが裏で動き続けているかが分かる。
 
 ```
 ⏳ サイドバーの空状態の表示を直す  (context: 13%)
@@ -21,13 +22,13 @@ git worktree ごとにコーディングエージェントを走らせ、動い�
 
 ## かたち
 
-ロジックを CLI とアプリの両方から使えるように、`TaskhubKit` を3層に分けている。
+ロジックを CLI とアプリの両方から使えるように、`ProctorKit` を3層に分けている。
 **表示の都合を Kit に持ち込まない**のが境界の引き方で、たとえば端末の ANSI 色は
 CLI 側 (`Terminal.swift`)、SwiftUI の色はアプリ側 (`Palette`) がそれぞれ持つ。
 Kit が知っているのは「どんな状態があり、どんな記号と名前で呼ぶか」まで。
 
 ```
-TaskhubKit/
+ProctorKit/
   Model/       データと語彙。I/O を持たない
                TaskRecord, DiffCounts, CollectedTask, TaskStatus, RepoConfig, TaskID
   Repository/  外の世界との出入り口。ここだけが台帳・git・環境を触る
@@ -38,13 +39,13 @@ TaskhubKit/
                CleanMergedWorktrees, RecordHookEvent, RecordSessionStats,
                ReapClosedSessions, HookPayload
 
-taskhub/       CLI (View)。引数を読んで UseCase を呼び、結果を端末向けに整える
-TaskhubApp/    アプリ (View)。SwiftUI と AppKit。TaskStore が Repository を包む
+proctor/       CLI (View)。引数を読んで UseCase を呼び、結果を端末向けに整える
+ProctorApp/    アプリ (View)。SwiftUI と AppKit。TaskStore が Repository を包む
 ```
 
 | ファイル | 役割 |
 | --- | --- |
-| `~/.local/state/taskhub/state.json` | 台帳。リポジトリを横断して1つ。実行時に自動で作られる |
+| `~/.local/state/proctor/state.json` | 台帳。リポジトリを横断して1つ。実行時に自動で作られる |
 
 ### 守っていること
 
@@ -69,7 +70,7 @@ TaskhubApp/    アプリ (View)。SwiftUI と AppKit。TaskStore が Repository 
 ```bash
 scripts/baseline.sh before   # 変更前
 scripts/baseline.sh after    # 変更後
-diff -u /tmp/taskhub-baseline/{before,after}.txt
+diff -u /tmp/proctor-baseline/{before,after}.txt
 ```
 
 使い捨ての git リポジトリと台帳を相手にするので、実際に使っている台帳には触らない。
@@ -78,7 +79,7 @@ diff -u /tmp/taskhub-baseline/{before,after}.txt
 
 ```bash
 scripts/create-signing-cert.sh   # 初回だけ。ローカル署名用の証明書を作る
-scripts/install.sh               # /Applications に入れ、~/bin/taskhub を張る
+scripts/install.sh               # /Applications に入れ、~/bin/proctor を張る
 ```
 
 証明書を先に作るのは、オートメーション（Apple Events）の許可が
@@ -91,13 +92,13 @@ scripts/install.sh               # /Applications に入れ、~/bin/taskhub を�
 ## 使う
 
 ```bash
-taskhub ls              # 一覧（--all で全リポジトリ、--json で機械向け）
-taskhub new <名前>      # worktree を作る
-taskhub open <ID>       # worktree のパスを出す（cd "$(taskhub open x)"）
-taskhub attach <ID>     # そのタスクの claude を開く（続きから）
-taskhub diff <ID>       # ベースからの差分
-taskhub clean           # マージ済みの worktree を片付ける（--yes で実行）
-taskhub sidebar         # サイドバー（アプリ）を起動する
+proctor ls              # 一覧（--all で全リポジトリ、--json で機械向け）
+proctor new <名前>      # worktree を作る
+proctor open <ID>       # worktree のパスを出す（cd "$(proctor open x)"）
+proctor attach <ID>     # そのタスクの claude を開く（続きから）
+proctor diff <ID>       # ベースからの差分
+proctor clean           # マージ済みの worktree を片付ける（--yes で実行）
+proctor sidebar         # サイドバー（アプリ）を起動する
 ```
 
 破壊的な操作は既定で何もしない。`clean` は一覧を出すだけで、消すには `--yes` が要る。
@@ -108,7 +109,7 @@ taskhub sidebar         # サイドバー（アプリ）を起動する
 
 ## リポジトリごとの設定
 
-リポジトリ直下に `.taskhub.json` を置くと `new` の挙動を変えられる。無くても動く。
+リポジトリ直下に `.proctor.json` を置くと `new` の挙動を変えられる。無くても動く。
 
 ```json
 {
@@ -126,7 +127,7 @@ taskhub sidebar         # サイドバー（アプリ）を起動する
 
 ## エージェントとの連携
 
-**入れただけでは一覧は空のまま。** taskhub は台帳を読んで表示するだけの受け身の道具で、
+**入れただけでは一覧は空のまま。** agent-proctor は台帳を読んで表示するだけの受け身の道具で、
 状態を書き込むのは Claude Code の hooks のほう。
 
 繋ぎ方は環境によって変わる（すでに hooks や statusLine を使っていれば混ぜる必要がある）ので、
@@ -139,19 +140,19 @@ hooks から呼ばれるのは次の3つ。人が打つものではないので�
 
 | コマンド | 呼ぶ側 | 中身 |
 | --- | --- | --- |
-| `taskhub _touch <状態>` | hooks | running / waiting / done / clear / notification |
-| `taskhub _subagent start\|stop` | hooks | サブエージェントの増減 |
-| `taskhub _stats` | statusline | セッション名・モデル・コンテキスト使用率 |
+| `proctor _touch <状態>` | hooks | running / waiting / done / clear / notification |
+| `proctor _subagent start\|stop` | hooks | サブエージェントの増減 |
+| `proctor _stats` | statusline | セッション名・モデル・コンテキスト使用率 |
 
 `_touch` は**記録した状態を stdout に返す**。呼び出し側が「結局どうなったか」を
 使えるようにするため（タブの色を変えるなど）。
 
 `notification` だけは特別で、権限確認なのか「60秒入力なし」のアイドル通知なのかを
-taskhub 側が payload の `message` を見て切り分ける。アイドルなら何も記録せず、
+proctor 側が payload の `message` を見て切り分ける。アイドルなら何も記録せず、
 何も返さない。区別せず確認待ちにすると、終わったあと放置しただけで印が付いてしまう。
 この判断を呼び出し側に書き写すと、片方だけ直したときに食い違う。
 
-taskhub 経由で作った worktree だけでなく、普通に開いた対話セッションも
+proctor 経由で作った worktree だけでなく、普通に開いた対話セッションも
 `_touch` の呼び出しから拾って一覧に載せる。
 
 ## iTerm2 との連携
