@@ -32,13 +32,11 @@ exist and what symbol and name to call them by.
 ```
 ProctorKit/
   Model/       Data and vocabulary. No I/O
-               TaskRecord, DiffCounts, CollectedTask, TaskStatus, RepoConfig, TaskID
+               TaskRecord, DiffCounts, CollectedTask, TaskStatus, TaskID
   Repository/  The only door to the outside: the ledger, git and the environment
-               LedgerStore, GitClient, ProcessRunner, ConfigStore,
-               EnvironmentSource, Paths
+               LedgerStore, GitClient, ProcessRunner, EnvironmentSource, Paths
   UseCase/     One per thing you want to do. Every decision lives here
-               CollectTasks, CreateWorktree, RemoveWorktree,
-               CleanMergedWorktrees, RecordHookEvent, RecordSessionStats,
+               CollectTasks, RecordHookEvent, RecordSessionStats,
                ReapClosedSessions, HookPayload
 
 proctor/       CLI (view). Reads arguments, calls a use case, formats for a terminal
@@ -99,38 +97,18 @@ Turn on *Launch at login* in the menu bar and it will start on its own from then
 
 ```bash
 proctor ls              # list (--all for every repository, --json for machines)
-proctor new <name>      # create a worktree
-proctor open <id>       # print the worktree path (cd "$(proctor open x)")
-proctor attach <id>     # open claude for that task, resuming the conversation
-proctor diff <id>       # diff against the base branch
-proctor clean           # clean up merged worktrees (--yes to actually do it)
+proctor attach <id>     # open claude for that session, resuming the conversation
 proctor sidebar         # launch the sidebar app
 ```
 
-Destructive operations do nothing by default. `clean` only prints a list; it needs
-`--yes` to remove anything, and worktrees with uncommitted changes are left out.
+That is the whole surface. **agent-proctor never creates or removes a worktree**
+— setting one up and cleaning it up afterwards belongs to whatever drives your
+agents (a slash command or skill, in the author's case). It reads nothing but
+the ledger and `git diff`, and writes nothing but the ledger.
 
-Clicking a row in the sidebar focuses that tab if it is still alive, and otherwise
-opens a new tab resuming the conversation.
-
-## Per-repository settings
-
-Put a `.proctor.json` at the root of a repository to change how `new` behaves.
-It works fine without one.
-
-```json
-{
-  "baseBranch": "develop",
-  "branchPrefix": "syarihu/",
-  "worktreeDir": ".claude/worktrees",
-  "copyFiles": ["local.properties"],
-  "maxConcurrent": 3
-}
-```
-
-`copyFiles` carries over files that are gitignored and therefore do not reach the
-new worktree. `worktreeDir` is added to `.git/info/exclude` on first use, so the
-parent repository's `git status` stays clean.
+Sessions appear on their own as soon as your hooks report them; there is nothing
+to register by hand. Clicking a row in the sidebar focuses that tab if it is
+still alive, and otherwise opens a new tab resuming the conversation.
 
 ## Wiring up your agent
 
@@ -163,8 +141,9 @@ Treating both as waiting would mark a session as blocked just because you walked
 away after it finished. Copying that decision into the caller means the two can
 drift apart when only one is fixed.
 
-Interactive sessions you opened normally are picked up from `_touch` too, not just
-worktrees created through proctor.
+Every session in the list got there through `_touch` — whether you opened it in a
+worktree or straight in the repository. agent-proctor has no other way of learning
+that an agent exists, which is why wiring the hooks up is not optional.
 
 ## iTerm2 integration
 
@@ -182,8 +161,7 @@ That needs no Automation permission, so snapping works even before you grant it.
 
 ## Dependencies
 
-`git`, plus `gh` for `clean` (to find merged pull requests).
-There are no external Swift package dependencies.
+`git`, and nothing else. There are no external Swift package dependencies.
 
 ## Contributing
 

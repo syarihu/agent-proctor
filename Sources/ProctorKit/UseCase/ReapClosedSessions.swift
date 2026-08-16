@@ -21,7 +21,7 @@ public enum ReapClosedSessions {
         // 触らない。それらは RecordHookEvent の期限切れで落ちる
         let dead = LedgerStore.tasks()
             .filter { task in
-                guard task.isSession, let iterm = task.itermSession else { return false }
+                guard let iterm = task.itermSession else { return false }
                 return !alive.contains(iterm)
             }
             .map(\.id)

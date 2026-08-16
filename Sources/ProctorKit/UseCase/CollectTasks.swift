@@ -31,7 +31,7 @@ public enum CollectTasks {
                 record: record,
                 repoName: URL(fileURLWithPath: record.repo).lastPathComponent,
                 exists: exists,
-                // worktree を手で消された場合。台帳には残っているので消失として見せる
+                // 動いていた場所を手で消された場合。台帳には残っているので消失として見せる
                 status: exists ? record.status : TaskStatus.missing,
                 diff: exists ? diff(for: record) : DiffCounts(),
                 ageSeconds: max(0, now - record.createdAt),
@@ -41,26 +41,19 @@ public enum CollectTasks {
 
     /// 作業量を数える。
     ///
+    /// 見たいのは「そのエージェントが今やった分」なので HEAD からの差分、
+    /// つまり未コミットの変更だけを数える。ベースブランチから数えると、
+    /// もともと積まれていたコミットの歴史がまるごと出てしまい、
+    /// 今の作業量が分からなくなる。
+    ///
     /// 新規ファイルは git diff に出ないため untracked として別に数える。
     /// エージェントの成果はファイル追加であることが多く、ここが漏れると
     /// 「何もしていない」ように見えてしまう。
-    ///
-    /// 対話セッションは HEAD からの差分、つまり未コミットの変更だけを見る。
-    /// proctor が作った worktree はブランチ全体がそのタスクの成果なのでベースから
-    /// 数えるが、もともと開いていたセッションでベースから数えると
-    /// ブランチの歴史がまるごと出てしまい、今の作業量が分からなくなる。
     public static func diff(for record: TaskRecord) -> DiffCounts {
-        let point = record.isSession
-            ? "HEAD"
-            : GitClient.mergeBase(record.worktree, base: record.base)
-
-        var counts = DiffCounts()
-        if !point.isEmpty {
-            let lines = GitClient.changedLines(record.worktree, since: point)
-            counts.added = lines.added
-            counts.removed = lines.removed
-        }
-        counts.untracked = GitClient.untrackedFiles(record.worktree).count
-        return counts
+        let lines = GitClient.changedLines(record.worktree, since: "HEAD")
+        return DiffCounts(
+            added: lines.added,
+            removed: lines.removed,
+            untracked: GitClient.untrackedFiles(record.worktree).count)
     }
 }

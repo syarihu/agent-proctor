@@ -9,13 +9,9 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     public var repo: String
     public var branch: String
     public var worktree: String
-    public var base: String
-    public var ticket: String?
     public var sessionId: String?
     public var itermSession: String?
-    public var pid: Int?
-    public var kind: String?
-    /// worktree が消えていれば missing に差し替わる。台帳の値とは限らない
+    /// 動いていた場所が消えていれば missing に差し替わる。台帳の値とは限らない
     public var status: String
     public var createdAt: Int
     public var updatedAt: Int
@@ -43,12 +39,8 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         repo = record.repo
         branch = record.branch
         worktree = record.worktree
-        base = record.base
-        ticket = record.ticket
         sessionId = record.sessionId
         itermSession = record.itermSession
-        pid = record.pid
-        kind = record.kind
         self.status = status
         createdAt = record.createdAt
         updatedAt = record.updatedAt

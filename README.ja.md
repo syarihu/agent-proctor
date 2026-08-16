@@ -30,13 +30,11 @@ Kit が知っているのは「どんな状態があり、どんな記号と名�
 ```
 ProctorKit/
   Model/       データと語彙。I/O を持たない
-               TaskRecord, DiffCounts, CollectedTask, TaskStatus, RepoConfig, TaskID
+               TaskRecord, DiffCounts, CollectedTask, TaskStatus, TaskID
   Repository/  外の世界との出入り口。ここだけが台帳・git・環境を触る
-               LedgerStore, GitClient, ProcessRunner, ConfigStore,
-               EnvironmentSource, Paths
+               LedgerStore, GitClient, ProcessRunner, EnvironmentSource, Paths
   UseCase/     やりたいこと1つに1つ。判断はすべてここが持つ
-               CollectTasks, CreateWorktree, RemoveWorktree,
-               CleanMergedWorktrees, RecordHookEvent, RecordSessionStats,
+               CollectTasks, RecordHookEvent, RecordSessionStats,
                ReapClosedSessions, HookPayload
 
 proctor/       CLI (View)。引数を読んで UseCase を呼び、結果を端末向けに整える
@@ -93,37 +91,17 @@ scripts/install.sh               # /Applications に入れ、~/bin/proctor を�
 
 ```bash
 proctor ls              # 一覧（--all で全リポジトリ、--json で機械向け）
-proctor new <名前>      # worktree を作る
-proctor open <ID>       # worktree のパスを出す（cd "$(proctor open x)"）
-proctor attach <ID>     # そのタスクの claude を開く（続きから）
-proctor diff <ID>       # ベースからの差分
-proctor clean           # マージ済みの worktree を片付ける（--yes で実行）
+proctor attach <ID>     # そのセッションの claude を開く（続きから）
 proctor sidebar         # サイドバー（アプリ）を起動する
 ```
 
-破壊的な操作は既定で何もしない。`clean` は一覧を出すだけで、消すには `--yes` が要る。
-未コミットの変更がある worktree は `clean` の対象から外れる。
+これで全部。**agent-proctor は worktree を作らないし消さない**——用意と後片付けは
+エージェントを動かす側（作者の環境ではスラッシュコマンド）の仕事で、
+こちらは台帳と `git diff` を読むだけ、書くのは台帳だけにしてある。
 
+セッションは hooks が知らせてくれた時点で勝手に並ぶので、手で登録するものは無い。
 サイドバーの行をクリックすると、そのタブが生きていればフォーカスし、
 閉じていれば新しいタブで会話の続きから開く。
-
-## リポジトリごとの設定
-
-リポジトリ直下に `.proctor.json` を置くと `new` の挙動を変えられる。無くても動く。
-
-```json
-{
-  "baseBranch": "develop",
-  "branchPrefix": "syarihu/",
-  "worktreeDir": ".claude/worktrees",
-  "copyFiles": ["local.properties"],
-  "maxConcurrent": 3
-}
-```
-
-`copyFiles` は gitignore されていて worktree に引き継がれないファイルを持ち込むためのもの。
-`worktreeDir` は初回に `.git/info/exclude` へ自動で追加されるので、親リポジトリの
-`git status` は汚れない。
 
 ## エージェントとの連携
 
@@ -152,8 +130,9 @@ proctor 側が payload の `message` を見て切り分ける。アイドルな�
 何も返さない。区別せず確認待ちにすると、終わったあと放置しただけで印が付いてしまう。
 この判断を呼び出し側に書き写すと、片方だけ直したときに食い違う。
 
-proctor 経由で作った worktree だけでなく、普通に開いた対話セッションも
-`_touch` の呼び出しから拾って一覧に載せる。
+一覧に並ぶセッションは、worktree で開いたものもリポジトリ本体で開いたものも、
+すべて `_touch` の呼び出しから拾っている。agent-proctor がエージェントの存在を
+知る道は他に無いので、hooks を繋ぐのは任意ではない。
 
 ## iTerm2 との連携
 
@@ -170,8 +149,7 @@ TCC まで届かないためシステム設定のオートメーション一覧�
 
 ## 依存ツール
 
-`git` のほかに、`clean` が `gh`（マージ済み PR の判定）を使う。
-Swift の外部パッケージには依存していない。
+`git` だけ。Swift の外部パッケージには依存していない。
 
 ## 開発の決まりごと
 
