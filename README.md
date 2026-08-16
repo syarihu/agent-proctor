@@ -87,16 +87,30 @@ taskhub sidebar         # サイドバー（アプリ）を起動する
 
 ## エージェントとの連携
 
-状態は hooks が流し込む。繋ぎ方は docs/setup-prompt.md にある。
+**入れただけでは一覧は空のまま。** taskhub は台帳を読んで表示するだけの受け身の道具で、
+状態を書き込むのは Claude Code の hooks のほう。
+
+繋ぎ方は環境によって変わる（すでに hooks や statusLine を使っていれば混ぜる必要がある）ので、
+手順書ではなく **AI に渡す指示**にしてある。
+
+→ [docs/setup-prompt.md](docs/setup-prompt.md) を Claude Code に貼る
+
+hooks から呼ばれるのは次の3つ。人が打つものではないのでヘルプには出していない。
+どれも stdin にフックの JSON を受ける。
 
 | コマンド | 呼ぶ側 | 中身 |
 | --- | --- | --- |
-| `taskhub _touch <状態>` | hooks | running / waiting / done / clear |
+| `taskhub _touch <状態>` | hooks | running / waiting / done / clear / notification |
 | `taskhub _subagent start\|stop` | hooks | サブエージェントの増減 |
 | `taskhub _stats` | statusline | セッション名・モデル・コンテキスト使用率 |
 
-いずれも人が打つものではないので、ヘルプには出していない。
-どれも stdin にフックの JSON を受ける。
+`_touch` は**記録した状態を stdout に返す**。呼び出し側が「結局どうなったか」を
+使えるようにするため（タブの色を変えるなど）。
+
+`notification` だけは特別で、権限確認なのか「60秒入力なし」のアイドル通知なのかを
+taskhub 側が payload の `message` を見て切り分ける。アイドルなら何も記録せず、
+何も返さない。区別せず確認待ちにすると、終わったあと放置しただけで印が付いてしまう。
+この判断を呼び出し側に書き写すと、片方だけ直したときに食い違う。
 
 taskhub 経由で作った worktree だけでなく、普通に開いた対話セッションも
 `_touch` の呼び出しから拾って一覧に載せる。

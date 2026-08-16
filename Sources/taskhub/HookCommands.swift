@@ -5,13 +5,28 @@ import TaskhubKit
 ///
 /// TASKHUB_ID にもセッションIDにも worktree にも当たらなければ、対話セッションとして
 /// 登録する。これにより taskhub 経由でなく普通に開いた claude も一覧に並ぶ。
+/// 記録した状態を stdout に返す。呼び出し側が「結局どうなったか」を使えるようにする
+/// (タブの色を変えるなど)。判断をシェル側に写すと、片方だけ直したときに食い違う。
 func cmdTouch(_ args: Args) throws -> Int32 {
-    let status = try args.require(0, "状態 (running|waiting|done|clear)")
-    guard ["running", "waiting", "done", "clear"].contains(status) else {
-        throw TaskhubError("状態は running/waiting/done/clear のいずれかです: \(status)")
+    var status = try args.require(0, "状態 (running|waiting|done|clear|notification)")
+    guard ["running", "waiting", "done", "clear", "notification"].contains(status) else {
+        throw TaskhubError(
+            "状態は running/waiting/done/clear/notification のいずれかです: \(status)")
     }
 
     let payload = Hooks.readPayload()
+
+    // notification は権限確認でもアイドル通知でも飛んでくる。
+    // どちらなのかの判断はここが持つ
+    if status == "notification" {
+        guard let resolved = Hooks.resolveNotification(payload) else {
+            return 0  // アイドル通知。何も出さないことで「変えない」を伝える
+        }
+        status = resolved
+    }
+    // 台帳を触る前に返す。git の外での実行など、記録しない場合でも
+    // 「このイベントは確認待ちを意味する」ことは呼び出し側に伝わってほしい
+    print(status)
     let sessionID = Hooks.sessionID(from: payload)
     let top = Hooks.gitToplevel(cwd: Hooks.cwd(from: payload))
     guard !top.isEmpty else { return 0 }  // git の外での実行は追いかけない

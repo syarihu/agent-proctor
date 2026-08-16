@@ -40,6 +40,19 @@ public enum Hooks {
         return nil
     }
 
+    /// Notification フックが何を意味するかを決める。
+    ///
+    /// このイベントは権限確認や質問のほかに、「60秒入力なし」のアイドル通知でも
+    /// 発火する。アイドルまで確認待ちにすると、終わったあと放置しただけで
+    /// 印が付いてしまう。待たせているのはこちらではないので状態を変えない。
+    ///
+    /// - Returns: 記録すべき状態。何もしないときは nil。
+    public static func resolveNotification(_ payload: [String: Any]) -> String? {
+        let message = payload["message"] as? String ?? ""
+        if message.contains("waiting for your input") { return nil }
+        return "waiting"
+    }
+
     /// フックの payload から作業ディレクトリを引く。
     public static func cwd(from payload: [String: Any]) -> String {
         if let cwd = payload["cwd"] as? String, !cwd.isEmpty { return cwd }
