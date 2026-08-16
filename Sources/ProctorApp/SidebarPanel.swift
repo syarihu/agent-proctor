@@ -48,6 +48,7 @@ final class SidebarPanel: NSObject {
 
     private let appearance: Appearance
     private var widthObserver: AnyCancellable?
+    private var appearanceObserver: AnyCancellable?
 
     private var lastTarget: NSRect = .zero
     private(set) var isShowing = false
@@ -88,6 +89,13 @@ final class SidebarPanel: NSObject {
         container.layer?.cornerRadius = 10
         container.layer?.masksToBounds = true
 
+        let effect = NSVisualEffectView(frame: container.bounds)
+        effect.autoresizingMask = [.width, .height]
+        effect.material = .underWindowBackground
+        effect.blendingMode = .behindWindow
+        effect.state = .active
+        container.addSubview(effect)
+
         let host = NSHostingView(rootView: content)
         host.frame = container.bounds
         host.autoresizingMask = [.width, .height]
@@ -102,9 +110,14 @@ final class SidebarPanel: NSObject {
         container.addSubview(handle)
         panel.contentView = container
 
-        // 幅は設定画面からも変わる。どちらから変わっても置き直す
+        // 幅や背景色の変更を監視。どちらから変わっても即座に置き直す
         widthObserver = appearance.$sidebarWidth.sink { [weak self] _ in
             self?.wakeUp()
+        }
+        appearanceObserver = appearance.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshBackground()
+            }
         }
 
         // iTerm2 がアクティブになった瞬間に即座に復帰したい
@@ -112,13 +125,19 @@ final class SidebarPanel: NSObject {
             self, selector: #selector(appActivated),
             name: NSWorkspace.didActivateApplicationNotification, object: nil)
 
+        refreshBackground()
         schedule()
     }
 
     /// 背景色。iTerm2 のプロファイルから拾えたらそれを敷いて境目を消す
     func applyBackground(_ color: NSColor?) {
-        let base = color ?? NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 1)
-        panel.contentView?.layer?.backgroundColor = base.withAlphaComponent(0.95).cgColor
+        appearance.itermBackgroundColor = color
+        refreshBackground()
+    }
+
+    private func refreshBackground() {
+        let color = appearance.resolvedBackgroundColor
+        panel.contentView?.layer?.backgroundColor = color.cgColor
     }
 
     @objc private func appActivated() { wakeUp() }

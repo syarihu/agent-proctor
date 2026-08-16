@@ -21,6 +21,7 @@ struct SettingsView: View {
                        value: $appearance.fontSize,
                        range: Appearance.sizeRange,
                        step: Appearance.sizeStep,
+                       unit: "pt",
                        isDefault: appearance.fontSize == Appearance.defaultSize,
                        reset: appearance.resetFontSize)
 
@@ -28,8 +29,52 @@ struct SettingsView: View {
                        value: $appearance.sidebarWidth,
                        range: Appearance.widthRange,
                        step: Appearance.widthStep,
+                       unit: "pt",
                        isDefault: appearance.sidebarWidth == Appearance.defaultWidth,
                        reset: appearance.resetWidth)
+
+                slider(title: "不透明度",
+                       value: Binding(
+                           get: { CGFloat(appearance.opacity * 100) },
+                           set: { appearance.opacity = Double($0 / 100) }
+                       ),
+                       range: 20...100,
+                       step: 1,
+                       unit: "%",
+                       isDefault: abs(appearance.opacity - Appearance.defaultOpacity) < 0.005,
+                       reset: appearance.resetOpacity)
+
+                LabeledContent("背景色") {
+                    HStack(spacing: 12) {
+                        Picker("", selection: $appearance.useCustomBackgroundColor) {
+                            Text("iTerm2 に合わせる").tag(false)
+                            Text("カスタム").tag(true)
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 180)
+
+                        if appearance.useCustomBackgroundColor {
+                            ColorPicker("", selection: Binding(
+                                get: {
+                                    Color(nsColor: NSColor(hex: appearance.customColorHex) ?? NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 1))
+                                },
+                                set: {
+                                    if let hex = NSColor($0).toHex() as String? {
+                                        appearance.customColorHex = hex
+                                    }
+                                }
+                            ), supportsOpacity: false)
+                            .labelsHidden()
+                            .frame(width: 32)
+                        }
+
+                        Spacer()
+
+                        Button("もとに戻す", action: appearance.resetBackgroundColor)
+                            .disabled(!appearance.useCustomBackgroundColor && appearance.customColorHex == Appearance.defaultCustomHex)
+                    }
+                }
             } header: {
                 Text("サイドバー")
             } footer: {
@@ -69,6 +114,7 @@ struct SettingsView: View {
     @ViewBuilder
     private func slider(title: String, value: Binding<CGFloat>,
                         range: ClosedRange<CGFloat>, step: CGFloat,
+                        unit: String = "pt",
                         isDefault: Bool, reset: @escaping () -> Void) -> some View {
         LabeledContent(title) {
             HStack(spacing: 12) {
@@ -80,7 +126,7 @@ struct SettingsView: View {
                     get: { value.wrappedValue },
                     set: { value.wrappedValue = (($0 / step).rounded() * step) }
                 ), in: range)
-                Text("\(Int(value.wrappedValue))pt")
+                Text("\(Int(value.wrappedValue))\(unit)")
                     .font(.system(.body, design: .monospaced))
                     .foregroundStyle(.secondary)
                     // 数字の桁で幅が動くと、つまみまで揺れて掴みにくい

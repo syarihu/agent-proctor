@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import CoreGraphics
 import Combine
 
@@ -55,19 +56,78 @@ final class Appearance: ObservableObject {
         }
     }
 
+    // MARK: - 不透明度 (透明度)
+
+    static let defaultOpacity: Double = 0.95
+    static let opacityRange: ClosedRange<Double> = 0.2...1.0
+
+    @Published var opacity: Double {
+        didSet {
+            let clamped = min(max(opacity, Self.opacityRange.lowerBound), Self.opacityRange.upperBound)
+            if clamped != opacity {
+                opacity = clamped
+                return
+            }
+            UserDefaults.standard.set(opacity, forKey: Self.opacityKey)
+        }
+    }
+
+    // MARK: - 背景色
+
+    static let defaultCustomHex = "#1E1E24"
+
+    @Published var useCustomBackgroundColor: Bool {
+        didSet {
+            UserDefaults.standard.set(useCustomBackgroundColor, forKey: Self.useCustomColorKey)
+        }
+    }
+
+    @Published var customColorHex: String {
+        didSet {
+            UserDefaults.standard.set(customColorHex, forKey: Self.customColorKey)
+        }
+    }
+
+    /// iTerm2 から取得した背景色
+    @Published var itermBackgroundColor: NSColor?
+
+    /// 実際にパネルに適用する背景色（透明度適用済み）
+    var resolvedBackgroundColor: NSColor {
+        let base: NSColor
+        if useCustomBackgroundColor {
+            base = NSColor(hex: customColorHex) ?? NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 1)
+        } else {
+            base = itermBackgroundColor ?? NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 1)
+        }
+        return base.withAlphaComponent(opacity)
+    }
+
     // MARK: -
 
     private static let sizeKey = "proctor_font_size"
     private static let widthKey = "proctor_sidebar_width"
+    private static let opacityKey = "proctor_opacity"
+    private static let useCustomColorKey = "proctor_use_custom_color"
+    private static let customColorKey = "proctor_custom_color_hex"
 
     init() {
         fontSize = Self.load(Self.sizeKey, in: Self.sizeRange, default: Self.defaultSize)
-        sidebarWidth = Self.load(Self.widthKey, in: Self.widthRange,
-                                 default: Self.defaultWidth)
+        sidebarWidth = Self.load(Self.widthKey, in: Self.widthRange, default: Self.defaultWidth)
+
+        let savedOpacity = UserDefaults.standard.double(forKey: Self.opacityKey)
+        opacity = Self.opacityRange.contains(savedOpacity) ? savedOpacity : Self.defaultOpacity
+
+        useCustomBackgroundColor = UserDefaults.standard.bool(forKey: Self.useCustomColorKey)
+        customColorHex = UserDefaults.standard.string(forKey: Self.customColorKey) ?? Self.defaultCustomHex
     }
 
     func resetFontSize() { fontSize = Self.defaultSize }
     func resetWidth() { sidebarWidth = Self.defaultWidth }
+    func resetOpacity() { opacity = Self.defaultOpacity }
+    func resetBackgroundColor() {
+        useCustomBackgroundColor = false
+        customColorHex = Self.defaultCustomHex
+    }
 
     private static func clamp(_ value: CGFloat, to range: ClosedRange<CGFloat>) -> CGFloat {
         min(max(value, range.lowerBound), range.upperBound)
@@ -77,5 +137,31 @@ final class Appearance: ObservableObject {
                              default fallback: CGFloat) -> CGFloat {
         let saved = CGFloat(UserDefaults.standard.double(forKey: key))
         return range.contains(saved) ? saved : fallback
+    }
+}
+
+extension NSColor {
+    convenience init?(hex: String) {
+        let trimmed = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        guard Scanner(string: trimmed).scanHexInt64(&int) else { return nil }
+        let r, g, b: CGFloat
+        switch trimmed.count {
+        case 6:
+            r = CGFloat((int >> 16) & 0xFF) / 255
+            g = CGFloat((int >> 8) & 0xFF) / 255
+            b = CGFloat(int & 0xFF) / 255
+        default:
+            return nil
+        }
+        self.init(srgbRed: r, green: g, blue: b, alpha: 1.0)
+    }
+
+    func toHex() -> String {
+        guard let rgb = usingColorSpace(.sRGB) else { return "#1E1E24" }
+        let r = Int(round(rgb.redComponent * 255))
+        let g = Int(round(rgb.greenComponent * 255))
+        let b = Int(round(rgb.blueComponent * 255))
+        return String(format: "#%02X%02X%02X", r, g, b)
     }
 }
