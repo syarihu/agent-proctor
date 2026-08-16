@@ -17,39 +17,47 @@ struct TaskListView: View {
     private var base: CGFloat { appearance.fontSize }
 
     var body: some View {
-        ScrollView {
-            if store.tasks.isEmpty {
-                Text("動いているエージェントはいません")
-                    .font(.system(size: base * 0.9))
-                    .foregroundStyle(Palette.dim)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, base * 0.4)
-                    .padding(.vertical, base * 0.6)
-            } else {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(groups, id: \.repo) { group in
-                        // 1つしかないなら見出しは情報を持たない。縦を空けるだけなので出さない
-                        if groups.count > 1 {
-                            Text(group.name)
-                                .font(.system(size: base * 0.75, weight: .semibold))
-                                .foregroundStyle(Palette.dim)
-                                .lineLimit(1)
-                                .padding(.horizontal, base * 0.4)
-                                .padding(.top, base * 0.6)
-                                .padding(.bottom, base * 0.1)
-                        }
-                        ForEach(group.tasks) { task in
-                            TaskRow(task: task, base: base, onOpen: onOpen)
-                                .padding(.leading, groups.count > 1 ? base : 0)
+        ZStack {
+            // 背景のアンビエントグロー（確認待ちや実行中の状態に応じたやわらかな環境光）
+            ambientGlow
+
+            ScrollView {
+                if store.tasks.isEmpty {
+                    Text("動いているエージェントはいません")
+                        .font(.system(size: base * 0.9))
+                        .foregroundStyle(Palette.dim)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, base * 0.4)
+                        .padding(.vertical, base * 0.6)
+                } else {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(groups, id: \.repo) { group in
+                            // 1つしかないなら見出しは情報を持たない。縦を空けるだけなので出さない
+                            if groups.count > 1 {
+                                Text(group.name)
+                                    .font(.system(size: base * 0.75, weight: .semibold))
+                                    .foregroundStyle(Palette.dim)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, base * 0.4)
+                                    .padding(.top, base * 0.6)
+                                    .padding(.bottom, base * 0.1)
+                            }
+                            ForEach(group.tasks) { task in
+                                TaskRow(task: task, base: base, onOpen: onOpen)
+                                    .padding(.leading, groups.count > 1 ? base : 0)
+                            }
                         }
                     }
+                    .animation(.spring(response: 0.35, dampingFraction: 0.78), value: taskOrderKey)
                 }
             }
+            .padding(base * 0.3)
         }
-        // 余白はすべて文字の大きさに対する比で持つ。
-        // そうしないと大きくしたときだけ窮屈になる
-        .padding(base * 0.3)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var taskOrderKey: String {
+        groups.map { "\($0.repo):" + $0.tasks.map(\.id).joined(separator: ",") }.joined(separator: "|")
     }
 
     private struct Group {
@@ -77,6 +85,21 @@ struct TaskListView: View {
     private func recency(_ group: Group) -> Int {
         group.tasks.map(\.idleSeconds).min() ?? .max
     }
+
+    /// 確認待ち（オレンジ）や実行中（ブルー）のタスクがあるとき、
+    /// サイドバーの縁にほのかに色を差して注意を引きやすくする
+    @ViewBuilder
+    private var ambientGlow: some View {
+        if store.tasks.contains(where: { $0.status == TaskStatus.waiting }) {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Palette.waiting.opacity(0.18), lineWidth: 1.5)
+                .ignoresSafeArea()
+        } else if store.tasks.contains(where: { $0.status == TaskStatus.running }) {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Palette.spinner.opacity(0.08), lineWidth: 1.0)
+                .ignoresSafeArea()
+        }
+    }
 }
 
 private struct TaskRow: View {
@@ -85,20 +108,22 @@ private struct TaskRow: View {
     var onOpen: (CollectedTask) -> Void
 
     @State private var hovering = false
+    @State private var diving = false
 
     var body: some View {
         HStack(alignment: .top, spacing: base * 0.4) {
             mark
                 .frame(width: base * 1.3, alignment: .center)
-                .padding(.top, base * 0.1)
+                .padding(.top, base * 0.12)
 
             VStack(alignment: .leading, spacing: base * 0.15) {
-                // エージェント名とアイコン
+                // エージェント名・モデル名・コンテキストミニバー
                 HStack(alignment: .center, spacing: base * 0.25) {
                     agentIcon
                     Text(task.agentDisplayName)
                         .font(.system(size: base * 0.7, weight: .medium))
                         .foregroundStyle(Palette.dim)
+
                     if let model = task.model {
                         Text("·")
                             .font(.system(size: base * 0.7))
@@ -108,13 +133,16 @@ private struct TaskRow: View {
                             .foregroundStyle(Palette.dim)
                             .lineLimit(1)
                     }
+
                     if let percent = task.contextPercent {
-                        Text("(context: \(percent)%)")
-                            .font(.system(size: base * 0.7).monospacedDigit())
-                            .foregroundStyle(Palette.context(percent))
+                        Text("·")
+                            .font(.system(size: base * 0.7))
+                            .foregroundStyle(Palette.dim)
+                        ContextMiniBar(percent: percent, base: base)
                     }
                 }
 
+                // セッション名（タイトル）
                 HStack(alignment: .firstTextBaseline, spacing: base * 0.5) {
                     Text(task.displayName)
                         .font(.system(size: base, weight: .semibold))
@@ -124,6 +152,7 @@ private struct TaskRow: View {
                         .truncationMode(.tail)
                 }
 
+                // ブランチ・経過時間・サブエージェント・diff
                 HStack(alignment: .firstTextBaseline, spacing: base * 0.6) {
                     Text("\(task.branch) · 経過: \(shortAge(task.idleSeconds))")
                         .lineLimit(1)
@@ -135,21 +164,46 @@ private struct TaskRow: View {
                             .layoutPriority(1)
                     }
                     Spacer(minLength: base * 0.25)
-                    diff.layoutPriority(1)
+                    diffView.layoutPriority(1)
                 }
                 .font(.system(size: base * 0.8))
                 .foregroundStyle(Palette.dim)
             }
         }
         .padding(.horizontal, base * 0.4)
-        // 行がぎゅうぎゅうだと状態を追いにくい
         .padding(.vertical, base * 0.5)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(hovering ? Palette.hover : .clear,
-                    in: RoundedRectangle(cornerRadius: base * 0.3))
+        .background(
+            ZStack {
+                if hovering {
+                    RoundedRectangle(cornerRadius: base * 0.3)
+                        .fill(Palette.hover)
+                }
+                if diving {
+                    // iTerm2 へダイブする瞬間の光のフラッシュ
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: Palette.spinner.opacity(0.35), location: 0.5),
+                            .init(color: .clear, location: 1)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: base * 0.3))
+                }
+            }
+        )
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .onTapGesture { onOpen(task) }
+        .onTapGesture {
+            withAnimation(.easeOut(duration: 0.2)) { diving = true }
+            onOpen(task)
+            Task {
+                try? await Task.sleep(nanoseconds: 280_000_000)
+                withAnimation(.easeOut(duration: 0.2)) { diving = false }
+            }
+        }
         .help(task.worktree)
     }
 
@@ -166,8 +220,7 @@ private struct TaskRow: View {
         }
     }
 
-    /// 実行中は回っているものを出す。動きがあるだけで「止まっていない」ことが一目で分かる。
-    /// 確認待ちはこちらの操作を待たせている状態なので、ゆっくり明滅させる
+    /// 実行中は回っているリング、確認待ちはゆっくり明滅、完了時はシュッと描かれるチェックマーク
     @ViewBuilder
     private var mark: some View {
         switch task.status {
@@ -175,22 +228,24 @@ private struct TaskRow: View {
             Spinner(size: base)
         case TaskStatus.waiting:
             Text(TaskStatus.mark(task.status)).font(.system(size: base)).pulsing()
+        case TaskStatus.done:
+            AnimatedCheckmark(size: base)
         default:
             Text(TaskStatus.mark(task.status)).font(.system(size: base))
         }
     }
 
     @ViewBuilder
-    private var diff: some View {
+    private var diffView: some View {
         HStack(spacing: 4) {
             if task.diff.added > 0 {
-                Text("+\(task.diff.added)").foregroundStyle(Palette.added)
+                DiffBadge(prefix: "+", count: task.diff.added, color: Palette.added)
             }
             if task.diff.removed > 0 {
-                Text("-\(task.diff.removed)").foregroundStyle(Palette.removed)
+                DiffBadge(prefix: "-", count: task.diff.removed, color: Palette.removed)
             }
             if task.diff.untracked > 0 {
-                Text("?\(task.diff.untracked)").foregroundStyle(Palette.untracked)
+                DiffBadge(prefix: "?", count: task.diff.untracked, color: Palette.untracked)
             }
         }
         .font(.system(size: base * 0.8).monospacedDigit())
@@ -204,11 +259,92 @@ private struct TaskRow: View {
     }
 }
 
+/// コンテキスト使用率の文字とミニカプセルバー
+private struct ContextMiniBar: View {
+    let percent: Int
+    let base: CGFloat
+
+    private var barWidth: CGFloat { base * 1.8 }
+    private var barHeight: CGFloat { max(3, base * 0.2) }
+
+    var body: some View {
+        HStack(spacing: base * 0.2) {
+            Text("Context: \(percent)%")
+                .font(.system(size: base * 0.7).monospacedDigit())
+                .foregroundStyle(Palette.context(percent))
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.gray.opacity(0.25))
+                    Capsule()
+                        .fill(Palette.context(percent))
+                        .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(percent) / 100)))
+                }
+            }
+            .frame(width: barWidth, height: barHeight)
+        }
+    }
+}
+
+/// 差分が増えたときに「ポンッ」と小さく弾けて光るバッジ
+private struct DiffBadge: View {
+    let prefix: String
+    let count: Int
+    let color: Color
+
+    @State private var prevCount: Int = 0
+    @State private var popping = false
+
+    var body: some View {
+        Text("\(prefix)\(count)")
+            .foregroundStyle(color)
+            .scaleEffect(popping ? 1.28 : 1.0)
+            .brightness(popping ? 0.35 : 0.0)
+            .animation(.spring(response: 0.28, dampingFraction: 0.52), value: popping)
+            .onChange(of: count) { newCount in
+                if newCount > prevCount && prevCount != 0 {
+                    popping = true
+                    Task {
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        popping = false
+                    }
+                }
+                prevCount = newCount
+            }
+            .onAppear { prevCount = count }
+    }
+}
+
+/// 完了時にシュッと一筆書きで描かれるチェックマーク
+private struct AnimatedCheckmark: View {
+    let size: CGFloat
+    @State private var progress: CGFloat = 0
+
+    var body: some View {
+        CheckmarkShape()
+            .trim(from: 0, to: progress)
+            .stroke(Palette.dim, style: StrokeStyle(lineWidth: max(1.5, size * 0.14), lineCap: .round, lineJoin: .round))
+            .frame(width: size * 0.8, height: size * 0.8)
+            .onAppear {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    progress = 1
+                }
+            }
+    }
+}
+
+private struct CheckmarkShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.12, y: rect.minY + rect.height * 0.52))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.42, y: rect.minY + rect.height * 0.86))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.92, y: rect.minY + rect.height * 0.18))
+        return path
+    }
+}
+
 /// 回っているリング。実行中の印。
-///
-/// macOS 標準の ProgressView は細く薄いので、小さな行の中では何が起きているのか
-/// 分かりにくい。元の iTerm2 パネルが CSS で描いていたリングをそのまま起こす。
-/// 薄い輪を下敷きにして、その一部だけ色を付けて回す形。
 private struct Spinner: View {
     let size: CGFloat
     @State private var spinning = false
