@@ -3,3 +3,7 @@
 build/
 *.xcuserdatad
 .DS_Store
+.knowledge/knowledge.db
+.knowledge/knowledge.db.bak.*
+.knowledge/search.log
+.knowledge/command.log

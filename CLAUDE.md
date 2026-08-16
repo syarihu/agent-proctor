@@ -65,3 +65,7 @@ diff -u /tmp/proctor-baseline/{before,after}.txt
 ```
 
 アプリの見た目を変えたときは `scripts/install.sh` で入れ直して実機で確かめる。
+
+
+# Local Knowledge Base
+@.knowledge/lk-instructions.md
