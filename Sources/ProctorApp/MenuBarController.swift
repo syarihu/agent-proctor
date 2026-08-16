@@ -8,12 +8,16 @@ import ProctorKit
 /// もともと iTerm2 のステータスバーに出していた「▶2 ⏳1」を引き継ぐもの。
 /// 動いているものが無いときは項目ごと隠す。タブ色と同じで
 /// 「印が出ている = 見るべきものがある」という引き算にそろえる。
+///
+/// 記号の描き方は StatusGlyph が持つ。一覧では絵文字を使っているが、
+/// メニューバーでは字幅の揃う SF Symbols に置き換えている。
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let item: NSStatusItem
     private let store: TaskStore
     private let appearance: Appearance
     private var cancellable: AnyCancellable?
+    private var appearanceObserver: NSKeyValueObservation?
 
     var onToggleSidebar: (() -> Void)?
     var onOpenTask: ((String) -> Void)?
@@ -34,6 +38,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         cancellable = store.$summary.sink { [weak self] summary in
             self?.render(summary)
         }
+
+        // 記号の色は描いた時点の地色で焼き込まれるので、
+        // ライト/ダークが切り替わったら描き直さないと沈んで見えなくなる
+        appearanceObserver = item.button?.observe(\.effectiveAppearance) {
+            [weak self] _, _ in
+            Task { @MainActor in self?.render(self?.store.summary ?? []) }
+        }
+
         render(store.summary)
     }
 
@@ -43,9 +55,24 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             return
         }
         item.isVisible = true
-        item.button?.title = summary
-            .map { "\(TaskStatus.mark($0.status))\($0.count)" }
-            .joined(separator: " ")
+        // 記号は SF Symbols を画像として差し込む (StatusGlyph)。
+        // 絵文字を文字列で並べると字幅が揃わず、数が変わるたびにバーが揺れる。
+        //
+        // 画像はテンプレートとして扱われないので、地色に合う色をこちらで解決して渡す。
+        // メニューバーはシステムのライト/ダークとは別に暗くなることがあるので、
+        // ボタン自身の見え方を基準にする
+        item.button?.attributedTitle = StatusGlyph.summaryLine(
+            summary, defaultTint: menuBarTextColor())
+    }
+
+    /// メニューバーの文字色。今の見え方に合わせて解決する
+    private func menuBarTextColor() -> NSColor {
+        guard let appearance = item.button?.effectiveAppearance else { return .labelColor }
+        var color = NSColor.labelColor
+        appearance.performAsCurrentDrawingAppearance {
+            color = NSColor.labelColor.usingColorSpace(.sRGB) ?? .labelColor
+        }
+        return color
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -67,9 +94,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             menu.addItem(withTitle: "動いているエージェントはいません", action: nil, keyEquivalent: "")
         } else {
             for task in tasks {
-                let title = "\(TaskStatus.mark(task.status))  \(task.name ?? task.id)"
-                let entry = NSMenuItem(title: title,
+                let entry = NSMenuItem(title: "",
                                        action: #selector(openTask(_:)), keyEquivalent: "")
+                // 項目の頭にも同じ記号を出す。メニューバーの数字と見比べたときに
+                // どれが確認待ちなのかを字面で対応させたい
+                entry.image = StatusGlyph.menuIcon(for: task.status)
+                entry.title = task.name ?? task.id
                 entry.target = self
                 entry.representedObject = task.id
                 entry.toolTip = "\(task.branch) — \(task.worktree)"
