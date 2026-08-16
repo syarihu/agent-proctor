@@ -55,18 +55,9 @@ struct SettingsView: View {
                         .frame(maxWidth: 180)
 
                         if appearance.useCustomBackgroundColor {
-                            ColorPicker("", selection: Binding(
-                                get: {
-                                    Color(nsColor: NSColor(hex: appearance.customColorHex) ?? NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 1))
-                                },
-                                set: {
-                                    if let hex = NSColor($0).toHex() as String? {
-                                        appearance.customColorHex = hex
-                                    }
-                                }
-                            ), supportsOpacity: false)
-                            .labelsHidden()
-                            .frame(width: 32)
+                            ColorPicker("", selection: $appearance.customColor, supportsOpacity: false)
+                                .labelsHidden()
+                                .frame(width: 32)
                         }
 
                         Spacer()

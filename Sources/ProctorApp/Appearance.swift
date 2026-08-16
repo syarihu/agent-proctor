@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import SwiftUI
 import CoreGraphics
 import Combine
 
@@ -69,6 +70,7 @@ final class Appearance: ObservableObject {
                 return
             }
             UserDefaults.standard.set(opacity, forKey: Self.opacityKey)
+            onAppearanceChange?()
         }
     }
 
@@ -79,17 +81,32 @@ final class Appearance: ObservableObject {
     @Published var useCustomBackgroundColor: Bool {
         didSet {
             UserDefaults.standard.set(useCustomBackgroundColor, forKey: Self.useCustomColorKey)
+            onAppearanceChange?()
         }
     }
 
     @Published var customColorHex: String {
         didSet {
             UserDefaults.standard.set(customColorHex, forKey: Self.customColorKey)
+            onAppearanceChange?()
+        }
+    }
+
+    /// SettingsView の ColorPicker と直接バインドするためのプロパティ
+    var customColor: Color {
+        get {
+            Color(nsColor: NSColor(hex: customColorHex) ?? NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 1))
+        }
+        set {
+            let nsColor = NSColor(newValue)
+            customColorHex = nsColor.toHex()
         }
     }
 
     /// iTerm2 から取得した背景色
-    @Published var itermBackgroundColor: NSColor?
+    @Published var itermBackgroundColor: NSColor? {
+        didSet { onAppearanceChange?() }
+    }
 
     /// 実際にパネルに適用する背景色（透明度適用済み）
     var resolvedBackgroundColor: NSColor {
@@ -101,6 +118,9 @@ final class Appearance: ObservableObject {
         }
         return base.withAlphaComponent(opacity)
     }
+
+    /// パネルなどの描画更新通知
+    var onAppearanceChange: (() -> Void)?
 
     // MARK: -
 

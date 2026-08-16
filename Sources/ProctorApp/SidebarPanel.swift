@@ -44,11 +44,11 @@ final class ResizeHandleView: NSView {
 final class SidebarPanel: NSObject {
     private var panel: NSPanel!
     private var handle: ResizeHandleView!
+    private var backgroundTintView: NSView?
     private var timer: Timer?
 
     private let appearance: Appearance
     private var widthObserver: AnyCancellable?
-    private var appearanceObserver: AnyCancellable?
 
     private var lastTarget: NSRect = .zero
     private(set) var isShowing = false
@@ -91,10 +91,16 @@ final class SidebarPanel: NSObject {
 
         let effect = NSVisualEffectView(frame: container.bounds)
         effect.autoresizingMask = [.width, .height]
-        effect.material = .underWindowBackground
+        effect.material = .hudWindow
         effect.blendingMode = .behindWindow
         effect.state = .active
         container.addSubview(effect)
+
+        let tintView = NSView(frame: container.bounds)
+        tintView.autoresizingMask = [.width, .height]
+        tintView.wantsLayer = true
+        container.addSubview(tintView)
+        backgroundTintView = tintView
 
         let host = NSHostingView(rootView: content)
         host.frame = container.bounds
@@ -114,10 +120,8 @@ final class SidebarPanel: NSObject {
         widthObserver = appearance.$sidebarWidth.sink { [weak self] _ in
             self?.wakeUp()
         }
-        appearanceObserver = appearance.objectWillChange.sink { [weak self] _ in
-            Task { @MainActor in
-                self?.refreshBackground()
-            }
+        appearance.onAppearanceChange = { [weak self] in
+            self?.refreshBackground()
         }
 
         // iTerm2 がアクティブになった瞬間に即座に復帰したい
@@ -137,7 +141,7 @@ final class SidebarPanel: NSObject {
 
     private func refreshBackground() {
         let color = appearance.resolvedBackgroundColor
-        panel.contentView?.layer?.backgroundColor = color.cgColor
+        backgroundTintView?.layer?.backgroundColor = color.cgColor
     }
 
     @objc private func appActivated() { wakeUp() }
