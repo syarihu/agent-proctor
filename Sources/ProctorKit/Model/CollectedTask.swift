@@ -19,6 +19,8 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     public var agent: String?
     /// いま触っているツール。台帳の値そのまま (止まったあとも残っている)
     public var activity: String?
+    /// 終わったあと、そのタブを見た時刻
+    public var seenAt: Int?
     public var name: String?
     public var model: String?
     public var contextPercent: Int?
@@ -35,6 +37,12 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
 
     /// 一覧に出す見出し。セッション名が付いていればそれを、無ければ ID を使う
     public var displayName: String { name ?? id }
+
+    /// 表示に使う状態。見たあとの完了は確認済みに畳む。
+    /// 動いていた場所が消えていれば status のほうが先に missing になっている
+    public var displayStatus: String {
+        TaskStatus.display(status: status, seenAt: seenAt)
+    }
 
     /// いま出してよい活動。動いているあいだだけ返す。
     /// 止まったあとも出しておくと、終わった作業を今やっているように見える
@@ -74,6 +82,7 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         subagents = record.subagents ?? 0
         agent = record.agent
         activity = record.activity
+        seenAt = record.seenAt
         name = record.name
         model = record.model
         contextPercent = record.contextPercent

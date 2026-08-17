@@ -45,6 +45,11 @@ public enum RecordHookEvent {
             if ledger.tasks[index].status != status {
                 ledger.tasks[index].status = status
                 ledger.tasks[index].updatedAt = now
+                // また動き出したら「確認した」は無かったことにする。
+                // 次に終わったときは別の結果なので、改めて見てほしい
+                if status == TaskStatus.running || status == TaskStatus.waiting {
+                    ledger.tasks[index].seenAt = nil
+                }
             }
             if let session = payload.sessionID, ledger.tasks[index].sessionId != session {
                 ledger.tasks[index].sessionId = session

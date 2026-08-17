@@ -20,6 +20,8 @@ enum Terminal {
         TaskStatus.running: "36",
         TaskStatus.waiting: "33",
         TaskStatus.done: "32",
+        // 見終わったものは役目を終えているので、色を引いて背景に馴染ませる
+        TaskStatus.seen: "2",
         TaskStatus.failed: "31",
         TaskStatus.missing: "31",
     ]

@@ -34,6 +34,9 @@ enum StatusGlyph {
             return ("play.fill", defaultTint)
         case TaskStatus.done:
             return ("checkmark", .systemGreen)
+        case TaskStatus.seen:
+            // 見終わったもの。色は落として、まだ見ていない完了と区別する
+            return ("checkmark.circle", defaultTint.withAlphaComponent(0.55))
         case TaskStatus.failed:
             return ("xmark", .systemRed)
         case TaskStatus.missing:

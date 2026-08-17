@@ -98,7 +98,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                                        action: #selector(openTask(_:)), keyEquivalent: "")
                 // 項目の頭にも同じ記号を出す。メニューバーの数字と見比べたときに
                 // どれが確認待ちなのかを字面で対応させたい
-                entry.image = StatusGlyph.menuIcon(for: task.status)
+                entry.image = StatusGlyph.menuIcon(for: task.displayStatus)
                 entry.title = task.name ?? task.id
                 entry.target = self
                 entry.representedObject = task.id

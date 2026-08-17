@@ -29,6 +29,9 @@ public struct TaskRecord: Codable, Equatable {
     /// ツールを叩くたびに変わるので、ここが動いても updatedAt は動かさない
     /// (動かすと「経過」がツールのたびに 0 に戻り、並び順も落ち着かなくなる)
     public var activity: String?
+    /// 終わったあと、そのタブを見た時刻。見ていなければ nil。
+    /// また動き出したら nil に戻す (次に終わったときは別の結果なので、改めて見てほしい)
+    public var seenAt: Int?
 
     // ここから下は statusline だけが知っている情報。
     // hooks の payload には来ないので RecordSessionStats が横流しする
@@ -40,7 +43,7 @@ public struct TaskRecord: Codable, Equatable {
                 sessionId: String? = nil, itermSession: String? = nil,
                 status: String, createdAt: Int, updatedAt: Int,
                 subagents: Int? = nil, agent: String? = nil,
-                activity: String? = nil,
+                activity: String? = nil, seenAt: Int? = nil,
                 name: String? = nil, model: String? = nil,
                 contextPercent: Int? = nil) {
         self.id = id
@@ -55,9 +58,15 @@ public struct TaskRecord: Codable, Equatable {
         self.subagents = subagents
         self.agent = agent
         self.activity = activity
+        self.seenAt = seenAt
         self.name = name
         self.model = model
         self.contextPercent = contextPercent
+    }
+
+    /// 表示に使う状態。見たあとの完了は確認済みに畳む
+    public var displayStatus: String {
+        TaskStatus.display(status: status, seenAt: seenAt)
     }
 }
 

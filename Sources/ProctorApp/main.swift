@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var sidebar: SidebarPanel!
     private var menuBar: MenuBarController!
     private var reaper: Reaper!
+    private var focus: FocusWatcher!
     private var settings: SettingsWindow!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -47,6 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBar.onOpenSettings = { [weak self] in self?.settings.show() }
 
         reaper = Reaper { [weak self] in self?.store.refreshNow() }
+        focus = FocusWatcher(
+            onFocus: { [weak self] session in self?.store.setFocused(session) },
+            // 書いたのは自分なので、台帳の更新時刻を待たずに映す
+            onSeen: { [weak self] in self?.store.refreshNow() })
 
         // 背景色は iTerm2 が起きてウィンドウを持つまで取れない。
         // 一度取れれば十分なので、取れるまで少し粘る

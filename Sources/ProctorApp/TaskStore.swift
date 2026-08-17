@@ -23,6 +23,9 @@ final class TaskStore: ObservableObject {
     @Published private(set) var records: [TaskRecord] = []
     /// メニューバーの要約
     @Published private(set) var summary: [(status: String, count: Int)] = []
+    /// いま見ている iTerm2 のタブ。台帳には無い情報なので外から入れてもらう
+    /// (聞きに行くのは FocusWatcher。ここは表示のために預かるだけ)
+    @Published private(set) var focusedSession: String?
 
     /// 台帳の更新時刻を見に行く間隔。stat を叩くだけなので軽い
     private let pollInterval: TimeInterval = 0.5
@@ -56,6 +59,12 @@ final class TaskStore: ObservableObject {
         guard collecting != on else { return }
         collecting = on
         if on { recount() }
+    }
+
+    /// いま見ているタブが変わったときに呼ぶ。
+    func setFocused(_ session: String?) {
+        guard focusedSession != session else { return }
+        focusedSession = session
     }
 
     /// 台帳が外から変わったかもしれないときに呼ぶ (自分で書き換えた直後など)。

@@ -46,6 +46,31 @@ enum ItermBridge {
         return Set(ids)
     }
 
+    /// いま見ているタブ (最前面のウィンドウの現在のセッション) の guid。
+    ///
+    /// ウィンドウが1つも無いときは空文字を返す。窓が無い状態で
+    /// `current window` を辿ると AppleScript がエラーになり、
+    /// 1秒ごとに標準エラーへ吐き続けることになる。
+    ///
+    /// 聞けなかったとき (iTerm2 が居ない・許可が無い) は nil。
+    /// 「どこも見ていない」と区別できないと、印を消してよいか決められない。
+    static func focusedSession() -> String? {
+        let source = """
+        tell application "iTerm2"
+            if (count of windows) is 0 then return ""
+            return id of current session of current tab of current window
+        end tell
+        """
+        guard let text = execute(source, interactive: false) else { return nil }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// iTerm2 が最前面か。確認済みの印を付けてよいかの判定に使う。
+    /// NSWorkspace を見るだけなのでオートメーションの許可は要らない
+    static var isItermFrontmost: Bool {
+        NSWorkspace.shared.frontmostApplication?.bundleIdentifier == bundleID
+    }
+
     /// その guid のセッションが開いているタブにフォーカスする。
     /// 見つからなければ false を返すので、呼び出し側は開き直しに回れる。
     @discardableResult

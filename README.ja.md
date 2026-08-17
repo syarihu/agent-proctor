@@ -27,6 +27,15 @@ hooks がすでに送っている `PostToolUse` の payload から組み立て�
 繋ぎ直すものは無い (確かめたのは Claude Code。`tool_name` と `tool_input` を
 同じ形で送るエージェントなら同じように出る)。
 
+終わったものは、**まだ見ていない間だけ**緑の `✅ 完了` で出る。そのタブを見ると
+`✔ 確認済み` に変わって行ごと薄くなる。**色が付いている = まだ手を付けていない**、
+で読めるようにするため。消さずに残すのは、何をやったかを後から辿れるように。
+また動き出したら確認済みは外れる (次に終わったときは別の結果なので、改めて見てほしい)。
+失敗は見たあとも失敗のまま出す (見たからといって片付いたわけではないため)。
+
+いま開いているタブの行には、左に細い帯と薄い下地が付く。確認済みで引いた分は
+打ち消すので、見ている場所が埋もれることはない。
+
 ## 設計
 
 ロジックを CLI とアプリの両方から使えるように、`ProctorKit` を3層に分けている。
@@ -42,7 +51,7 @@ ProctorKit/
                LedgerStore, GitClient, ProcessRunner, EnvironmentSource, Paths
   UseCase/     やりたいこと1つに1つ。判断はすべてここが持つ
                CollectTasks, RecordHookEvent, RecordSessionStats,
-               ReapClosedSessions, HookPayload
+               MarkSessionSeen, ReapClosedSessions, HookPayload
 
 proctor/       CLI (View)。引数を読んで UseCase を呼び、結果を端末向けに整える
 ProctorApp/    アプリ (View)。SwiftUI と AppKit。TaskStore が Repository を包む
@@ -157,6 +166,12 @@ PTYSession の guid）なので、台帳に持っておけばそのまま突き�
 hardened runtime の下では `com.apple.security.automation.apple-events` の
 entitlement が要る。これが無いと Apple Event がランタイムに弾かれ、
 TCC まで届かないためシステム設定のオートメーション一覧にも出てこない。
+
+いま見ているタブは1秒ごとに聞きに行く (`FocusWatcher`)。iTerm2 に同梱の Python から
+なら FocusMonitor が変化を押してくれるが、外からは聞くしかない。取れなかったときは
+前の値を保つ。**iTerm2 が前面かどうかは、確認済みの印を付けるときだけ見る。**
+サイドバーを操作している間は iTerm2 が前面から外れるので、居場所の印まで
+そこで縛ると、押した瞬間に消えてしまう。
 
 サイドバーの位置合わせは CGWindowList で iTerm2 のウィンドウ枠を読む。
 こちらはオートメーションの許可が要らないので、許可を出す前でも吸着だけは動く。

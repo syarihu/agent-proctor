@@ -43,7 +43,8 @@ struct TaskListView: View {
                                     .padding(.bottom, base * 0.1)
                             }
                             ForEach(group.tasks) { task in
-                                TaskRow(task: task, base: base, onOpen: onOpen)
+                                TaskRow(task: task, base: base,
+                                        isCurrent: isCurrent(task), onOpen: onOpen)
                                     .padding(.leading, groups.count > 1 ? base : 0)
                             }
                         }
@@ -54,6 +55,14 @@ struct TaskListView: View {
             .padding(base * 0.3)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// いま iTerm2 で開いているタブかどうか。
+    /// 台帳を持たないセッション (itermSession が無い) を巻き込まないよう、
+    /// 空同士が一致してしまう組み合わせは弾く
+    private func isCurrent(_ task: CollectedTask) -> Bool {
+        guard let focused = store.focusedSession, !focused.isEmpty else { return false }
+        return task.itermSession == focused
     }
 
     private var taskOrderKey: String {
@@ -105,10 +114,15 @@ struct TaskListView: View {
 private struct TaskRow: View {
     let task: CollectedTask
     let base: CGFloat
+    /// いま iTerm2 で開いているタブ
+    let isCurrent: Bool
     var onOpen: (CollectedTask) -> Void
 
     @State private var hovering = false
     @State private var diving = false
+
+    /// 終わったあと、そのタブを見たもの
+    private var isSeen: Bool { task.displayStatus == TaskStatus.seen }
 
     var body: some View {
         HStack(alignment: .top, spacing: base * 0.4) {
@@ -146,8 +160,7 @@ private struct TaskRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: base * 0.5) {
                     Text(task.displayName)
                         .font(.system(size: base, weight: .semibold))
-                        // 待たせているものは目に留まってほしいので少し強く出す
-                        .foregroundStyle(task.status == TaskStatus.waiting ? Palette.waiting : Palette.fg)
+                        .foregroundStyle(titleColor)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -185,8 +198,24 @@ private struct TaskRow: View {
         .padding(.horizontal, base * 0.4)
         .padding(.vertical, base * 0.5)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // 見終わったものは役目を終えたので引いて背景に馴染ませる。消さずに残すのは、
+        // 何をやったかを後から辿れるようにするため。
+        // ただし今開いているタブは、引いた分を打ち消して居場所が埋もれないようにする
+        .opacity(isSeen && !isCurrent ? 0.45 : 1)
         .background(
             ZStack {
+                // いま見ているタブ。状態の色とぶつからないよう、
+                // 薄い下地と左の帯で示す
+                if isCurrent {
+                    RoundedRectangle(cornerRadius: base * 0.3)
+                        .fill(Palette.current)
+                    HStack {
+                        RoundedRectangle(cornerRadius: base * 0.1)
+                            .fill(Palette.spinner)
+                            .frame(width: max(2, base * 0.16))
+                        Spacer(minLength: 0)
+                    }
+                }
                 if hovering {
                     RoundedRectangle(cornerRadius: base * 0.3)
                         .fill(Palette.hover)
@@ -219,6 +248,17 @@ private struct TaskRow: View {
         .help(task.worktree)
     }
 
+    /// 待たせているものは目に留まってほしいので少し強く出す。
+    /// 終わったのにまだ見ていないものも色を残し、見たら普通の色に戻す
+    /// (色が付いている = まだ手を付けていない、で読めるようにする)
+    private var titleColor: Color {
+        switch task.displayStatus {
+        case TaskStatus.waiting: return Palette.waiting
+        case TaskStatus.done: return Palette.done
+        default: return Palette.fg
+        }
+    }
+
     @ViewBuilder
     private var agentIcon: some View {
         if task.resolvedAgent == "agy" {
@@ -232,18 +272,20 @@ private struct TaskRow: View {
         }
     }
 
-    /// 実行中は回っているリング、確認待ちはゆっくり明滅、完了時はシュッと描かれるチェックマーク
+    /// 実行中は回っているリング、確認待ちはゆっくり明滅、完了時はシュッと描かれるチェックマーク。
+    /// 見終わったもの (確認済み) は静かな ✔ に置き換える
     @ViewBuilder
     private var mark: some View {
-        switch task.status {
+        switch task.displayStatus {
         case TaskStatus.running:
             Spinner(size: base)
         case TaskStatus.waiting:
-            Text(TaskStatus.mark(task.status)).font(.system(size: base)).pulsing()
+            Text(TaskStatus.mark(task.displayStatus)).font(.system(size: base)).pulsing()
         case TaskStatus.done:
-            AnimatedCheckmark(size: base)
+            // まだ見ていない完了。タイトルと同じ色にして、印と名前で色がちぐはぐにならないようにする
+            AnimatedCheckmark(size: base, color: Palette.done)
         default:
-            Text(TaskStatus.mark(task.status)).font(.system(size: base))
+            Text(TaskStatus.mark(task.displayStatus)).font(.system(size: base))
         }
     }
 
@@ -331,12 +373,14 @@ private struct DiffBadge: View {
 /// 完了時にシュッと一筆書きで描かれるチェックマーク
 private struct AnimatedCheckmark: View {
     let size: CGFloat
+    /// 既定は控えめな色。まだ見ていない完了だけ、呼ぶ側が色を渡して目立たせる
+    var color: Color = Palette.dim
     @State private var progress: CGFloat = 0
 
     var body: some View {
         CheckmarkShape()
             .trim(from: 0, to: progress)
-            .stroke(Palette.dim, style: StrokeStyle(lineWidth: max(1.5, size * 0.14), lineCap: .round, lineJoin: .round))
+            .stroke(color, style: StrokeStyle(lineWidth: max(1.5, size * 0.14), lineCap: .round, lineJoin: .round))
             .frame(width: size * 0.8, height: size * 0.8)
             .onAppear {
                 withAnimation(.easeOut(duration: 0.3)) {
@@ -407,7 +451,11 @@ enum Palette {
     static let fg = Color.primary
     static let dim = Color.secondary
     static let hover = Color.gray.opacity(0.18)
+    /// いま開いているタブの下地。帯 (spinner の色) と合わせて居場所を示す
+    static let current = Color.gray.opacity(0.13)
     static let waiting = Color(red: 1.0, green: 0.655, blue: 0.149)     // #ffa726
+    /// 終わったのにまだ見ていないもの。印 (✅) と揃えて緑にする
+    static let done = Color(red: 0.400, green: 0.733, blue: 0.416)      // #66bb6a
     static let agents = Color(red: 0.671, green: 0.533, blue: 0.941)    // #ab88f0
     static let added = Color(red: 0.298, green: 0.686, blue: 0.314)     // #4caf50
     static let removed = Color(red: 0.937, green: 0.325, blue: 0.314)   // #ef5350

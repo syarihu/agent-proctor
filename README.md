@@ -28,6 +28,17 @@ still going. It is built from the `PostToolUse` payload the hooks already send,
 so there is nothing extra to wire up (verified with Claude Code; any agent that
 sends `tool_name` and `tool_input` the same way gets it too).
 
+A finished session shows as a green `✅ 完了` **only until you look at it**.
+Focus that tab and it turns into a quiet `✔ 確認済み` with the whole row dimmed,
+so that colour means work you have not dealt with yet. It stays in the list
+rather than disappearing, so you can still trace what happened. Starting again
+clears the mark — the next ending is a different result and deserves a look.
+A failure stays a failure after you have seen it; looking is not fixing.
+
+The tab you currently have open gets a thin bar on the left and a faint
+background, which also cancels the dimming so the place you are looking at never
+sinks into the list.
+
 ## Structure
 
 `ProctorKit` is split into three layers so that the logic can be used from both
@@ -44,7 +55,7 @@ ProctorKit/
                LedgerStore, GitClient, ProcessRunner, EnvironmentSource, Paths
   UseCase/     One per thing you want to do. Every decision lives here
                CollectTasks, RecordHookEvent, RecordSessionStats,
-               ReapClosedSessions, HookPayload
+               MarkSessionSeen, ReapClosedSessions, HookPayload
 
 proctor/       CLI (view). Reads arguments, calls a use case, formats for a terminal
 ProctorApp/    App (view). SwiftUI and AppKit. TaskStore wraps the repository
@@ -172,6 +183,13 @@ Under the hardened runtime the `com.apple.security.automation.apple-events`
 entitlement is required. Without it Apple Events are blocked by the runtime before
 they reach TCC, which means proctor never even appears in the Automation list in
 System Settings.
+
+The focused tab is polled once a second (`FocusWatcher`). From iTerm2's bundled
+Python, FocusMonitor pushes those changes; from outside, asking is all there is.
+A failed query keeps the previous value. **Whether iTerm2 is frontmost only
+gates marking things as seen** — the sidebar takes focus away from iTerm2 the
+moment you click it, so gating the highlight on that would erase it under your
+finger.
 
 The sidebar positions itself by reading iTerm2's window frame from CGWindowList.
 That needs no Automation permission, so snapping works even before you grant it.

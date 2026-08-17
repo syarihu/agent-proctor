@@ -24,7 +24,7 @@ func cmdLs(_ args: Args) throws -> Int32 {
     Terminal.table(
         headers: ["ID", "STATUS", "BRANCH", "DIFF", "AGE"],
         rows: tasks.map { task in
-            let (label, code) = Terminal.style(task.status)
+            let (label, code) = Terminal.style(task.displayStatus)
             return [task.id, Terminal.color(code, label), task.branch,
                     Terminal.diff(task.diff), Terminal.age(task.createdAt)]
         })

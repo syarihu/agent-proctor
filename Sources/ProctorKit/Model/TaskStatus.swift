@@ -16,12 +16,17 @@ public enum TaskStatus {
     public static let done = "done"
     public static let failed = "failed"
     public static let missing = "missing"
+    /// 終わったあと、そのタブを見たもの。**台帳には書かれない**。
+    /// 見たかどうかは seenAt という別の事実で、状態遷移とは独立に決まる。
+    /// 表示のときだけ done を畳んでここに寄せる (display を参照)
+    public static let seen = "seen"
 
     public static let marks: [String: String] = [
         idle: "・",
         running: "▶",
         waiting: "⏳",
         done: "✅",
+        seen: "✔",
         failed: "✖",
         missing: "⚠",
     ]
@@ -31,12 +36,22 @@ public enum TaskStatus {
         running: "実行中",
         waiting: "確認待ち",
         done: "完了",
+        seen: "確認済み",
         failed: "失敗",
         missing: "消失",
     ]
 
     /// 一覧に出したい順。数の要約もこの順に並べる
-    public static let order = [waiting, running, done, failed, missing, idle]
+    public static let order = [waiting, running, done, seen, failed, missing, idle]
+
+    /// 表示に使う状態。台帳の status とは別で、完了は見たかどうかで分ける。
+    ///
+    /// 畳むのは done だけ。失敗は見たあとも失敗のまま出す
+    /// (見たからといって、片付いたわけではないため)。
+    /// seenAt そのものは done と failed の両方に付く。
+    public static func display(status: String, seenAt: Int?) -> String {
+        status == done && seenAt != nil ? seen : status
+    }
 
     /// hooks から受け取れる状態。notification はここに含めない
     /// (何を意味するかが payload 次第なので、確定した後の値がここに来る)
@@ -53,9 +68,14 @@ public enum TaskStatus {
     ///
     /// 件数が 0 の状態は入れない。何も動いていなければ空になる。
     /// 呼び出し側が並べ替えずに済むよう order の順で返す。
+    ///
+    /// **確認済みは数えない。** ここに出したいのは「まだ手を付けていないもの」で、
+    /// 見終わったものまで数えると、片付けても数字が減らない
     public static func counts(_ tasks: [TaskRecord]) -> [(status: String, count: Int)] {
         var tally: [String: Int] = [:]
-        for task in tasks { tally[task.status, default: 0] += 1 }
+        for task in tasks where task.displayStatus != seen {
+            tally[task.displayStatus, default: 0] += 1
+        }
         return order.compactMap { key in
             guard let n = tally[key], n > 0 else { return nil }
             return (key, n)
