@@ -38,6 +38,47 @@ public struct HookPayload {
 
     public var message: String { box["message"] as? String ?? "" }
 
+    /// ターンの始まり (UserPromptSubmit)。人が何か打った直後だけ真になる。
+    /// 空のプロンプトは数えない (前のターンの活動を消してしまうため)
+    public var isTurnStart: Bool {
+        (box["prompt"] as? String).map { !$0.isEmpty } ?? false
+    }
+
+    /// いま触っているツールの表示ラベル。PostToolUse の payload から組む。
+    ///
+    /// 例: Bash -> "Bash: npm test" / Edit -> "Edit: TaskStore.swift"
+    ///     mcp__figma__get_screenshot -> "figma/get_screenshot: ..."
+    ///
+    /// ツール名が無いイベント (UserPromptSubmit や Stop) では nil を返す。
+    /// 呼ぶ側が「触らない」と「消す」を区別できるよう、空文字は返さない。
+    ///
+    /// 組み立てをここに置くのは、フックを書く側に写させないため。
+    /// 同じ形の payload を投げるエージェントなら、繋ぐだけで同じ行が出る。
+    public var toolActivity: String? {
+        guard let raw = box["tool_name"] as? String, !raw.isEmpty else { return nil }
+        // mcp__figma__get_screenshot のような長い名前は figma/get_screenshot に畳む
+        var name = raw
+        if name.hasPrefix("mcp__") { name.removeFirst("mcp__".count) }
+        name = name.replacingOccurrences(of: "__", with: "/")
+
+        let input = box["tool_input"] as? [String: Any] ?? [:]
+        var detail: String?
+        for key in ["command", "file_path", "url", "description"] {
+            guard let value = input[key] as? String, !value.isEmpty else { continue }
+            // ファイルはパスを丸ごと出すと横に長い。名前だけで用は足りる
+            detail = key == "file_path" ? URL(fileURLWithPath: value).lastPathComponent : value
+            break
+        }
+        return HookPayload.condensed(detail.map { "\(name): \($0)" } ?? name)
+    }
+
+    /// 台帳に載せる前に1行へ均す。command にはヒアドキュメントが丸ごと
+    /// 入ってくることがあり、そのまま持つと台帳が肥大化する
+    static func condensed(_ text: String, limit: Int = 80) -> String {
+        let flat = text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        return flat.count <= limit ? flat : String(flat.prefix(limit))
+    }
+
     /// セッションを動かしているエージェント ("claude" または "agy")。
     public var agent: String? {
         if let explicit = box["agent"] as? String, !explicit.isEmpty { return explicit }

@@ -168,6 +168,18 @@ private struct TaskRow: View {
                 }
                 .font(.system(size: base * 0.8))
                 .foregroundStyle(Palette.dim)
+
+                // いま触っているツール。動いているあいだだけ出る (currentActivity)。
+                // ツールのたびに差し替わるので、文字にはアニメーションを付けない
+                // (1手ごとに動くと目が休まらない)
+                if let activity = task.currentActivity {
+                    Text(activity)
+                        .font(.system(size: base * 0.75).monospaced())
+                        .foregroundStyle(Palette.activity)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
         .padding(.horizontal, base * 0.4)
@@ -401,6 +413,9 @@ enum Palette {
     static let removed = Color(red: 0.937, green: 0.325, blue: 0.314)   // #ef5350
     static let untracked = Color(red: 0.161, green: 0.714, blue: 0.965) // #29b6f6
     static let spinner = Color(red: 0.310, green: 0.765, blue: 0.969)   // #4fc3f7
+    /// いま触っているツールの行。主役はセッション名なので、
+    /// 読めるが目を引かない程度に落とす
+    static let activity = Color.secondary.opacity(0.85)
     static let claude = Color(red: 0.878, green: 0.478, blue: 0.345)       // #e07a58 (テラコッタ)
     static let antigravity = Color(red: 0.353, green: 0.647, blue: 0.980)  // #5aa5fa (ブルー)
 

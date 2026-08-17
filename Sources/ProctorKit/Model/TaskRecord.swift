@@ -25,6 +25,10 @@ public struct TaskRecord: Codable, Equatable {
     /// セッションを動かしているエージェント ("claude" や "agy")。
     /// タブを開き直すとき (attach) にどの CLI を呼ぶかの分岐に使う
     public var agent: String?
+    /// いま触っているツール ("Edit: TaskStore.swift" など)。
+    /// ツールを叩くたびに変わるので、ここが動いても updatedAt は動かさない
+    /// (動かすと「経過」がツールのたびに 0 に戻り、並び順も落ち着かなくなる)
+    public var activity: String?
 
     // ここから下は statusline だけが知っている情報。
     // hooks の payload には来ないので RecordSessionStats が横流しする
@@ -36,6 +40,7 @@ public struct TaskRecord: Codable, Equatable {
                 sessionId: String? = nil, itermSession: String? = nil,
                 status: String, createdAt: Int, updatedAt: Int,
                 subagents: Int? = nil, agent: String? = nil,
+                activity: String? = nil,
                 name: String? = nil, model: String? = nil,
                 contextPercent: Int? = nil) {
         self.id = id
@@ -49,6 +54,7 @@ public struct TaskRecord: Codable, Equatable {
         self.updatedAt = updatedAt
         self.subagents = subagents
         self.agent = agent
+        self.activity = activity
         self.name = name
         self.model = model
         self.contextPercent = contextPercent

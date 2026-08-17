@@ -65,9 +65,21 @@ public enum RecordHookEvent {
             if let ctx = payload.contextPercent, ledger.tasks[index].contextPercent != ctx {
                 ledger.tasks[index].contextPercent = ctx
             }
-            if status == TaskStatus.done, (ledger.tasks[index].subagents ?? 0) != 0 {
+            // いま何をしているか。updatedAt はここでは動かさない
+            // (ツールのたびに動かすと「経過」が 0 に戻り、並び順も落ち着かない)
+            switch resolveActivity(status: status, payload: payload) {
+            case .keep:
+                break
+            case .clear:
+                ledger.tasks[index].activity = nil
+            case .set(let text):
+                ledger.tasks[index].activity = text
+            }
+            if status == TaskStatus.done || status == TaskStatus.failed,
+               (ledger.tasks[index].subagents ?? 0) != 0 {
                 // ターンが終わればサブエージェントは残らない。
-                // 取りこぼしでずれた数をここで戻す
+                // 取りこぼしでずれた数をここで戻す。落ちて終わった (failed) ときも
+                // SubagentStop は来ないので、同じように戻す
                 ledger.tasks[index].subagents = 0
             }
         }
@@ -86,6 +98,28 @@ public enum RecordHookEvent {
     }
 
     // MARK: -
+
+    /// 「いま触っているツール」をどうするか。
+    ///
+    /// 何も返せない (`keep`) と消す (`clear`) は別物にしておく。フックの多くは
+    /// ツールの情報を持たずに飛んでくるので、区別しないと1つのイベントごとに
+    /// 消えて出てを繰り返す。
+    enum ActivityUpdate: Equatable {
+        case keep
+        case clear
+        case set(String)
+    }
+
+    /// - ターンが終わった (done / failed) → 何もしていないので消す
+    /// - ターンが始まった (UserPromptSubmit) → 前のターンの残りを消す
+    /// - ツールを叩いた (PostToolUse) → それを載せる
+    /// - それ以外 → 触らない。確認待ちの間も、直前に何をしていたかは残したい
+    static func resolveActivity(status: String, payload: HookPayload) -> ActivityUpdate {
+        if status == TaskStatus.done || status == TaskStatus.failed { return .clear }
+        if payload.isTurnStart { return .clear }
+        if let activity = payload.toolActivity { return .set(activity) }
+        return .keep
+    }
 
     /// 新しく登録するのは、これから動き出すときだけにする。
     ///
@@ -114,6 +148,9 @@ public enum RecordHookEvent {
             createdAt: now,
             updatedAt: now,
             agent: payload.agent,
+            // 最初の1件目が PostToolUse のこともある (前のセッションの記録を
+            // 消したあとなど)。そのときも何をしているかは載せておく
+            activity: payload.toolActivity,
             name: payload.sessionName,
             model: payload.modelName,
             contextPercent: payload.contextPercent))

@@ -72,9 +72,30 @@ final class TaskStore: ObservableObject {
             reloadRecords()
         }
         guard collecting else { return }
-        if changed || Date().timeIntervalSince(lastRecount) >= recountInterval {
+        // 台帳が変わっても、映せる分を映せたなら数え直しはしない。
+        // ただし間隔のほうは止めない。ツールが立て続けに動いている間ずっと
+        // 早い経路に乗り続けると、いちばん編集している最中に差分が固まってしまう
+        let applied = changed && applyLedgerValues()
+        if (changed && !applied) || Date().timeIntervalSince(lastRecount) >= recountInterval {
             recount()
         }
+    }
+
+    /// 台帳の変化のうち、git を起動せずに映せる分を先に映す。
+    ///
+    /// 「いま触っているツール」はツールのたびに変わる。ここで数え直していたら
+    /// 1手ごとに worktree の数だけ git が起きるので、差分の数字は据え置いて
+    /// 台帳の値だけ差し替える。
+    ///
+    /// - Returns: 映せたら true。数え直しが要るなら false
+    ///   (顔ぶれか状態が変わったとき。状態が動くのはターンの切れ目なので、
+    ///    そこでは数え直して差分を最新にする)
+    private func applyLedgerValues() -> Bool {
+        guard let quick = CollectTasks.reapplied(tasks, records: records) else { return false }
+        let statusChanged = zip(tasks, quick).contains { $0.status != $1.status }
+        guard !statusChanged else { return false }
+        tasks = quick
+        return true
     }
 
     private func reloadRecords() {

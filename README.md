@@ -15,11 +15,18 @@ in the background.
    develop · elapsed: 59s
 ▶ Split the kit into layers  (context: 32%)
    main · elapsed: 1m  🤖2              +74 -3 ?2
+   Edit: TaskStore.swift
 ```
 
 The session name, context usage and subagent count are things a tab cannot tell
 you. `elapsed` is the time since the status last changed — if something has been
 running for a long time, that is a hint that it is either thinking hard or stuck.
+
+The last line is the tool the agent is touching right now. It shows only while a
+session is running: keeping it afterwards makes finished work look like it is
+still going. It is built from the `PostToolUse` payload the hooks already send,
+so there is nothing extra to wire up (verified with Claude Code; any agent that
+sends `tool_name` and `tool_input` the same way gets it too).
 
 ## Structure
 
@@ -57,9 +64,19 @@ ProctorApp/    App (view). SwiftUI and AppKit. TaskStore wraps the repository
   how the ledger is read only has to be made in one place
 - **The ledger is guarded by an exclusive lock (`LedgerStore.withLock`) and is
   not written when nothing changed.** The ledger's modification time is the
-  signal the sidebar watches, so touching it without a change makes it recount
-  by spawning git every time. Hooks fire constantly and most of them change
-  nothing, which is exactly why this matters
+  signal the sidebar watches, so touching it without a change would wake the
+  sidebar for nothing. Hooks fire constantly and most of them change nothing,
+  which is exactly why this matters
+- **The sidebar refreshes at two speeds.** Values that come straight from the
+  ledger (status, activity, session name) are applied as soon as it changes —
+  `CollectTasks.reapplied` reuses the previous diff numbers and spawns no git.
+  The counting itself runs on its own interval, plus whenever a status changes,
+  because that is the moment the numbers are worth being exact. The activity
+  line changes on every tool call, so recounting there would spawn git once per
+  tool, per worktree
+- **Writing the activity does not move `updatedAt`.** That field is what
+  `elapsed` and the sort order are built on. Moving it on every tool call would
+  reset the clock constantly and never let the list settle
 - **`ls --json` emits keys in sorted order.** Swift dictionaries are ordered per
   process, so without this the same content comes out in a different order on
   every run. This output is diffed by AI and other tools, so it must be stable
