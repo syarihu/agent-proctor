@@ -5,8 +5,10 @@ import ProctorKit
 /// メニューバーの要約。
 ///
 /// もともと iTerm2 のステータスバーに出していた「▶2 ⏳1」を引き継ぐもの。
-/// 動いているものが無いときは項目ごと隠す。タブ色と同じで
+/// 知らせることが無いときは数字を出さず、静かな記号だけにする。タブ色と同じで
 /// 「印が出ている = 見るべきものがある」という引き算にそろえる。
+/// (項目そのものは残す。メニューが設定と終了の唯一の入口なので、
+///  消すと何も動いていないときに触れなくなる)
 ///
 /// 記号の描き方は StatusGlyph が持つ。一覧では絵文字を使っているが、
 /// メニューバーでは字幅の揃う SF Symbols に置き換えている。
@@ -50,11 +52,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func render(_ summary: [(status: String, count: Int)]) {
+        item.isVisible = true
+        // 知らせることが無いときも、静かな印だけ残して居場所は明け渡さない。
+        // メニューは設定・サイドバー切替・終了の唯一の入口なので、
+        // 消してしまうと何も動いていないときに触れなくなる
         guard !summary.isEmpty else {
-            item.isVisible = false
+            item.button?.attributedTitle = StatusGlyph.idleLine(
+                defaultTint: menuBarTextColor())
             return
         }
-        item.isVisible = true
         // 記号は SF Symbols を画像として差し込む (StatusGlyph)。
         // 絵文字を文字列で並べると字幅が揃わず、数が変わるたびにバーが揺れる。
         //

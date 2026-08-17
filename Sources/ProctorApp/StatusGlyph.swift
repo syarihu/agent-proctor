@@ -101,6 +101,33 @@ enum StatusGlyph {
         return sized.tinted(with: tint)
     }
 
+    /// 知らせることが何も無いときの印。
+    ///
+    /// 数字は出さない。出すべきものが無いことを、記号1つで静かに示す。
+    /// **項目ごと消してしまわないのは、メニューが設定とサイドバー切替と終了の
+    /// 唯一の入口だから。** 見張っているのに姿が無いと、生きているのかも分からない。
+    ///
+    /// 色は数字と同じ地色 (メニューバーの文字色) をそのまま使う。薄くすると
+    /// 壁紙が透ける場所で沈んで見えなくなる。白と決め打ちにしないのは、
+    /// メニューバーが明るいときに見えなくなるため
+    static func idleLine(fontSize: CGFloat = 13,
+                         defaultTint: NSColor) -> NSAttributedString {
+        let tint = defaultTint
+        guard let image = NSImage(systemSymbolName: "eyeglasses",
+                                  accessibilityDescription: "見張り中") else {
+            return NSAttributedString(string: "・", attributes: [.foregroundColor: tint])
+        }
+        let config = NSImage.SymbolConfiguration(pointSize: fontSize, weight: Self.weight)
+        let sized = (image.withSymbolConfiguration(config) ?? image)
+            .centered(inWidth: fontSize * 1.3).tinted(with: tint)
+
+        let attachment = NSTextAttachment()
+        attachment.image = sized
+        attachment.bounds = CGRect(x: 0, y: -fontSize * 0.12,
+                                   width: sized.size.width, height: sized.size.height)
+        return NSAttributedString(attachment: attachment)
+    }
+
     /// 要約をまるごと1行にする。組と組の間は文字の間より広く空ける
     static func summaryLine(_ summary: [(status: String, count: Int)],
                             fontSize: CGFloat = 13,
