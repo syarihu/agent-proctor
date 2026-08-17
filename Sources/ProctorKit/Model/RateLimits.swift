@@ -31,19 +31,30 @@ public struct AgentRateLimits: Codable, Equatable {
     }
 }
 
-/// エージェントごとのレートリミット集約情報。
+/// エージェント・アカウントごとのレートリミット集約情報。
 public struct AgentQuotaSummary: Equatable, Identifiable {
-    public var id: String { agent }
+    public var id: String { key }
+    /// 集約キー ("claude", "claude:work", "agy" など)
+    public var key: String
     /// エージェント種別 ("claude" または "agy")
     public var agent: String
-    /// 一覧に出す表示名 ("Claude Code" または "Antigravity")
+    /// アカウント名 (例: "work", "personal", nil)
+    public var account: String?
+    /// 一覧に出す表示名 ("Claude Code", "Claude Code (work)", "Antigravity")
     public var agentDisplayName: String {
-        agent == "agy" ? "Antigravity" : "Claude Code"
+        let base = agent == "agy" ? "Antigravity" : "Claude Code"
+        if let account, !account.isEmpty {
+            return "\(base) (\(account))"
+        }
+        return base
     }
     public var rateLimits: AgentRateLimits
 
-    public init(agent: String, rateLimits: AgentRateLimits) {
+    public init(key: String? = nil, agent: String, account: String? = nil, rateLimits: AgentRateLimits) {
+        let resolvedKey = key ?? (account.map { "\(agent):\($0)" } ?? agent)
+        self.key = resolvedKey
         self.agent = agent
+        self.account = account
         self.rateLimits = rateLimits
     }
 }

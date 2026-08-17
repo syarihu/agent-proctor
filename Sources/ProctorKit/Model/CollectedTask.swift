@@ -27,6 +27,7 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     public var model: String?
     public var contextPercent: Int?
     public var rateLimits: AgentRateLimits?
+    public var account: String?
 
     /// 表示側でパスから切り出さずに済むよう名前にしておく。
     /// プロジェクトごとにまとめるときの見出しになる
@@ -69,9 +70,21 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         return "claude"
     }
 
+    /// アカウントを含むエージェント識別キー ("claude", "claude:work", "agy" など)
+    public var resolvedAccountKey: String {
+        if let account, !account.isEmpty {
+            return "\(resolvedAgent):\(account)"
+        }
+        return resolvedAgent
+    }
+
     /// 一覧に出すエージェントの表示名
     public var agentDisplayName: String {
-        resolvedAgent == "agy" ? "Antigravity" : "Claude Code"
+        let base = resolvedAgent == "agy" ? "Antigravity" : "Claude Code"
+        if let account, !account.isEmpty {
+            return "\(base) (\(account))"
+        }
+        return base
     }
 
     public init(record: TaskRecord, repoName: String, exists: Bool, status: String,
@@ -94,6 +107,7 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         model = record.model
         contextPercent = record.contextPercent
         rateLimits = record.rateLimits
+        account = record.account
         self.repoName = repoName
         self.exists = exists
         self.diff = diff

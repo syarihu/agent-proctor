@@ -42,6 +42,8 @@ public struct TaskRecord: Codable, Equatable {
     public var model: String?
     public var contextPercent: Int?
     public var rateLimits: AgentRateLimits?
+    /// アカウント名 (例: "work", "personal", nil)
+    public var account: String?
 
     public init(id: String, repo: String, branch: String, worktree: String,
                 sessionId: String? = nil, itermSession: String? = nil,
@@ -50,7 +52,8 @@ public struct TaskRecord: Codable, Equatable {
                 activity: String? = nil, seenAt: Int? = nil, title: String? = nil,
                 name: String? = nil, model: String? = nil,
                 contextPercent: Int? = nil,
-                rateLimits: AgentRateLimits? = nil) {
+                rateLimits: AgentRateLimits? = nil,
+                account: String? = nil) {
         self.id = id
         self.repo = repo
         self.branch = branch
@@ -69,6 +72,7 @@ public struct TaskRecord: Codable, Equatable {
         self.model = model
         self.contextPercent = contextPercent
         self.rateLimits = rateLimits
+        self.account = account
     }
 
     /// 表示に使う状態。見たあとの完了は確認済みに畳む

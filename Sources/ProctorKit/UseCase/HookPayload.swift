@@ -100,6 +100,35 @@ public struct HookPayload {
         return nil
     }
 
+    /// アカウント名 ("work", "personal" など)。
+    public var account: String? {
+        for key in ["account", "account_name", "profile", "org"] {
+            if let value = box[key] as? String {
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { return trimmed }
+            }
+        }
+        if let configDir = box["config_dir"] as? String {
+            let last = URL(fileURLWithPath: configDir).lastPathComponent
+            if last != ".claude" && last != ".gemini" && !last.isEmpty {
+                return last.replacingOccurrences(of: ".claude-", with: "")
+                    .replacingOccurrences(of: ".claude_", with: "")
+                    .replacingOccurrences(of: ".gemini-", with: "")
+                    .replacingOccurrences(of: ".gemini_", with: "")
+            }
+        }
+        return nil
+    }
+
+    /// アカウント情報を含む台帳集約用のキー ("claude", "claude:work", "agy:personal" など)
+    public var agentKey: String {
+        let baseAgent = agent ?? "claude"
+        if let account, !account.isEmpty {
+            return "\(baseAgent):\(account)"
+        }
+        return baseAgent
+    }
+
     public var sessionName: String? {
         for key in ["session_name", "title", "session_title", "preview"] {
             if let value = box[key] as? String {

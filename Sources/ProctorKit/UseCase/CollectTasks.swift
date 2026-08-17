@@ -98,7 +98,7 @@ public enum CollectTasks {
         // 稼働中のタスクから最新の rateLimits を上書き反映
         for task in tasks {
             guard let limits = task.rateLimits, !limits.isEmpty else { continue }
-            let agentKey = task.resolvedAgent
+            let agentKey = task.resolvedAccountKey
             map[agentKey] = limits
         }
 
@@ -119,16 +119,31 @@ public enum CollectTasks {
             }
         }
 
-        // Claude を先、Antigravity を次、その他を名前順で安定させる
+        func parseKey(_ key: String) -> (baseAgent: String, account: String?) {
+            let parts = key.split(separator: ":", maxSplits: 1).map(String.init)
+            if parts.count == 2 {
+                return (parts[0], parts[1])
+            }
+            return (key, nil)
+        }
+
+        // Claude を先、Antigravity を次、アカウント名順で安定させる
         let priority = ["claude": 0, "agy": 1]
         return adjustedMap.keys.sorted { lhs, rhs in
-            let p1 = priority[lhs] ?? 99
-            let p2 = priority[rhs] ?? 99
+            let (baseL, accL) = parseKey(lhs)
+            let (baseR, accR) = parseKey(rhs)
+            let p1 = priority[baseL] ?? 99
+            let p2 = priority[baseR] ?? 99
             if p1 != p2 { return p1 < p2 }
-            return lhs < rhs
+            if baseL != baseR { return baseL < baseR }
+            if (accL == nil) != (accR == nil) {
+                return accL == nil
+            }
+            return (accL ?? "") < (accR ?? "")
         }.compactMap { key in
             guard let limits = adjustedMap[key] else { return nil }
-            return AgentQuotaSummary(agent: key, rateLimits: limits)
+            let (baseAgent, account) = parseKey(key)
+            return AgentQuotaSummary(key: key, agent: baseAgent, account: account, rateLimits: limits)
         }
     }
 }
