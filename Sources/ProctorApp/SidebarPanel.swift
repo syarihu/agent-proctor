@@ -49,8 +49,20 @@ final class SidebarPanel: NSObject {
 
     private let appearance: Appearance
     private var widthObserver: AnyCancellable?
+    private var roomObserver: AnyCancellable?
+    /// iTerm2 を右へ寄せて居場所を作る係。寄せた分を戻すのもここが覚えている
+    private let room = SidebarRoom()
 
     private var lastTarget: NSRect = .zero
+    /// 幅が最後に変わった時刻。ドラッグやスライダーで動かしている間は
+    /// 端末の幅を触らずに待つ (下記 widthSettleDelay)
+    private var lastWidthChange = Date.distantPast
+    /// 幅が落ち着いたと見なすまでの間。
+    ///
+    /// 幅を変えるたびに iTerm2 をリサイズすると、ドラッグ中に何度も窓を動かすことになり、
+    /// iTerm2 やウィンドウマネージャが元の大きさへ戻しにかかって取っ組み合いになる。
+    /// サイドバー自身は即座に追従するので、待つのは端末を詰める分だけ
+    private let widthSettleDelay: TimeInterval = 0.35
     private(set) var isShowing = false
     /// メニューから手で閉じたかどうか。iTerm2 の追従が勝手に開き直さないための札
     private(set) var userHidden = false
@@ -118,7 +130,16 @@ final class SidebarPanel: NSObject {
 
         // 幅や背景色の変更を監視。どちらから変わっても即座に置き直す
         widthObserver = appearance.$sidebarWidth.sink { [weak self] _ in
+            self?.lastWidthChange = Date()
+            // 望む幅が変わったのだから、諦めていた分は白紙に戻して試し直す
+            self?.room.retryNow()
             self?.wakeUp()
+        }
+        // 設定で切られたら、寄せた分はその場で返す。
+        // 切ったのに端末が細いままだと、何が起きたのか分からない
+        roomObserver = appearance.$makeRoomForSidebar.sink { [weak self] enabled in
+            guard let self else { return }
+            if enabled { self.wakeUp() } else { self.room.restore() }
         }
         appearance.onAppearanceChange = { [weak self] in
             self?.refreshBackground()
@@ -163,29 +184,20 @@ final class SidebarPanel: NSObject {
         }
     }
 
-    /// iTerm2 のウィンドウ枠を CGWindowList から読む。
-    ///
-    /// ステージマネージャで縮んだサムネイルを掴まないよう、
-    /// 通常のメインステージにある大きさのものだけ対象にする。
-    private func itermBounds() -> CGRect? {
-        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
-        guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID)
-                as? [[String: Any]] else { return nil }
+    /// iTerm2 のウィンドウ枠。読み方は SidebarRoom と共通にしてある
+    /// (別々に持つと、追いかける窓と寄せる窓が食い違う)
+    private func itermBounds() -> CGRect? { SidebarRoom.currentItermBounds() }
 
-        for window in list {
-            let owner = window[kCGWindowOwnerName as String] as? String ?? ""
-            let layer = window[kCGWindowLayer as String] as? Int ?? -1
-            guard owner == "iTerm2", layer == 0,
-                  let box = window[kCGWindowBounds as String] as? [String: CGFloat]
-            else { continue }
-            let width = box["Width"] ?? 0
-            let height = box["Height"] ?? 0
-            if width >= 400 && height >= 300 {
-                return CGRect(x: box["X"] ?? 0, y: box["Y"] ?? 0,
-                              width: width, height: height)
-            }
-        }
-        return nil
+    /// いま端末の幅を触ってはいけないか。
+    ///
+    /// - 幅を変えている途中 (端のドラッグ・設定のスライダー)
+    /// - マウスのボタンを押している間 (窓や縁を掴んでいる可能性がある)
+    ///
+    /// どちらも「人が手を動かしている最中」で、そこへ割り込んで窓を動かすと
+    /// 掴んでいるものが飛ぶ。落ち着いてから1回だけ寄せれば足りる
+    private var handsOff: Bool {
+        if Date().timeIntervalSince(lastWidthChange) < widthSettleDelay { return true }
+        return NSEvent.pressedMouseButtons != 0
     }
 
     private func updatePosition() {
@@ -204,8 +216,24 @@ final class SidebarPanel: NSObject {
                 isShowing = false
                 onVisibilityChange?(false)
             }
+            // 忘れるのは iTerm2 ごと終わったときだけ。CGWindowList は別スペースや
+            // 隠した窓を返さないので、スペースを切り替えるたびに忘れていると
+            // 寄せた分を戻せなくなる
+            if !ItermBridge.isItermRunning { room.forget() }
             // iTerm2 が見つからない・隠れている間も 0.5 秒間隔で待つ
             pollInterval = 0.5
+            return
+        }
+
+        // 左に隙間が無ければ iTerm2 を右へ寄せて場所を作る。
+        // 動かせたなら枠が変わっているので、置くのは次の周回で読み直してから。
+        //
+        // 手が動いている間は待つ。幅のドラッグ中やマウスを押している間に
+        // 端末を動かすと、掴んでいる窓が手の中で飛んだり、iTerm2 側の
+        // 引き戻しとぶつかって全画面へ戻されたりする
+        if appearance.makeRoomForSidebar, handsOff == false,
+           room.makeRoom(itermBounds: bounds, screen: screen, width: width) {
+            pollInterval = 0.016
             return
         }
 
@@ -233,12 +261,17 @@ final class SidebarPanel: NSObject {
         }
     }
 
+    /// 寄せた分の iTerm2 の幅を返す。終了するときに呼ぶ
+    func restoreRoom() { room.restore() }
+
     func toggle() {
         if isShowing {
             userHidden = true
             panel.orderOut(nil)
             isShowing = false
             onVisibilityChange?(false)
+            // 隠したなら場所を空けておく理由が無い。詰めた分を返す
+            room.restore()
         } else {
             userHidden = false
             // 次の追従で必ず置き直させる

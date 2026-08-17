@@ -65,6 +65,27 @@ enum ItermBridge {
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// 一番手前のウィンドウの枠を置き直す。
+    ///
+    /// AppleScript の `bounds` は {左, 上, 右, 下} で、原点は画面の左上。
+    /// CGWindowList と同じ向きなので、読んだ枠をそのまま加工して渡せる。
+    ///
+    /// 動かすのは `current window`。サイドバーが追いかけているのも
+    /// CGWindowList で最前面に出ている iTerm2 のウィンドウなので、同じものを指す。
+    @discardableResult
+    static func setCurrentWindowBounds(_ rect: CGRect) -> Bool {
+        let source = """
+        tell application "iTerm2"
+            if (count of windows) is 0 then return "none"
+            set bounds of current window to \
+        {\(Int(rect.minX)), \(Int(rect.minY)), \(Int(rect.maxX)), \(Int(rect.maxY))}
+            return "ok"
+        end tell
+        """
+        // 人が押した操作ではないので、許可が無いときに騒がない
+        return execute(source, interactive: false)?.hasPrefix("ok") == true
+    }
+
     /// iTerm2 が最前面か。確認済みの印を付けてよいかの判定に使う。
     /// NSWorkspace を見るだけなのでオートメーションの許可は要らない
     static var isItermFrontmost: Bool {

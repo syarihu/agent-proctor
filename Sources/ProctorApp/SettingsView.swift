@@ -66,11 +66,17 @@ struct SettingsView: View {
                             .disabled(!appearance.useCustomBackgroundColor && appearance.customColorHex == Appearance.defaultCustomHex)
                     }
                 }
+                Toggle("iTerm2 の幅を詰めて場所を空ける",
+                       isOn: $appearance.makeRoomForSidebar)
             } header: {
                 Text("サイドバー")
             } footer: {
                 Text("行の余白も文字の大きさに合わせて変わります。"
-                     + "幅はサイドバーの左端をドラッグしても変えられます。")
+                     + "幅はサイドバーの左端をドラッグしても変えられます。\n"
+                     + "「幅を詰めて場所を空ける」を入れておくと、"
+                     + "iTerm2 が画面いっぱいのときにウィンドウの左端を右へ寄せて、"
+                     + "サイドバーが重ならないようにします。"
+                     + "サイドバーを隠すか終了すると元の幅に戻します。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

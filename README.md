@@ -194,6 +194,44 @@ finger.
 The sidebar positions itself by reading iTerm2's window frame from CGWindowList.
 That needs no Automation permission, so snapping works even before you grant it.
 
+When the window sits flush against the left edge of the screen there is nowhere
+for the sidebar to go, so proctor moves **only the left edge** of the iTerm2
+window to the right (the right edge stays, so the terminal just gets narrower by
+the width of the sidebar). Hiding the sidebar or quitting puts the width back —
+unless the window has moved away from where proctor left it, which means you
+moved it yourself.
+
+- Only two kinds of window are touched: one flush against the edge (maximized,
+  snapped to the left half) and one proctor moved itself. Shoving a window that
+  merely sits somewhat left would take away your freedom to place it, and every
+  move would be pushed back.
+- macOS full screen (covering the menu bar too) lives on its own space and is
+  left alone. With the menu bar set to hide automatically it cannot be told
+  apart from a maximized window, so the feature stays out of the way.
+- Moving the window goes through AppleScript, so it **needs Automation
+  permission**. Without it nothing happens, quietly; snapping still works.
+- **Reading CGWindowList right after moving a window still returns the old
+  frame.** Confirming the move on the spot makes a successful move look like a
+  failure and gives up for good. The next poll shows the truth, so proctor only
+  gives up after asking twice about an unchanged frame.
+- **Windows only ever move right.** Widening the sidebar pushes the terminal out
+  of the way, but narrowing it leaves the window where it is and a gap appears.
+  Nobody asked for a wider terminal; maximize it again if you want the gap gone.
+- **Hands off while yours are busy.** Resizing the terminal while you drag the
+  sidebar edge, or while any mouse button is down, makes whatever you are holding
+  jump. Proctor waits for the width to settle and then moves the window once —
+  otherwise a stream of resizes runs into iTerm2 pulling the window back and it
+  ends up full width again.
+- Under a window manager that keeps re-applying a layout, moving and being moved
+  back can turn into a tug of war. Proctor counts how often its move is undone
+  and backs off for a while when it keeps happening.
+- Only the most recent window is remembered: move two of them and only the later
+  one gets its width back. The main screen only, too — a window maximized on a
+  secondary display is left alone.
+- The make-room setting (*iTerm2 の幅を詰めて場所を空ける*) turns this off, which
+  brings back the old behaviour: the sidebar stops at the screen edge and
+  overlaps the terminal.
+
 ## Dependencies
 
 `git`, and nothing else. There are no external Swift package dependencies.

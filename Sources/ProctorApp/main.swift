@@ -58,6 +58,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         chaseBackground(remaining: 30)
     }
 
+    /// 居場所を作るために詰めた iTerm2 の幅を返してから終わる。
+    /// 返さずに消えると、なぜ端末が細いのか分からないまま残る。
+    ///
+    /// 片付けは willTerminate ではなくここでやる。あちらは畳み始めたあとに呼ばれるので、
+    /// Apple Event の往復が間に合わずに戻せないことがある。
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        sidebar?.restoreRoom()
+        return .terminateNow
+    }
+
     /// 一覧の行を開く。
     ///
     /// そのセッションが今もタブで生きていればそのタブにフォーカスし、

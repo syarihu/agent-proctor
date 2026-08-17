@@ -57,6 +57,16 @@ final class Appearance: ObservableObject {
         }
     }
 
+    // MARK: - iTerm2 の幅を詰める
+
+    /// 左に隙間が無いとき、iTerm2 のウィンドウを右へ寄せて場所を空けるか。
+    ///
+    /// 他人のウィンドウを動かすのは驚かれる振る舞いなので、切れるようにしておく。
+    /// 切ってあると、全画面のときサイドバーは画面の端で止まって端末に重なる。
+    @Published var makeRoomForSidebar: Bool {
+        didSet { UserDefaults.standard.set(makeRoomForSidebar, forKey: Self.makeRoomKey) }
+    }
+
     // MARK: - 不透明度 (透明度)
 
     static let defaultOpacity: Double = 0.95
@@ -129,6 +139,7 @@ final class Appearance: ObservableObject {
     private static let opacityKey = "proctor_opacity"
     private static let useCustomColorKey = "proctor_use_custom_color"
     private static let customColorKey = "proctor_custom_color_hex"
+    private static let makeRoomKey = "proctor_make_room"
 
     init() {
         fontSize = Self.load(Self.sizeKey, in: Self.sizeRange, default: Self.defaultSize)
@@ -139,6 +150,10 @@ final class Appearance: ObservableObject {
 
         useCustomBackgroundColor = UserDefaults.standard.bool(forKey: Self.useCustomColorKey)
         customColorHex = UserDefaults.standard.string(forKey: Self.customColorKey) ?? Self.defaultCustomHex
+
+        // 既定はオン。bool(forKey:) は未設定でも false を返すので、
+        // 「保存されていない」と「切ってある」を object の有無で分ける
+        makeRoomForSidebar = UserDefaults.standard.object(forKey: Self.makeRoomKey) as? Bool ?? true
     }
 
     func resetFontSize() { fontSize = Self.defaultSize }
