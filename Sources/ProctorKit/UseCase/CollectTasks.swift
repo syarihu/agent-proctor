@@ -85,4 +85,50 @@ public enum CollectTasks {
             removed: lines.removed,
             untracked: GitClient.untrackedFiles(record.worktree).count)
     }
+
+    /// エージェントごとの最新レートリミット情報を集約する。
+    ///
+    /// タスク一覧と台帳のグローバルキャッシュの両方から最新値を集め、
+    /// セッションが 0 件のときでも前回のレートリミットを常時表示できるようにする。
+    /// また、リセット予定時刻（resetsAt）を過ぎている場合は使用率 0%（回復済み）として計算する。
+    public static func summarizedRateLimits(_ tasks: [CollectedTask],
+                                           persisted: [String: AgentRateLimits] = LedgerStore.agentRateLimits(),
+                                           now: Int = Int(Date().timeIntervalSince1970)) -> [AgentQuotaSummary] {
+        var map: [String: AgentRateLimits] = persisted
+        // 稼働中のタスクから最新の rateLimits を上書き反映
+        for task in tasks {
+            guard let limits = task.rateLimits, !limits.isEmpty else { continue }
+            let agentKey = task.resolvedAgent
+            map[agentKey] = limits
+        }
+
+        // リセット時刻が過ぎていたら自動で回復（0%）計算
+        var adjustedMap: [String: AgentRateLimits] = [:]
+        for (agentKey, limits) in map {
+            var adjustedFive = limits.fiveHour
+            if let five = adjustedFive, let reset = five.resetsAt, reset <= now {
+                adjustedFive = RateLimitWindow(usedPercent: 0, resetsAt: nil)
+            }
+            var adjustedWeek = limits.sevenDay
+            if let week = adjustedWeek, let reset = week.resetsAt, reset <= now {
+                adjustedWeek = RateLimitWindow(usedPercent: 0, resetsAt: nil)
+            }
+            let adjusted = AgentRateLimits(fiveHour: adjustedFive, sevenDay: adjustedWeek)
+            if !adjusted.isEmpty {
+                adjustedMap[agentKey] = adjusted
+            }
+        }
+
+        // Claude を先、Antigravity を次、その他を名前順で安定させる
+        let priority = ["claude": 0, "agy": 1]
+        return adjustedMap.keys.sorted { lhs, rhs in
+            let p1 = priority[lhs] ?? 99
+            let p2 = priority[rhs] ?? 99
+            if p1 != p2 { return p1 < p2 }
+            return lhs < rhs
+        }.compactMap { key in
+            guard let limits = adjustedMap[key] else { return nil }
+            return AgentQuotaSummary(agent: key, rateLimits: limits)
+        }
+    }
 }

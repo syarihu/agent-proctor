@@ -50,7 +50,7 @@ exist and what symbol and name to call them by.
 ```
 ProctorKit/
   Model/       Data and vocabulary. No I/O
-               TaskRecord, DiffCounts, CollectedTask, TaskStatus, TaskID
+               TaskRecord, DiffCounts, CollectedTask, TaskStatus, TaskID, RateLimits
   Repository/  The only door to the outside: the ledger, git and the environment
                LedgerStore, GitClient, ProcessRunner, EnvironmentSource, Paths
   UseCase/     One per thing you want to do. Every decision lives here

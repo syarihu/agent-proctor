@@ -139,4 +139,89 @@ public struct HookPayload {
         }
         return percent.map { Int($0.rounded()) }
     }
+
+    /// レートリミット（5時間枠・7日間枠）情報。statusline から届く
+    public var rateLimits: AgentRateLimits? {
+        let quota = box["quota"] as? [String: Any] ?? [:]
+        let rateLimits = box["rate_limits"] as? [String: Any] ?? [:]
+
+        let modelIdLower = (modelName ?? "").lowercased()
+        let is3P = modelIdLower.contains("claude") || modelIdLower.contains("opus")
+            || modelIdLower.contains("sonnet") || modelIdLower.contains("haiku")
+            || modelIdLower.contains("gpt") || modelIdLower.contains("3p")
+
+        let fiveDict: [String: Any]?
+        let weekDict: [String: Any]?
+
+        if is3P {
+            fiveDict = (quota["3p-5h"] as? [String: Any])
+                ?? (rateLimits["five_hour"] as? [String: Any])
+                ?? (quota["five_hour"] as? [String: Any])
+                ?? (quota["gemini-5h"] as? [String: Any])
+            weekDict = (quota["3p-weekly"] as? [String: Any])
+                ?? (rateLimits["seven_day"] as? [String: Any])
+                ?? (quota["seven_day"] as? [String: Any])
+                ?? (quota["gemini-weekly"] as? [String: Any])
+        } else {
+            fiveDict = (quota["gemini-5h"] as? [String: Any])
+                ?? (rateLimits["five_hour"] as? [String: Any])
+                ?? (quota["five_hour"] as? [String: Any])
+                ?? (quota["3p-5h"] as? [String: Any])
+            weekDict = (quota["gemini-weekly"] as? [String: Any])
+                ?? (rateLimits["seven_day"] as? [String: Any])
+                ?? (quota["seven_day"] as? [String: Any])
+                ?? (quota["3p-weekly"] as? [String: Any])
+        }
+
+        let five = parseRateLimitWindow(from: fiveDict)
+        let week = parseRateLimitWindow(from: weekDict)
+
+        if five == nil && week == nil {
+            return nil
+        }
+        return AgentRateLimits(fiveHour: five, sevenDay: week)
+    }
+
+    private func parseRateLimitWindow(from dict: [String: Any]?) -> RateLimitWindow? {
+        guard let dict else { return nil }
+
+        var percent: Double?
+        if let p = dict["used_percentage"] as? Double {
+            percent = p
+        } else if let p = dict["used_percentage"] as? Int {
+            percent = Double(p)
+        } else if let rem = dict["remaining_fraction"] as? Double {
+            percent = (1.0 - rem) * 100
+        } else if let rem = dict["remaining"] as? Double, let limit = dict["limit"] as? Double, limit > 0 {
+            percent = (limit - rem) / limit * 100
+        } else if let rem = dict["remaining"] as? Int, let limit = dict["limit"] as? Int, limit > 0 {
+            percent = Double(limit - rem) / Double(limit) * 100
+        }
+
+        guard let finalPct = percent else { return nil }
+        let rounded = max(0, min(100, Int(finalPct.rounded())))
+
+        var resetsAt: Int?
+        if let raw = dict["resets_at"] as? Int {
+            resetsAt = raw
+        } else if let raw = dict["resets_at"] as? Double {
+            resetsAt = Int(raw)
+        } else if let raw = dict["resets_at"] as? String {
+            if let epoch = Int(raw) {
+                resetsAt = epoch
+            } else if let epochDouble = Double(raw) {
+                resetsAt = Int(epochDouble)
+            } else if let date = ISO8601DateFormatter().date(from: raw) {
+                resetsAt = Int(date.timeIntervalSince1970)
+            }
+        } else if let raw = dict["reset_time"] as? String, let date = ISO8601DateFormatter().date(from: raw) {
+            resetsAt = Int(date.timeIntervalSince1970)
+        } else if let resetIn = dict["reset_in_seconds"] as? Double {
+            resetsAt = Int(Date().timeIntervalSince1970 + resetIn)
+        } else if let resetIn = dict["reset_in_seconds"] as? Int {
+            resetsAt = Int(Date().timeIntervalSince1970) + resetIn
+        }
+
+        return RateLimitWindow(usedPercent: rounded, resetsAt: resetsAt)
+    }
 }

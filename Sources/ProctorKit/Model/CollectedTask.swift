@@ -26,6 +26,7 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     public var name: String?
     public var model: String?
     public var contextPercent: Int?
+    public var rateLimits: AgentRateLimits?
 
     /// 表示側でパスから切り出さずに済むよう名前にしておく。
     /// プロジェクトごとにまとめるときの見出しになる
@@ -92,6 +93,7 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         name = record.name
         model = record.model
         contextPercent = record.contextPercent
+        rateLimits = record.rateLimits
         self.repoName = repoName
         self.exists = exists
         self.diff = diff

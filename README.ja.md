@@ -46,7 +46,7 @@ Kit が知っているのは「どんな状態があり、どんな記号と名�
 ```
 ProctorKit/
   Model/       データと語彙。I/O を持たない
-               TaskRecord, DiffCounts, CollectedTask, TaskStatus, TaskID
+               TaskRecord, DiffCounts, CollectedTask, TaskStatus, TaskID, RateLimits
   Repository/  外の世界との出入り口。ここだけが台帳・git・環境を触る
                LedgerStore, GitClient, ProcessRunner, EnvironmentSource, Paths
   UseCase/     やりたいこと1つに1つ。判断はすべてここが持つ

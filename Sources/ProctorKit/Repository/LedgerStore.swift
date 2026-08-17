@@ -3,16 +3,22 @@ import Foundation
 public struct LedgerFile: Codable, Equatable {
     public var version: Int
     public var tasks: [TaskRecord]
+    /// エージェントごとの最新レートリミット情報 ("claude", "agy" など)。
+    /// セッションが 0 件になっても保持し続け、常時表示に使う
+    public var agentRateLimits: [String: AgentRateLimits]
 
-    public init(version: Int = 1, tasks: [TaskRecord] = []) {
+    public init(version: Int = 1, tasks: [TaskRecord] = [],
+                agentRateLimits: [String: AgentRateLimits] = [:]) {
         self.version = version
         self.tasks = tasks
+        self.agentRateLimits = agentRateLimits
     }
 
     public init(from decoder: Decoder) throws {
         let box = try decoder.container(keyedBy: CodingKeys.self)
         version = try box.decodeIfPresent(Int.self, forKey: .version) ?? 1
         tasks = try box.decodeIfPresent([TaskRecord].self, forKey: .tasks) ?? []
+        agentRateLimits = try box.decodeIfPresent([String: AgentRateLimits].self, forKey: .agentRateLimits) ?? [:]
     }
 }
 
@@ -98,6 +104,9 @@ public enum LedgerStore {
     }
 
     public static func tasks() -> [TaskRecord] { read().tasks }
+
+    /// エージェントごとの最新レートリミット情報を返す
+    public static func agentRateLimits() -> [String: AgentRateLimits] { read().agentRateLimits }
 
     /// 台帳が最後に変わった時刻。表示側が「数え直すべきか」を判断するのに使う
     public static func lastModified() -> Date? {

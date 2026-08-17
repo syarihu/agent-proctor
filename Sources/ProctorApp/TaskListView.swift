@@ -21,40 +21,50 @@ struct TaskListView: View {
             // 背景のアンビエントグロー（確認待ちや実行中の状態に応じたやわらかな環境光）
             ambientGlow
 
-            ScrollView {
-                if store.tasks.isEmpty {
-                    Text("動いているエージェントはいません")
-                        .font(.system(size: base * 0.9))
-                        .foregroundStyle(Palette.dim)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, base * 0.4)
-                        .padding(.vertical, base * 0.6)
-                } else {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(groups, id: \.repo) { group in
-                            // 1つしかないなら見出しは情報を持たない。縦を空けるだけなので出さない
-                            if groups.count > 1 {
-                                Text(group.name)
-                                    .font(.system(size: base * 0.75, weight: .semibold))
-                                    .foregroundStyle(Palette.dim)
-                                    .lineLimit(1)
-                                    .padding(.horizontal, base * 0.4)
-                                    .padding(.top, base * 0.6)
-                                    .padding(.bottom, base * 0.1)
-                            }
-                            ForEach(group.tasks) { task in
-                                TaskRow(task: task, base: base,
-                                        isCurrent: isCurrent(task), onOpen: onOpen)
-                                    .padding(.leading, groups.count > 1 ? base : 0)
+            VStack(spacing: 0) {
+                ScrollView {
+                    if store.tasks.isEmpty {
+                        Text("動いているエージェントはいません")
+                            .font(.system(size: base * 0.9))
+                            .foregroundStyle(Palette.dim)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, base * 0.4)
+                            .padding(.vertical, base * 0.6)
+                    } else {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(groups, id: \.repo) { group in
+                                // 1つしかないなら見出しは情報を持たない。縦を空けるだけなので出さない
+                                if groups.count > 1 {
+                                    Text(group.name)
+                                        .font(.system(size: base * 0.75, weight: .semibold))
+                                        .foregroundStyle(Palette.dim)
+                                        .lineLimit(1)
+                                        .padding(.horizontal, base * 0.4)
+                                        .padding(.top, base * 0.6)
+                                        .padding(.bottom, base * 0.1)
+                                }
+                                ForEach(group.tasks) { task in
+                                    TaskRow(task: task, base: base,
+                                            isCurrent: isCurrent(task), onOpen: onOpen)
+                                        .padding(.leading, groups.count > 1 ? base : 0)
+                                }
                             }
                         }
+                        .animation(.spring(response: 0.35, dampingFraction: 0.78), value: taskOrderKey)
                     }
-                    .animation(.spring(response: 0.35, dampingFraction: 0.78), value: taskOrderKey)
+                }
+                .padding(base * 0.3)
+
+                if !rateLimitSummaries.isEmpty {
+                    RateLimitFooter(summaries: rateLimitSummaries, base: base)
                 }
             }
-            .padding(base * 0.3)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var rateLimitSummaries: [AgentQuotaSummary] {
+        store.rateLimitSummaries
     }
 
     /// いま iTerm2 で開いているタブかどうか。
@@ -472,5 +482,119 @@ enum Palette {
         if percent >= 80 { return removed }
         if percent >= 50 { return Color(red: 1.0, green: 0.718, blue: 0.302) } // #ffb74d
         return dim
+    }
+}
+
+/// サイドバー最下部のレートリミットフッター
+private struct RateLimitFooter: View {
+    let summaries: [AgentQuotaSummary]
+    let base: CGFloat
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.gray.opacity(0.2))
+                .frame(height: 1)
+
+            VStack(alignment: .leading, spacing: base * 0.35) {
+                ForEach(summaries) { summary in
+                    AgentRateLimitRow(summary: summary, base: base)
+                }
+            }
+            .padding(.horizontal, base * 0.5)
+            .padding(.vertical, base * 0.4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct AgentRateLimitRow: View {
+    let summary: AgentQuotaSummary
+    let base: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: base * 0.22) {
+            HStack(spacing: base * 0.3) {
+                agentIcon
+                Text(summary.agentDisplayName)
+                    .font(.system(size: base * 0.8, weight: .medium))
+                    .foregroundStyle(Palette.dim)
+            }
+
+            HStack(spacing: base * 0.6) {
+                if let five = summary.rateLimits.fiveHour {
+                    RateLimitWindowView(label: "5h", window: five, base: base)
+                }
+                if let week = summary.rateLimits.sevenDay {
+                    RateLimitWindowView(label: "7d", window: week, base: base)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var agentIcon: some View {
+        if summary.agent == "agy" {
+            Image(systemName: "atom")
+                .font(.system(size: base * 0.75))
+                .foregroundStyle(Palette.antigravity)
+        } else {
+            Image(systemName: "terminal.fill")
+                .font(.system(size: base * 0.75))
+                .foregroundStyle(Palette.claude)
+        }
+    }
+}
+
+private struct RateLimitWindowView: View {
+    let label: String
+    let window: RateLimitWindow
+    let base: CGFloat
+
+    private var barWidth: CGFloat { base * 1.8 }
+    private var barHeight: CGFloat { max(3.5, base * 0.22) }
+
+    var body: some View {
+        HStack(spacing: base * 0.22) {
+            Text(label)
+                .font(.system(size: base * 0.78, weight: .semibold).monospaced())
+                .foregroundStyle(Palette.dim)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.gray.opacity(0.25))
+                Capsule()
+                    .fill(Palette.context(window.usedPercent))
+                    .frame(width: max(0, min(barWidth, barWidth * CGFloat(window.usedPercent) / 100)))
+            }
+            .frame(width: barWidth, height: barHeight)
+
+            Text("\(window.usedPercent)%")
+                .font(.system(size: base * 0.78).monospacedDigit())
+                .foregroundStyle(Palette.context(window.usedPercent))
+
+            if let resetText = formatResetTime(window.resetsAt) {
+                Text(resetText)
+                    .font(.system(size: base * 0.72).monospacedDigit())
+                    .foregroundStyle(Palette.dim)
+            }
+        }
+    }
+
+    private func formatResetTime(_ epoch: Int?) -> String? {
+        guard let epoch, epoch > 0 else { return nil }
+        let now = Date().timeIntervalSince1970
+        guard Double(epoch) - now > 0 else { return nil }
+
+        let resetDate = Date(timeIntervalSince1970: Double(epoch))
+        let calendar = Calendar.current
+        let formatter = DateFormatter()
+
+        if calendar.isDateInToday(resetDate) {
+            formatter.dateFormat = "HH:mm"
+        } else {
+            formatter.dateFormat = "M/d HH:mm"
+        }
+        return formatter.string(from: resetDate)
     }
 }

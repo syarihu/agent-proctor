@@ -14,14 +14,19 @@ public enum RecordSessionStats {
         let model = payload.modelName
         let percent = payload.contextPercent
         let agent = payload.agent
+        let rateLimits = payload.rateLimits
 
         // まだ hooks が登録していないセッションなら何もしない。登録はそちらに任せる。
         // ここで先に読んで確かめるのは、変化が無いときにロックを取らないため
         guard let current = LedgerStore.tasks().first(where: { $0.sessionId == session })
         else { return }
+        let agentKey = agent ?? current.agent ?? "claude"
+        let ledgerLimits = LedgerStore.agentRateLimits()[agentKey]
+
         if current.name == name && current.model == model
             && current.contextPercent == percent
-            && (agent == nil || current.agent == agent) { return }
+            && (agent == nil || current.agent == agent)
+            && (rateLimits == nil || (current.rateLimits == rateLimits && ledgerLimits == rateLimits)) { return }
 
         try LedgerStore.withLock { ledger in
             guard let index = ledger.tasks.firstIndex(where: { $0.sessionId == session })
@@ -30,6 +35,10 @@ public enum RecordSessionStats {
             ledger.tasks[index].model = model
             ledger.tasks[index].contextPercent = percent
             if let agent { ledger.tasks[index].agent = agent }
+            if let rateLimits {
+                ledger.tasks[index].rateLimits = rateLimits
+                ledger.agentRateLimits[agentKey] = rateLimits
+            }
         }
     }
 }

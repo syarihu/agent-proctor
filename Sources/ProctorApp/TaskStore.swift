@@ -23,6 +23,8 @@ final class TaskStore: ObservableObject {
     @Published private(set) var records: [TaskRecord] = []
     /// メニューバーの要約
     @Published private(set) var summary: [(status: String, count: Int)] = []
+    /// エージェントごとのレートリミットキャッシュ。セッションが無くても残る
+    @Published private(set) var agentRateLimits: [String: AgentRateLimits] = [:]
     /// いま見ている iTerm2 のタブ。台帳には無い情報なので外から入れてもらう
     /// (聞きに行くのは FocusWatcher。ここは表示のために預かるだけ)
     @Published private(set) var focusedSession: String?
@@ -107,8 +109,15 @@ final class TaskStore: ObservableObject {
         return true
     }
 
+    /// 一覧最下部に出すレートリミット集約情報
+    var rateLimitSummaries: [AgentQuotaSummary] {
+        CollectTasks.summarizedRateLimits(tasks, persisted: agentRateLimits)
+    }
+
     private func reloadRecords() {
-        records = LedgerStore.tasks()
+        let ledger = LedgerStore.read()
+        records = ledger.tasks
+        agentRateLimits = ledger.agentRateLimits
         summary = TaskStatus.counts(records)
     }
 
