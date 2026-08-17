@@ -83,7 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 押しても何も起きないと手掛かりが無くなるので、失敗は伝える
         if !ItermBridge.openTab(runningCommand: "proctor attach \(task.id)") {
             let alert = NSAlert()
-            alert.messageText = "\(task.name ?? task.id) を開けませんでした"
+            alert.messageText = "\(task.displayName) を開けませんでした"
             alert.informativeText = "iTerm2 が起動しているか、"
                 + "オートメーションが許可されているか確かめてください。"
             alert.alertStyle = .warning

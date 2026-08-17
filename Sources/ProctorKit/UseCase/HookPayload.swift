@@ -44,6 +44,16 @@ public struct HookPayload {
         (box["prompt"] as? String).map { !$0.isEmpty } ?? false
     }
 
+    /// 人が明示的に付けた名前。端末のタブに付けたタイトルを hooks が乗せてくる。
+    ///
+    /// エージェントが自分で付ける `session_name` とは別に持つ。あちらは会話から
+    /// 勝手に決まるもので、こちらは人が「この作業はこれ」と決めたもの。
+    /// 一覧に出すのは後者を先にしたいので、混ぜずに分けておく。
+    ///
+    /// **空文字は「消す」の意味**で、キーが無いのは「そのまま」。
+    /// タブのタイトルを外したときに、古い名前が残らないようにするため。
+    public var tabTitle: String? { box["tab_title"] as? String }
+
     /// いま触っているツールの表示ラベル。PostToolUse の payload から組む。
     ///
     /// 例: Bash -> "Bash: npm test" / Edit -> "Edit: TaskStore.swift"

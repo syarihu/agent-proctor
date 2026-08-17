@@ -21,6 +21,8 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     public var activity: String?
     /// 終わったあと、そのタブを見た時刻
     public var seenAt: Int?
+    /// 人が明示的に付けた名前 (タブのタイトルなど)
+    public var title: String?
     public var name: String?
     public var model: String?
     public var contextPercent: Int?
@@ -35,8 +37,11 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     /// 考え込んでいるのか止まっているのかの手がかりになる
     public var idleSeconds: Int
 
-    /// 一覧に出す見出し。セッション名が付いていればそれを、無ければ ID を使う
-    public var displayName: String { name ?? id }
+    /// 一覧に出す見出し。
+    ///
+    /// 人が付けた名前 (タブのタイトル) → エージェントが付けたセッション名 → ID の順。
+    /// 人が「この作業はこれ」と決めた名前のほうが、会話から起こした要約より当てになる
+    public var displayName: String { title ?? name ?? id }
 
     /// 表示に使う状態。見たあとの完了は確認済みに畳む。
     /// 動いていた場所が消えていれば status のほうが先に missing になっている
@@ -83,6 +88,7 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         agent = record.agent
         activity = record.activity
         seenAt = record.seenAt
+        title = record.title
         name = record.name
         model = record.model
         contextPercent = record.contextPercent

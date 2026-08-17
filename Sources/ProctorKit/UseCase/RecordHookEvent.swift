@@ -64,6 +64,14 @@ public enum RecordHookEvent {
             if let name = payload.sessionName, ledger.tasks[index].name != name {
                 ledger.tasks[index].name = name
             }
+            // 人が付けた名前。空文字で渡されたら外す (キーが無いときは触らない)
+            if let tabTitle = payload.tabTitle {
+                let trimmed = tabTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                let value = trimmed.isEmpty ? nil : trimmed
+                if ledger.tasks[index].title != value {
+                    ledger.tasks[index].title = value
+                }
+            }
             if let model = payload.modelName, ledger.tasks[index].model != model {
                 ledger.tasks[index].model = model
             }
@@ -156,6 +164,7 @@ public enum RecordHookEvent {
             // 最初の1件目が PostToolUse のこともある (前のセッションの記録を
             // 消したあとなど)。そのときも何をしているかは載せておく
             activity: payload.toolActivity,
+            title: payload.tabTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
             name: payload.sessionName,
             model: payload.modelName,
             contextPercent: payload.contextPercent))

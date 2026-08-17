@@ -159,6 +159,13 @@ not listed in the help. All of them read the hook JSON from stdin.
 | `proctor _subagent start\|stop` | hooks | subagent count |
 | `proctor _stats` | statusline | session name, model, context usage |
 
+The heading in the list is picked in this order: **a name a person gave it, the
+agent's own session name, the id**. Hooks can put such a name — the title on the
+terminal tab, say — into the payload as `tab_title`, and it wins over whatever the
+agent derived from the conversation (an empty string drops it; leaving the key out
+keeps what is there). What someone decided this piece of work is called tends to
+beat a summary of the chat.
+
 `_touch` **prints the status it recorded to stdout** so the caller can use what
 actually happened (to set a tab color, for example).
 

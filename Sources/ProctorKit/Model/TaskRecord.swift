@@ -32,6 +32,9 @@ public struct TaskRecord: Codable, Equatable {
     /// 終わったあと、そのタブを見た時刻。見ていなければ nil。
     /// また動き出したら nil に戻す (次に終わったときは別の結果なので、改めて見てほしい)
     public var seenAt: Int?
+    /// 人が明示的に付けた名前 (端末のタブに付けたタイトルなど)。
+    /// エージェントが自分で付ける name より、こちらを先に出す
+    public var title: String?
 
     // ここから下は statusline だけが知っている情報。
     // hooks の payload には来ないので RecordSessionStats が横流しする
@@ -43,7 +46,7 @@ public struct TaskRecord: Codable, Equatable {
                 sessionId: String? = nil, itermSession: String? = nil,
                 status: String, createdAt: Int, updatedAt: Int,
                 subagents: Int? = nil, agent: String? = nil,
-                activity: String? = nil, seenAt: Int? = nil,
+                activity: String? = nil, seenAt: Int? = nil, title: String? = nil,
                 name: String? = nil, model: String? = nil,
                 contextPercent: Int? = nil) {
         self.id = id
@@ -59,6 +62,7 @@ public struct TaskRecord: Codable, Equatable {
         self.agent = agent
         self.activity = activity
         self.seenAt = seenAt
+        self.title = title
         self.name = name
         self.model = model
         self.contextPercent = contextPercent
@@ -68,6 +72,10 @@ public struct TaskRecord: Codable, Equatable {
     public var displayStatus: String {
         TaskStatus.display(status: status, seenAt: seenAt)
     }
+
+    /// 表示に使う見出し。人が付けた名前を先に、無ければセッション名、最後に ID。
+    /// 数えた一覧 (CollectedTask) と同じ順で選ぶので、メニューと一覧で名前がずれない
+    public var displayName: String { title ?? name ?? id }
 }
 
 /// 差分の数。新規ファイルは git diff に出ないので別に数える。
