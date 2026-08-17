@@ -118,7 +118,7 @@ hooks から呼ばれるのは次の3つ。人が打つものではないので�
 
 | コマンド | 呼ぶ側 | 中身 |
 | --- | --- | --- |
-| `proctor _touch <状態>` | hooks | running / waiting / done / clear / notification |
+| `proctor _touch <状態>` | hooks | running / waiting / done / failed / clear / notification |
 | `proctor _subagent start\|stop` | hooks | サブエージェントの増減 |
 | `proctor _stats` | statusline | セッション名・モデル・コンテキスト使用率 |
 

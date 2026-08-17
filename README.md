@@ -127,7 +127,7 @@ not listed in the help. All of them read the hook JSON from stdin.
 
 | Command | Caller | Purpose |
 | --- | --- | --- |
-| `proctor _touch <status>` | hooks | running / waiting / done / clear / notification |
+| `proctor _touch <status>` | hooks | running / waiting / done / failed / clear / notification |
 | `proctor _subagent start\|stop` | hooks | subagent count |
 | `proctor _stats` | statusline | session name, model, context usage |
 

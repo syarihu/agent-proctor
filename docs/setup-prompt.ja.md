@@ -41,6 +41,7 @@ proctor のコマンドは `$HOME/bin/proctor` のように絶対パスで書い
 | `PostToolUse` | `*` | `proctor _touch running` | 実行中に戻す |
 | `Notification` | なし | `proctor _touch notification` | 確認待ちかもしれない |
 | `Stop` | なし | `proctor _touch done` | ターンが終わった |
+| `StopFailure` | なし | `proctor _touch failed` | ターンが落ちた (レートリミット等) |
 | `SessionEnd` | なし | `proctor _touch clear` | セッションが終わった |
 | `PreToolUse` | `Task\|Agent` | `proctor _subagent start` | サブエージェントが増えた |
 | `SubagentStop` | なし | `proctor _subagent stop` | サブエージェントが減った |
@@ -57,6 +58,8 @@ Claude Code は既定でそうするので、パイプなどを自分で足す�
   権限確認のほかに「60秒入力なし」のアイドル通知でも発火します。区別せず確認待ちにすると、
   終わったあと放置しただけで印が付きます。`notification` を渡すと proctor 側が
   メッセージを見て切り分けます。
+- **`StopFailure` を入れる理由**: レートリミットや overloaded でターンが落ちたときは
+  `Stop` が発火しません。繋がないと、落ちたセッションが「実行中」のまま一覧に居座ります。
 - **`SessionEnd` を同期で呼ぶ理由**: バックグラウンドに投げると Claude 本体の終了に
   巻き込まれて、書き終わる前に殺されることがあります。他のイベントは末尾に `&` を付けて
   非同期にして構いませんが、`SessionEnd` だけは同期にしてください。

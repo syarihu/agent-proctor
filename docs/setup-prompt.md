@@ -45,6 +45,7 @@ is ever removed.
 | `PostToolUse` | `*` | `proctor _touch running` | back to running |
 | `Notification` | none | `proctor _touch notification` | possibly waiting for me |
 | `Stop` | none | `proctor _touch done` | the turn finished |
+| `StopFailure` | none | `proctor _touch failed` | the turn died (rate limit, overloaded) |
 | `SessionEnd` | none | `proctor _touch clear` | the session ended |
 | `PreToolUse` | `Task\|Agent` | `proctor _subagent start` | a subagent started |
 | `SubagentStop` | none | `proctor _subagent stop` | a subagent stopped |
@@ -64,6 +65,9 @@ by default, so you do not need to add any piping yourself.
   permission prompts. Treating both the same marks a session as blocked simply
   because you walked away after it finished. Passing `notification` lets proctor
   look at the message and tell them apart.
+- **Why `StopFailure` is included**: when a turn dies on a rate limit or an
+  overloaded error, `Stop` does not fire. Without this hook the session stays in
+  the list as running and never settles.
 - **Why `SessionEnd` must be synchronous**: if you background it, it can be
   killed along with Claude itself before it finishes writing. The other events
   may be backgrounded with a trailing `&`, but leave `SessionEnd` synchronous.

@@ -40,7 +40,11 @@ public enum TaskStatus {
 
     /// hooks から受け取れる状態。notification はここに含めない
     /// (何を意味するかが payload 次第なので、確定した後の値がここに来る)
-    public static let fromHooks = [running, waiting, done, "clear"]
+    ///
+    /// failed は Claude Code の StopFailure (レートリミットや overloaded で
+    /// ターンが落ちたとき) 用。このとき Stop は発火しないので、受け取れないと
+    /// 落ちたセッションが「実行中」のまま一覧に居座る
+    public static let fromHooks = [running, waiting, done, failed, "clear"]
 
     public static func mark(_ status: String) -> String { marks[status] ?? "?" }
     public static func label(_ status: String) -> String { labels[status] ?? status }
