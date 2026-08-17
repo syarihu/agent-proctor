@@ -247,3 +247,8 @@ moved it yourself.
 
 See [CLAUDE.md](CLAUDE.md) for the conventions used in this repository
 (English commit messages, Japanese code comments).
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
