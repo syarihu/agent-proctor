@@ -101,32 +101,46 @@ enum StatusGlyph {
         return sized.tinted(with: tint)
     }
 
-    /// 知らせることが何も無いときの印。
+    /// 知らせることが何も無いときの印。アプリのマーク (`AppMark`) を出す。
     ///
-    /// 数字は出さない。出すべきものが無いことを、記号1つで静かに示す。
+    /// 数字は出さない。出すべきものが無いことを、印1つで静かに示す。
     /// **項目ごと消してしまわないのは、メニューが設定とサイドバー切替と終了の
     /// 唯一の入口だから。** 見張っているのに姿が無いと、生きているのかも分からない。
+    /// ここをアイコンにしているのは、そのときだけメニューバーに出ている物が
+    /// 何なのか分からなくなるため。動きがあるときは状態の記号に譲る。
     ///
     /// 色は数字と同じ地色 (メニューバーの文字色) をそのまま使う。薄くすると
     /// 壁紙が透ける場所で沈んで見えなくなる。白と決め打ちにしないのは、
     /// メニューバーが明るいときに見えなくなるため
     static func idleLine(fontSize: CGFloat = 13,
                          defaultTint: NSColor) -> NSAttributedString {
-        let tint = defaultTint
-        guard let image = NSImage(systemSymbolName: "eyeglasses",
-                                  accessibilityDescription: "見張り中") else {
-            return NSAttributedString(string: "・", attributes: [.foregroundColor: tint])
-        }
-        let config = NSImage.SymbolConfiguration(pointSize: fontSize, weight: Self.weight)
-        let sized = (image.withSymbolConfiguration(config) ?? image)
-            .centered(inWidth: fontSize * 1.3).tinted(with: tint)
+        let image = AppMark.image(height: fontSize * markScale, tint: defaultTint)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: Self.weight)
 
         let attachment = NSTextAttachment()
-        attachment.image = sized
-        attachment.bounds = CGRect(x: 0, y: -fontSize * 0.12,
-                                   width: sized.size.width, height: sized.size.height)
-        return NSAttributedString(attachment: attachment)
+        attachment.image = image
+        // 画像の下端を書体の下がり (descender) にそろえる。
+        //
+        // **こうしないと印が上に寄る。** ボタンは行をまるごと中央に置くが、
+        // 行の高さは書体の上がり下がりからも決まる。画像をベースラインの近くに
+        // 置くと行の下端だけが書体のぶん下に伸び、その差が下の余白になる。
+        // そろえれば行の高さ = 画像の高さになり、行の中央 = 画像の中央になる
+        attachment.bounds = CGRect(x: 0, y: font.descender,
+                                   width: image.size.width, height: image.size.height)
+
+        let line = NSMutableAttributedString(attachment: attachment)
+        // 書体を明示する。決めないと既定の書体の上がり下がりで行の高さが決まり、
+        // 文字の大きさを変えても印の位置がついてこない
+        line.addAttribute(.font, value: font,
+                          range: NSRange(location: 0, length: line.length))
+        return line
     }
+
+    /// 印の高さ。文字より少し大きくする。
+    ///
+    /// 中に細かい線が入る絵なので、文字と同じ高さでは窓の重なりが潰れる。
+    /// これ以上大きくするとメニューバー (22pt ほど) の上下が詰まる
+    private static let markScale: CGFloat = 1.3
 
     /// 要約をまるごと1行にする。組と組の間は文字の間より広く空ける
     static func summaryLine(_ summary: [(status: String, count: Int)],
