@@ -42,6 +42,9 @@ cp "$BIN/ProctorApp" "$APP/Contents/MacOS/$APP_NAME"
 # CLI は Helpers に置く。macOS のファイルシステムは大文字小文字を区別しないため、
 # MacOS/ に proctor を置くとアプリ本体の Proctor と同じ名前になって潰し合う
 cp "$BIN/proctor" "$APP/Contents/Helpers/proctor"
+# Finder や Spotlight、システム設定に出るアイコン。Dock には出ないアプリなので
+# 目にする機会は多くないが、無いと白紙の書類の絵になる
+cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -52,6 +55,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key><string>$APP_NAME</string>
     <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
     <key>CFBundleExecutable</key><string>$APP_NAME</string>
+    <!-- 拡張子は書かない。書いても動くが、Apple の作法に合わせておく -->
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$VERSION</string>
     <key>CFBundleVersion</key><string>$VERSION</string>
