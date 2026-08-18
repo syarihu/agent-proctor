@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/agent-proctor-logo.png" alt="agent-proctor" width="720">
+</p>
+
 # agent-proctor
 
 *[日本語版はこちら](README.ja.md)*

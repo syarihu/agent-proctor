@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/agent-proctor-logo.png" alt="agent-proctor" width="720">
+</p>
+
 # agent-proctor
 
 *[English](README.md) が正本です。こちらはその訳なので、内容がずれていたら英語版が正しい。*
