@@ -8,6 +8,29 @@ public enum RecordHookEvent {
     /// 終了を取りこぼしたセッションの記録を捨てるまでの猶予
     public static let sessionTTL = 24 * 3600
 
+    /// SubagentStop を取りこぼしたサブエージェントを捨てるまでの猶予。
+    ///
+    /// 親のターンの終わりでは掃除できない (子は親より長く生きる) ので、
+    /// 時間で切るしかない。数えるのは**最後に声を聞いてから**なので、
+    /// 動いている限り何時間走っていても消えない (`SubagentRun.lastSeen`)
+    public static let subagentTTL = 6 * 3600
+
+    /// 「生きている」印を書き換える間隔。
+    ///
+    /// 子のイベントごとに書き換えると、中身の変わらないイベントでも台帳が動く。
+    /// 台帳の更新時刻はサイドバーが変化を知る合図なので、そのたびに起こしてしまう。
+    /// 打ち切りが時間単位である以上、分単位まで据え置いても困らない
+    public static let subagentHeartbeat = 60
+
+    /// 終わった子の墓標を持っておく時間。
+    ///
+    /// 弾きたいのは「SubagentStop の直後に遅れて届いた、その子のイベント」なので、
+    /// 秒の単位で足りる。長く持ちすぎても台帳が太るだけ。
+    ///
+    /// **`agent_id` が使い回されない前提**に乗っている。同じ id を再利用する
+    /// エージェントを繋ぐと、5分間その子が一覧に出なくなる
+    public static let finishedSubagentTTL = 300
+
     /// Notification フックが何を意味するかを決める。
     ///
     /// このイベントは権限確認や質問のほかに、「60秒入力なし」のアイドル通知でも
@@ -20,39 +43,71 @@ public enum RecordHookEvent {
     }
 
     /// 状態を書き込む。知らないセッションなら新しく登録する。
-    public static func touch(status: String, payload: HookPayload) throws {
+    ///
+    /// - Returns: **実際に記録した状態**。呼び出し側 (タブの色を変える hooks など) が
+    ///   台帳と食い違わないように、届いた状態そのままとは限らない値を返す。
+    ///   記録しなかったとき (git の外など) は届いた状態をそのまま返す
+    @discardableResult
+    public static func touch(status: String, payload: HookPayload) throws -> String {
         let top = GitClient.toplevel(from: payload.workingDirectory)
-        guard !top.isEmpty else { return }  // git の外での実行は追いかけない
+        guard !top.isEmpty else { return status }  // git の外での実行は追いかけない
 
         let now = Int(Date().timeIntervalSince1970)
-        try LedgerStore.withLock { ledger in
+        return try LedgerStore.withLock { ledger in
             // このフックを送ってきたセッションだけは掃除から外す。生きている証拠が
             // いま届いているのに消すのはおかしいし、--resume で開き直したときに
             // 「前のプロセスが死んでいる」を理由に落とすと、付けた名前も経過時間も
             // 引き継げず、別のタスクとして並び直してしまう
             let current = findTask(in: ledger, payload: payload).map { ledger.tasks[$0].id }
-            pruneStaleSessions(&ledger, now: now, keeping: current)
+            sweepLedger(&ledger, now: now, keeping: current)
 
             guard let index = findTask(in: ledger, payload: payload) else {
                 try register(&ledger, status: status, payload: payload, top: top, now: now)
-                return
+                return status
             }
 
             if status == "clear" {
                 // セッションが終わったら一覧から消す
                 ledger.tasks.remove(at: index)
-                return
+                return status
+            }
+
+            // **子がまだ走っているなら「終わった」とは書かない。**
+            //
+            // サブエージェントは非同期に起動されるので、親のターンは子を待たずに
+            // 終わり、その時点で Stop が飛んでくる (子が終わると task-notification で
+            // 親が起こされ、また動き出す)。これをそのまま完了にすると、
+            // まだ誰も待たせていないセッションに緑の印が付き、しばらくして
+            // 実行中に戻る。「色が付いている = まだ手を付けていない」が壊れる
+            let hasLiveSubagents = !(ledger.tasks[index].subagentRuns ?? []).isEmpty
+            let recorded: String
+            if (status == TaskStatus.done || status == TaskStatus.failed), hasLiveSubagents {
+                recorded = TaskStatus.running
+                // 捨てずに預ける。最後の子が帰ってきたときに、これを見て終わらせる
+                ledger.tasks[index].pendingStatus = status
+            } else {
+                recorded = status
+                // 預かった終わりを捨てていいのは、**改めて Stop が来ることが
+                // 保証される合図**のときだけ。それが新しいターンの始まりで、
+                // 子に起こされた場合もここを通る (task-notification が prompt に載る)。
+                //
+                // 確認待ち (waiting) では捨てない。親が仕事を再開した証にならないので、
+                // 捨てると最後の子が帰ってきたときに終わらせる者がいなくなり、
+                // 確認待ちのまま居座る
+                if payload.isTurnStart {
+                    ledger.tasks[index].pendingStatus = nil
+                }
             }
 
             // 変わったところだけ触る。何も変わらなければ LedgerStore.withLock が
             // 書き込みごと省くので、台帳の更新時刻が動かずサイドバーも数え直さない。
             // PostToolUse のように何度も飛んでくるイベントを受けられるのはこのため
-            if ledger.tasks[index].status != status {
-                ledger.tasks[index].status = status
+            if ledger.tasks[index].status != recorded {
+                ledger.tasks[index].status = recorded
                 ledger.tasks[index].updatedAt = now
                 // また動き出したら「確認した」は無かったことにする。
                 // 次に終わったときは別の結果なので、改めて見てほしい
-                if status == TaskStatus.running || status == TaskStatus.waiting {
+                if recorded == TaskStatus.running || recorded == TaskStatus.waiting {
                     ledger.tasks[index].seenAt = nil
                 }
             }
@@ -94,7 +149,11 @@ public enum RecordHookEvent {
                 ledger.tasks[index].contextPercent = ctx
             }
             // いま何をしているか。updatedAt はここでは動かさない
-            // (ツールのたびに動かすと「経過」が 0 に戻り、並び順も落ち着かない)
+            // (ツールのたびに動かすと「経過」が 0 に戻り、並び順も落ち着かない)。
+            //
+            // ここに渡すのは書き込む状態 (recorded) ではなく**届いた状態**。
+            // 子を待っている親は実行中のままにするが、親自身はもう何も
+            // 触っていないので、ツールの行は消したい
             switch resolveActivity(status: status, payload: payload) {
             case .keep:
                 break
@@ -103,26 +162,160 @@ public enum RecordHookEvent {
             case .set(let text):
                 ledger.tasks[index].activity = text
             }
-            if status == TaskStatus.done || status == TaskStatus.failed,
-               (ledger.tasks[index].subagents ?? 0) != 0 {
-                // ターンが終わればサブエージェントは残らない。
-                // 取りこぼしでずれた数をここで戻す。落ちて終わった (failed) ときも
-                // SubagentStop は来ないので、同じように戻す
+            // サブエージェントの素性と手元。親の行とは別に持つ
+            applySubagents(&ledger.tasks[index], payload: payload, now: now)
+
+            if (status == TaskStatus.done || status == TaskStatus.failed),
+               !hasLiveSubagents, (ledger.tasks[index].subagents ?? 0) != 0 {
+                // 数だけを持つエージェント (agent_id を送ってこないもの) の取りこぼしを戻す。
+                // あちらは SubagentStop を落とすと数がずれたままになるので、
+                // ターンの終わりを唯一の掃除どころにしている。
+                //
+                // **1体ずつ持てるほうはここで消さない。** 子は親のターンより
+                // 長く生きるので、ここで消すと走っている最中の子が一覧から消え、
+                // 次のツールでラベルを失った状態で生え直す。
+                // あちらの掃除は SubagentStop (と subagentTTL) が引き受ける
                 ledger.tasks[index].subagents = 0
+            }
+            return recorded
+        }
+    }
+
+    /// サブエージェントの出入りを記録する。
+    ///
+    /// `agent_id` が付いているなら1体ずつ持つ (SubagentStart / SubagentStop)。
+    /// 付いていないエージェントは今まで通り数だけを増減させる
+    /// (PreToolUse(Task) で増やし、SubagentStop で減らす)。
+    /// どちらの経路も、取りこぼしはターンの終わり (touch done) で戻る。
+    public static func countSubagent(delta: Int, payload: HookPayload) throws {
+        try LedgerStore.withLock { ledger in
+            guard let index = findTask(in: ledger, payload: payload) else { return }
+            let now = Int(Date().timeIntervalSince1970)
+            pruneSubagents(&ledger.tasks[index], now: now)
+
+            guard let id = payload.subagentID else {
+                // 数だけを持つエージェント。ここは今までどおり updatedAt を動かす
+                ledger.tasks[index].subagents =
+                    max(0, (ledger.tasks[index].subagents ?? 0) + delta)
+                ledger.tasks[index].updatedAt = now
+                return
+            }
+
+            // 1体ずつ持てる経路では **updatedAt を動かさない。** 子が出入りする
+            // たびに動かすと「経過」がその都度 0 に戻り、長く走っているセッションを
+            // 見失う (いま触っているツールを載せるときと同じ理由)。
+            // 状態が本当に変わるとき (預かった終わりの確定) だけは動かす
+            if delta > 0 {
+                upsertSubagent(&ledger.tasks[index], id: id, now: now) { run in
+                    if let type = payload.subagentType { run.type = type }
+                }
+            } else {
+                removeSubagent(&ledger.tasks[index], id: id, now: now)
+                // 古い繋ぎ方 (PreToolUse でも +1 する) が残ったままでも
+                // 数が居座らないよう、こちらも一緒に戻す
+                if let count = ledger.tasks[index].subagents, count > 0 {
+                    ledger.tasks[index].subagents = count - 1
+                }
+                // 最後の1体が帰ってきた。親が先に終わりを告げていたなら、
+                // ここで確定させる。そうしないと、終わったセッションが
+                // 実行中のまま一覧に居座る (Stop はもう二度と来ない)
+                settleHold(&ledger.tasks[index], now: now)
             }
         }
     }
 
-    /// サブエージェントの増減を数える。
+    // MARK: - サブエージェント
+
+    /// 届いた payload からサブエージェントの素性と手元を写す。
     ///
-    /// PreToolUse(Task) で増やし、SubagentStop で減らす。取りこぼしても
-    /// ターンの終わり (touch done) で 0 に戻すので、ずれたままにはならない。
-    public static func countSubagent(delta: Int, payload: HookPayload) throws {
-        try LedgerStore.withLock { ledger in
-            guard let index = findTask(in: ledger, payload: payload) else { return }
-            ledger.tasks[index].subagents = max(0, (ledger.tasks[index].subagents ?? 0) + delta)
-            ledger.tasks[index].updatedAt = Int(Date().timeIntervalSince1970)
+    /// 拾えるものが2つある。
+    ///
+    /// - **起動の記録** (Task/Agent ツールの PostToolUse)。`tool_response` に
+    ///   `agentId` と description が揃って入っている唯一の場所で、ここで
+    ///   「どの子に何をさせたか」が結べる
+    /// - **子の手元** (子の中で発火した PostToolUse)。`agent_id` が付いてくるので、
+    ///   親の activity ではなくその子の行に書く
+    ///
+    /// どちらも upsert にしてあるのは、SubagentStart を繋いでいなくても
+    /// 一覧が出るようにするため。順番が入れ替わっても取りこぼさない。
+    static func applySubagents(_ task: inout TaskRecord, payload: HookPayload, now: Int) {
+        if let launched = payload.launchedSubagent {
+            upsertSubagent(&task, id: launched.id, now: now) { run in
+                if let type = launched.type { run.type = type }
+                if let label = launched.label { run.label = label }
+            }
         }
+        if let id = payload.subagentID {
+            upsertSubagent(&task, id: id, now: now) { run in
+                if let type = payload.subagentType { run.type = type }
+                if let activity = payload.toolActivity { run.activity = activity }
+            }
+        }
+    }
+
+    static func upsertSubagent(_ task: inout TaskRecord, id: String, now: Int,
+                               _ edit: (inout SubagentRun) -> Void) {
+        var runs = task.subagentRuns ?? []
+        if let index = runs.firstIndex(where: { $0.id == id }) {
+            edit(&runs[index])
+            // まだ生きている印。打ち切りはここから数える。
+            // 毎回書き換えると無変更のイベントでも台帳が動くので、間隔を空ける
+            if now - runs[index].lastSeen >= subagentHeartbeat {
+                runs[index].lastSeenAt = now
+            }
+        } else {
+            // もう終わった子なら生やさない。hooks は非同期に飛ぶので、
+            // SubagentStop のあとにその子の PostToolUse が遅れて届く。
+            // ここで受けると、二度と終わりを告げられない行が生まれてしまう
+            guard task.finishedSubagents?[id] == nil else { return }
+            var run = SubagentRun(id: id, startedAt: now)
+            edit(&run)
+            runs.append(run)
+        }
+        task.subagentRuns = runs
+    }
+
+    /// 1体消す。空になったらキーごと落とす (無い項目は書き出さない台帳の流儀に合わせる)。
+    /// 消した相手は墓標に残す (遅れて届くその子のイベントを弾くため)
+    static func removeSubagent(_ task: inout TaskRecord, id: String, now: Int) {
+        var runs = task.subagentRuns ?? []
+        runs.removeAll { $0.id == id }
+        task.subagentRuns = runs.isEmpty ? nil : runs
+
+        var finished = task.finishedSubagents ?? [:]
+        finished[id] = now
+        task.finishedSubagents = finished
+    }
+
+    /// 声を聞かなくなった子と、古い墓標を捨てる。
+    ///
+    /// 子のほうは、終わりを取りこぼしたときの受け皿。親のターンの終わりでは
+    /// 掃除できない (子は親より長く生きる) ので、時間で切るしかない。
+    /// **数えるのは生まれてからではなく、最後に声を聞いてから。**
+    /// 生まれた時刻で切ると、長く走っている子を動いている最中に消してしまい、
+    /// その拍子に親の預かった終わりが確定して完了の印が付く。
+    static func pruneSubagents(_ task: inout TaskRecord, now: Int) {
+        if var runs = task.subagentRuns {
+            runs.removeAll { now - $0.lastSeen >= subagentTTL }
+            task.subagentRuns = runs.isEmpty ? nil : runs
+        }
+        if var finished = task.finishedSubagents {
+            finished = finished.filter { now - $0.value < finishedSubagentTTL }
+            task.finishedSubagents = finished.isEmpty ? nil : finished
+        }
+    }
+
+    /// 預かった終わりを確定させる。子が誰も居なくなっていれば。
+    ///
+    /// **いまの状態は見ない。確認待ちでも上書きする。** 預かりを持つのは
+    /// 「親がもう Stop を告げている」ということなので、そのあとの確認待ちは
+    /// 子が上げたもの。その子が帰ってきた時点で、待たせている相手はもういない。
+    /// ここを「実行中のときだけ」に絞ると、確認待ちのまま居座る経路ができる
+    static func settleHold(_ task: inout TaskRecord, now: Int) {
+        guard task.subagentRuns == nil, let held = task.pendingStatus else { return }
+        task.status = held
+        task.pendingStatus = nil
+        task.updatedAt = now
     }
 
     // MARK: -
@@ -140,11 +333,17 @@ public enum RecordHookEvent {
 
     /// - ターンが終わった (done / failed) → 何もしていないので消す
     /// - ターンが始まった (UserPromptSubmit) → 前のターンの残りを消す
+    /// - 子が叩いたツール (agent_id 付き) → 触らない。それは子の行に出す
+    /// - 子を起動したツール → 触らない。何をさせたかは子の行が語る
     /// - ツールを叩いた (PostToolUse) → それを載せる
     /// - それ以外 → 触らない。確認待ちの間も、直前に何をしていたかは残したい
     static func resolveActivity(status: String, payload: HookPayload) -> ActivityUpdate {
         if status == TaskStatus.done || status == TaskStatus.failed { return .clear }
         if payload.isTurnStart { return .clear }
+        // 子のツールは親と同じ session_id で飛んでくる。区別せずに載せると、
+        // 親の行が子の作業で塗り替わって「親がいま何をしているか」が分からなくなる
+        if payload.subagentID != nil { return .keep }
+        if payload.launchedSubagent != nil { return .keep }
         if let activity = payload.toolActivity { return .set(activity) }
         return .keep
     }
@@ -180,8 +379,9 @@ public enum RecordHookEvent {
             updatedAt: now,
             agent: payload.agent,
             // 最初の1件目が PostToolUse のこともある (前のセッションの記録を
-            // 消したあとなど)。そのときも何をしているかは載せておく
-            activity: payload.toolActivity,
+            // 消したあとなど)。そのときも何をしているかは載せておく。
+            // ただし子が叩いたツールは親の手元ではないので載せない
+            activity: payload.subagentID == nil ? payload.toolActivity : nil,
             title: payload.tabTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
             name: payload.sessionName,
             model: payload.modelName,
@@ -202,10 +402,17 @@ public enum RecordHookEvent {
         return ledger.tasks.firstIndex { $0.sessionId == session }
     }
 
-    /// 終了を取りこぼしたセッションの記録を捨てる。
+    /// 台帳ぜんぶに箒をかける。イベントが届くたび、書き込む前に1回。
     ///
-    /// SessionEnd が飛ばないまま終わることがあるため (タブごと閉じられた・殺された)、
-    /// ここで掃除する。判断は2段構えになっている。
+    /// やることは3つ。**どれも「当人からはもうイベントが来ない」記録が相手**なので、
+    /// 全件を見るこの場所でしか手が届かない。
+    ///
+    /// 1. 終了を取りこぼしたセッションの記録を捨てる
+    /// 2. 声を聞かなくなった子と古い墓標を捨てる
+    /// 3. 子が居なくなった親の、預かった終わりを確定させる
+    ///
+    /// 1は SessionEnd が飛ばないまま終わることがあるため (タブごと閉じられた・
+    /// 殺された)。判断は2段構えになっている。
     ///
     /// - **プロセスが分かるもの**: 生きているかどうかで決める。死んでいれば状態に
     ///   関係なく落とす。実行中のまま殺されたセッションは、これが無いと
@@ -218,7 +425,7 @@ public enum RecordHookEvent {
     ///
     /// - Parameter keeping: 何があっても残すタスクのID。いま知らせてきた当人を指す。
     /// - Parameter isAlive: プロセスの生死。差し替えられるようにしてあるのは試験のため。
-    static func pruneStaleSessions(
+    static func sweepLedger(
         _ ledger: inout LedgerFile, now: Int, keeping: String? = nil,
         isAlive: (Int, Int?) -> Bool = { ProcessLiveness.isAlive(pid: $0, startedAt: $1) }
     ) {
@@ -226,6 +433,10 @@ public enum RecordHookEvent {
             if let keeping, task.id == keeping { return false }
             if let pid = task.pid { return !isAlive(pid, task.pidStartedAt) }
             return task.status != TaskStatus.running && now - task.updatedAt >= sessionTTL
+        }
+        for index in ledger.tasks.indices {
+            pruneSubagents(&ledger.tasks[index], now: now)
+            settleHold(&ledger.tasks[index], now: now)
         }
     }
 }

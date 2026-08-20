@@ -20,17 +20,42 @@ in the background.
 ▶ Split the kit into layers  (context: 32%)
    main · elapsed: 1m  🤖2              +74 -3 ?2
    Edit: TaskStore.swift
+   ├ Explore  find where the ledger is read
+   │    Grep: LedgerStore · 12s
+   └ general-purpose  cross-check the review comments
+        Read: CollectTasks.swift · 48s
 ```
 
 The session name, context usage and subagent count are things a tab cannot tell
 you. `elapsed` is the time since the status last changed — if something has been
 running for a long time, that is a hint that it is either thinking hard or stuck.
 
-The last line is the tool the agent is touching right now. It shows only while a
+The tool line is what the agent is touching right now. It shows only while a
 session is running: keeping it afterwards makes finished work look like it is
 still going. It is built from the `PostToolUse` payload the hooks already send,
 so there is nothing extra to wire up (verified with Claude Code; any agent that
 sends `tool_name` and `tool_input` the same way gets it too).
+
+Subagents hang under the session that spawned them, one row each. A count alone
+(`🤖2`) says work is happening somewhere but not what it is, which still sends
+you to the tab. Each row gets two lines because it carries two different kinds of
+fact: **what it was sent to do**, which never changes, and **what it is touching
+now**, which changes with every tool. The first comes from the `description` of
+the `Task` tool, the second from the subagent's own `PostToolUse` — Claude Code
+tags both with an `agent_id`, so they can be told apart. Agents that do not send
+one keep showing the plain count.
+
+Routing those events to the child also keeps the parent's own tool line honest.
+A subagent's tools arrive under the parent's `session_id`, so without the split
+the parent row would be overwritten by whatever the child happened to run.
+
+Subagents are launched asynchronously, which means **the parent's turn ends
+before its children do** — `Stop` arrives while they are still working, and the
+parent is woken again when they report back. A session in that state is not
+finished and is not waiting for you, so proctor holds the ending back and keeps
+it running until the last child returns. Otherwise it would flash a green
+`✅ 完了` at you and then go back to work, and the colour would stop meaning
+*this one needs you*.
 
 A finished session shows as a green `✅ 完了` **only until you look at it**.
 Focus that tab and it turns into a quiet `✔ 確認済み` with the whole row dimmed,
@@ -54,7 +79,8 @@ exist and what symbol and name to call them by.
 ```
 ProctorKit/
   Model/       Data and vocabulary. No I/O
-               TaskRecord, DiffCounts, CollectedTask, TaskStatus, TaskID, RateLimits
+               TaskRecord, DiffCounts, CollectedTask, SubagentRun, TaskStatus,
+               TaskID, RateLimits
   Repository/  The only door to the outside: the ledger, git and the environment
                LedgerStore, GitClient, ProcessRunner, EnvironmentSource,
                ProcessLiveness, Paths
@@ -90,6 +116,16 @@ ProctorApp/    App (view). SwiftUI and AppKit. TaskStore wraps the repository
   because that is the moment the numbers are worth being exact. The activity
   line changes on every tool call, so recounting there would spawn git once per
   tool, per worktree
+- **A subagent row is only ever removed by its own `SubagentStop`.** The end of
+  the parent's turn cannot clean them up, because children outlive it. A stop
+  that never arrives is caught by a six-hour cutoff — but that cutoff only runs
+  when some hook fires, so a session nobody is driving is swept the next time
+  *any* session reports in, not on a timer of its own
+- **A stop that already happened cannot be undone by a late event.** Hooks fire
+  asynchronously, so a child's last tool call can land after its `SubagentStop`.
+  Stopped children are remembered for five minutes and refused, because a row
+  that comes back to life has nothing left to end it and would hold the session
+  open forever
 - **Writing the activity does not move `updatedAt`.** That field is what
   `elapsed` and the sort order are built on. Moving it on every tool call would
   reset the clock constantly and never let the list settle
@@ -177,7 +213,7 @@ not listed in the help. All of them read the hook JSON from stdin.
 | Command | Caller | Purpose |
 | --- | --- | --- |
 | `proctor _touch <status>` | hooks | running / waiting / done / failed / clear / notification |
-| `proctor _subagent start\|stop` | hooks | subagent count |
+| `proctor _subagent start\|stop` | hooks | subagents (one row each, or a count) |
 | `proctor _stats` | statusline | session name, model, context usage |
 
 The heading in the list is picked in this order: **a name a person gave it, the

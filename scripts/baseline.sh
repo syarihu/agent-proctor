@@ -28,7 +28,7 @@ export PROCTOR_STATE_DIR="$LAB/state"
 scrub() {
     sed -E \
         -e "s#$LAB#<LAB>#g" \
-        -e 's/"(ageSeconds|idleSeconds|createdAt|updatedAt|pid|pidStartedAt)" : [0-9]+/"\1" : <N>/g' \
+        -e 's/"(ageSeconds|idleSeconds|createdAt|updatedAt|pid|pidStartedAt|startedAt|lastSeenAt|elapsedSeconds)" : [0-9]+/"\1" : <N>/g' \
         -e 's/[0-9]+[smhd]$/<AGE>/'
 }
 
@@ -91,6 +91,137 @@ payload() {
     "$BIN" ls --all --json | grep '"subagents"'
     payload s1 "$LAB/work" | "$BIN" _touch done
     "$BIN" ls --all --json | grep '"subagents"'
+
+    # --- ここから agent_id を送ってくるエージェント (Claude Code) の経路
+    payload s1 "$LAB/work" | "$BIN" _touch running
+
+    say "親が触っているツールが載る"
+    payload s1 "$LAB/work" ',"tool_name":"Edit","tool_input":{"file_path":"/x/TaskStore.swift"}' \
+        | "$BIN" _touch running
+    "$BIN" ls --all --json | grep '"activity"'
+
+    say "SubagentStart で1体ぶら下がる"
+    payload s1 "$LAB/work" ',"agent_id":"a1","agent_type":"Explore"' | "$BIN" _subagent start
+    "$BIN" ls --all --json | grep -E '"(subagents|id|name|type)"'
+
+    say "Agent ツールの PostToolUse で「何をさせているか」が付く"
+    payload s1 "$LAB/work" ',"tool_name":"Agent","tool_input":{"description":"台帳の読み方を調べる","subagent_type":"Explore"},"tool_response":{"agentId":"a1","description":"台帳の読み方を調べる","resolvedModel":"haiku"}' \
+        | "$BIN" _touch running
+    "$BIN" ls --all --json | grep -E '"(label|activity)"'
+
+    say "子が叩いたツールは子の行に出る (親の activity は Edit のまま)"
+    payload s1 "$LAB/work" ',"agent_id":"a1","agent_type":"Explore","tool_name":"Grep","tool_input":{"description":"TaskStatus を探す"}' \
+        | "$BIN" _touch running
+    "$BIN" ls --all --json | grep -E '"(label|activity)"'
+
+    say "2体目が増える"
+    payload s1 "$LAB/work" ',"agent_id":"a2","agent_type":"general-purpose"' | "$BIN" _subagent start
+    "$BIN" ls --all --json | grep '"subagents"'
+
+    say "ls (表にサブエージェントがぶら下がる)"
+    "$BIN" ls --all
+
+    say "SubagentStop で1体減る"
+    payload s1 "$LAB/work" ',"agent_id":"a1","agent_type":"Explore"' | "$BIN" _subagent stop
+    "$BIN" ls --all --json | grep -E '"(subagents|name)"'
+
+    say "SubagentStart / Stop では経過が 0 に戻らない"
+    M1=$("$BIN" ls --all --json | grep '"updatedAt"' | head -1)
+    payload s1 "$LAB/work" ',"agent_id":"a3","agent_type":"Explore"' | "$BIN" _subagent start
+    M2=$("$BIN" ls --all --json | grep '"updatedAt"' | head -1)
+    [ "$M1" = "$M2" ] && echo "updatedAt: 動かない" || echo "updatedAt: 動いた"
+
+    # 子は非同期に起動されるので、親のターンは子を待たずに終わって Stop が飛ぶ。
+    # そのまま完了にすると、まだ動いているのに緑の印が付いてしまう
+    say "子が走っている間は done が来ても完了にしない"
+    payload s1 "$LAB/work" | "$BIN" _touch done
+    "$BIN" ls --all --json | grep -E '"(status|subagents)"'
+    "$BIN" ls --all
+
+    # 親の Stop と子の SubagentStop は非同期に飛ぶので、Stop が先に着くことがある。
+    # 保留した終わりを覚えていないと、終わったセッションが実行中のまま居座る
+    say "先に届いていた done は、最後の1体が帰った時点で確定する"
+    payload s1 "$LAB/work" ',"agent_id":"a2","agent_type":"general-purpose"' | "$BIN" _subagent stop
+    "$BIN" ls --all --json | grep '"status"'
+    payload s1 "$LAB/work" ',"agent_id":"a3","agent_type":"Explore"' | "$BIN" _subagent stop
+    "$BIN" ls --all --json | grep -E '"(status|subagents)"'
+
+    say "子に起こされて動き出したら、預かった終わりは無かったことになる"
+    payload s1 "$LAB/work" | "$BIN" _touch running
+    payload s1 "$LAB/work" ',"agent_id":"a4","agent_type":"Explore"' | "$BIN" _subagent start
+    payload s1 "$LAB/work" | "$BIN" _touch done      # 保留される
+    payload s1 "$LAB/work" ',"prompt":"<task-notification>…"' | "$BIN" _touch running  # 起こされた
+    payload s1 "$LAB/work" ',"agent_id":"a4","agent_type":"Explore"' | "$BIN" _subagent stop
+    "$BIN" ls --all --json | grep '"status"'         # 実行中のまま (改めて Stop が来る)
+    payload s1 "$LAB/work" | "$BIN" _touch done
+    "$BIN" ls --all --json | grep -E '"(status|subagents)"'
+    grep -q subagentRuns "$PROCTOR_STATE_DIR/state.json" \
+        && echo "台帳: 子が残っている" || echo "台帳: 子はいない"
+    payload s1 "$LAB/work" | "$BIN" _touch running
+
+    # hooks は非同期に飛ぶので、子の最後のツールが SubagentStop より後に着きうる。
+    # 受けてしまうと、終わりを告げる者がいない行が生まれてセッションが開いたままになる
+    say "SubagentStop のあとに遅れて届いた子のイベントでは生き返らない"
+    payload s1 "$LAB/work" ',"agent_id":"b1","agent_type":"Explore"' | "$BIN" _subagent start
+    payload s1 "$LAB/work" ',"agent_id":"b1","tool_name":"Grep","tool_input":{"description":"探す"}' \
+        | "$BIN" _touch running
+    payload s1 "$LAB/work" ',"agent_id":"b1","agent_type":"Explore"' | "$BIN" _subagent stop
+    payload s1 "$LAB/work" ',"agent_id":"b1","tool_name":"Read","tool_input":{"file_path":"/x/y.swift"}' \
+        | "$BIN" _touch running
+    "$BIN" ls --all --json | grep '"subagents"'
+    grep -q subagentRuns "$PROCTOR_STATE_DIR/state.json" \
+        && echo "台帳: 子が生き返った" || echo "台帳: 子はいない"
+    payload s1 "$LAB/work" | "$BIN" _touch done
+    "$BIN" ls --all --json | grep '"status"'
+
+    say "保留中に確認待ちが挟まっても、預かった終わりは消えない"
+    payload s1 "$LAB/work" | "$BIN" _touch running
+    payload s1 "$LAB/work" ',"agent_id":"b2","agent_type":"Explore"' | "$BIN" _subagent start
+    payload s1 "$LAB/work" | "$BIN" _touch done
+    payload s1 "$LAB/work" ',"message":"needs your permission"' | "$BIN" _touch notification
+    payload s1 "$LAB/work" ',"agent_id":"b2","agent_type":"Explore"' | "$BIN" _subagent stop
+    "$BIN" ls --all --json | grep '"status"'
+
+    # アプリの 🤖 は数だけを見て出しているので、行を出さない状態で数が残ると
+    # 完了した行に 🤖 だけが脈打つ
+    say "完了した行に子がぶら下がっても数は 0"
+    payload s1 "$LAB/work" ',"agent_id":"b3","agent_type":"Explore"' | "$BIN" _subagent start
+    "$BIN" ls --all --json | grep -E '"(status|subagents)"'
+    "$BIN" ls --all
+    payload s1 "$LAB/work" ',"agent_id":"b3","agent_type":"Explore"' | "$BIN" _subagent stop
+
+    # 打ち切りは時間で効くので、台帳を直に仕込んで作る。
+    # 起点を「生まれた時刻」にすると、長く走っている子が動いている最中に消え、
+    # その拍子に親の預かった終わりが確定して完了の印が付く
+    say "何時間走っていても、声が届いている子は打ち切られない"
+    plant() {  # $1: startedAt の何秒前, $2: 最後に声を聞いたのが何秒前
+        python3 - "$PROCTOR_STATE_DIR/state.json" "$1" "$2" <<'PY'
+import json, sys, time
+path, born, seen = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+now = int(time.time())
+box = json.load(open(path))
+for task in box["tasks"]:
+    if task["id"] != "work":
+        continue
+    task["status"] = "running"
+    task["pendingStatus"] = "done"
+    task["subagentRuns"] = [{"id": "long", "type": "Explore",
+                             "label": "重い調べもの",
+                             "startedAt": now - born, "lastSeenAt": now - seen}]
+json.dump(box, open(path, "w"), ensure_ascii=False)
+PY
+    }
+    plant 25200 60          # 7時間前に生まれ、1分前まで喋っている
+    payload s9 "$LAB/work" | "$BIN" _touch running   # 別セッションのイベントで箒がかかる
+    "$BIN" ls --all --json | grep -E '"(status|label)"'
+
+    say "声が途絶えた子は打ち切られ、預かった終わりが確定する"
+    plant 25200 25200       # 7時間前から音沙汰なし
+    payload s9 "$LAB/work" | "$BIN" _touch running
+    "$BIN" ls --all --json | grep -E '"(status|subagents)"'
+    # 箒をかけるためだけに開いたセッションなので片付ける。
+    # 残すと以降の節で ID の採番がずれて、何を見ている節なのか分かりにくくなる
+    payload s9 "$LAB/work" | "$BIN" _touch clear
 
     say "_stats (statusline からの横流し)"
     printf '{"session_id":"s1","model":{"display_name":"Opus 5"},"context_window":{"used_percentage":42.6},"session_name":"テスト"}' | "$BIN" _stats

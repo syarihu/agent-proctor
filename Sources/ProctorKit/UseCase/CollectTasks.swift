@@ -33,7 +33,8 @@ public enum CollectTasks {
                 status: exists ? record.status : TaskStatus.missing,
                 diff: exists ? diff(for: record) : DiffCounts(),
                 ageSeconds: max(0, now - record.createdAt),
-                idleSeconds: max(0, now - record.updatedAt))
+                idleSeconds: max(0, now - record.updatedAt),
+                now: now)
         }
     }
 
@@ -60,7 +61,8 @@ public enum CollectTasks {
                 status: old.exists ? record.status : TaskStatus.missing,
                 diff: old.diff,
                 ageSeconds: max(0, now - record.createdAt),
-                idleSeconds: max(0, now - record.updatedAt))
+                idleSeconds: max(0, now - record.updatedAt),
+                now: now)
         }
     }
 

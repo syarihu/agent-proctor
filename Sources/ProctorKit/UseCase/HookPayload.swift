@@ -82,6 +82,39 @@ public struct HookPayload {
         return HookPayload.condensed(detail.map { "\(name): \($0)" } ?? name)
     }
 
+    /// サブエージェントの個体識別子 (`agent_id`)。
+    ///
+    /// **子の中で発火したフックにだけ付く。** つまりこれが入っているイベントは
+    /// 親の手元で起きたことではないので、親の activity を塗り替えてはいけない。
+    /// SubagentStart / SubagentStop でも同じ値が来るので、始まりと終わりが結べる
+    public var subagentID: String? {
+        (box["agent_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// サブエージェントの種別 (`agent_type`)。"Explore" や独自エージェント名
+    public var subagentType: String? {
+        (box["agent_type"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// いま起動されたサブエージェントの素性。
+    ///
+    /// Task/Agent ツールの `PostToolUse` の `tool_response` から取る。
+    /// **`agent_id` と description が同じ payload に入っている唯一の場所**で、
+    /// ここを読めば「どの子に何をさせたか」を余計な突き合わせなしに結べる。
+    /// 非同期で起動される (`async_launched`) ので、子が終わるのを待たずに届く。
+    public var launchedSubagent: (id: String, type: String?, label: String?)? {
+        guard let response = box["tool_response"] as? [String: Any],
+              let id = response["agentId"] as? String, !id.isEmpty else { return nil }
+        let label = (response["description"] as? String).flatMap {
+            $0.isEmpty ? nil : HookPayload.condensed($0)
+        }
+        // 種別は SubagentStart でも届くが、そちらを繋いでいない場合の受け皿として
+        // ツールの引数からも拾っておく
+        let type = ((box["tool_input"] as? [String: Any])?["subagent_type"] as? String)
+            .flatMap { $0.isEmpty ? nil : $0 }
+        return (id, type, label)
+    }
+
     /// 台帳に載せる前に1行へ均す。command にはヒアドキュメントが丸ごと
     /// 入ってくることがあり、そのまま持つと台帳が肥大化する
     static func condensed(_ text: String, limit: Int = 80) -> String {

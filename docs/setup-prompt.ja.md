@@ -43,7 +43,7 @@ proctor のコマンドは `$HOME/bin/proctor` のように絶対パスで書い
 | `Stop` | なし | `proctor _touch done` | ターンが終わった |
 | `StopFailure` | なし | `proctor _touch failed` | ターンが落ちた (レートリミット等) |
 | `SessionEnd` | なし | `proctor _touch clear` | セッションが終わった |
-| `PreToolUse` | `Task\|Agent` | `proctor _subagent start` | サブエージェントが増えた |
+| `SubagentStart` | なし | `proctor _subagent start` | サブエージェントが増えた |
 | `SubagentStop` | なし | `proctor _subagent stop` | サブエージェントが減った |
 
 いずれも stdin にフックの JSON がそのまま渡る必要があります。
@@ -60,6 +60,11 @@ Claude Code は既定でそうするので、パイプなどを自分で足す�
   メッセージを見て切り分けます。
 - **`StopFailure` を入れる理由**: レートリミットや overloaded でターンが落ちたときは
   `Stop` が発火しません。繋がないと、落ちたセッションが「実行中」のまま一覧に居座ります。
+- **`PreToolUse` (`Task|Agent`) ではなく `SubagentStart` を使う理由**:
+  サブエージェントを1体ずつ見分ける鍵 `agent_id` が載るのは `SubagentStart` だけです。
+  `PreToolUse` はまだ子が生まれる前に親側で発火するので、数えることしかできません。
+  古い `PreToolUse` の繋ぎ方を残したままでも壊れません (proctor は数より
+  1体ずつの一覧を優先します) が、残す利点もありません。
 - **`SessionEnd` を同期で呼ぶ理由**: バックグラウンドに投げると Claude 本体の終了に
   巻き込まれて、書き終わる前に殺されることがあります。他のイベントは末尾に `&` を付けて
   非同期にして構いませんが、`SessionEnd` だけは同期にしてください。

@@ -70,8 +70,23 @@ enum Terminal {
         text + String(repeating: " ", count: max(0, size - width(text)))
     }
 
+    /// サブエージェント1体を1行に整える。
+    ///
+    /// アプリは幅が狭いので2行に分けているが、端末は横に余裕があるので
+    /// 1行に畳む。出している中身は同じ (名前・何をさせているか・手元・経過)。
+    static func subagent(_ sub: CollectedSubagent, isLast: Bool) -> String {
+        var parts = [color("35", sub.name)]
+        if let label = sub.label { parts.append(label) }
+        if let activity = sub.activity { parts.append(color("36", activity)) }
+        parts.append(color("2", elapsed(sub.elapsedSeconds)))
+        return color("2", "  \(isLast ? "└" : "├") ") + parts.joined(separator: " · ")
+    }
+
     /// 表を1つ書く。列の幅は中身から決める。
-    static func table(headers: [String], rows: [[String]]) {
+    ///
+    /// - Parameter notes: 行ごとにぶら下げる補足 (サブエージェントの一覧)。
+    ///   桁揃えの外側に出すので、長くても列幅を押し広げない
+    static func table(headers: [String], rows: [[String]], notes: [[String]] = []) {
         let widths = (0..<headers.count).map { i in
             max(width(headers[i]), rows.map { width($0[i]) }.max() ?? 0)
         }
@@ -80,9 +95,11 @@ enum Terminal {
                 .joined(separator: "  ")
         }
         print(color("2", line(headers)))
-        for row in rows {
+        for (index, row) in rows.enumerated() {
             print(line(row).replacingOccurrences(
                 of: "\\s+$", with: "", options: .regularExpression))
+            guard index < notes.count else { continue }
+            for note in notes[index] { print(note) }
         }
     }
 }

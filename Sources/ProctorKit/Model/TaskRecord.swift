@@ -29,6 +29,11 @@ public struct TaskRecord: Codable, Equatable {
     public var createdAt: Int
     public var updatedAt: Int
     public var subagents: Int?
+    /// 走っているサブエージェントの中身。`agent_id` を送ってくるエージェントだけが持つ。
+    ///
+    /// `subagents` (数) と併存させているのは、`agent_id` を送らないエージェントが
+    /// いるため。数のほうを捨てると、そちらの一覧から 🤖 が消えてしまう
+    public var subagentRuns: [SubagentRun]?
     /// セッションを動かしているエージェント ("claude" や "agy")。
     /// タブを開き直すとき (attach) にどの CLI を呼ぶかの分岐に使う
     public var agent: String?
@@ -39,6 +44,20 @@ public struct TaskRecord: Codable, Equatable {
     /// 終わったあと、そのタブを見た時刻。見ていなければ nil。
     /// また動き出したら nil に戻す (次に終わったときは別の結果なので、改めて見てほしい)
     public var seenAt: Int?
+    /// 終わった子の墓標 (agent_id → 終わった時刻)。
+    ///
+    /// hooks は非同期に飛ぶので、`SubagentStop` のあとにその子の `PostToolUse` が
+    /// 遅れて届くことがある。素直に受けると**消したはずの子が生え直し**、
+    /// その行に対する SubagentStop はもう来ないので、
+    /// セッションが永久に実行中のまま一覧に居座る。遅れて来たものを弾くために持つ
+    public var finishedSubagents: [String: Int]?
+    /// 子を待つあいだ保留している「終わり」(done / failed)。
+    ///
+    /// 親のターンは子を待たずに終わるので、まだ子が走っているうちに Stop が届く。
+    /// そのまま完了にはできないが、捨ててしまうと**最後の子が帰ってきたときに
+    /// 終わりを告げる者がいなくなる** (親の Stop と子の SubagentStop は
+    /// 非同期に飛ぶので、Stop のほうが先に着くことがある)。ここに預けておく
+    public var pendingStatus: String?
     /// 人が明示的に付けた名前 (端末のタブに付けたタイトルなど)。
     /// エージェントが自分で付ける name より、こちらを先に出す
     public var title: String?
@@ -56,8 +75,11 @@ public struct TaskRecord: Codable, Equatable {
                 sessionId: String? = nil, itermSession: String? = nil,
                 pid: Int? = nil, pidStartedAt: Int? = nil,
                 status: String, createdAt: Int, updatedAt: Int,
-                subagents: Int? = nil, agent: String? = nil,
-                activity: String? = nil, seenAt: Int? = nil, title: String? = nil,
+                subagents: Int? = nil, subagentRuns: [SubagentRun]? = nil,
+                agent: String? = nil,
+                activity: String? = nil, seenAt: Int? = nil,
+                finishedSubagents: [String: Int]? = nil,
+                pendingStatus: String? = nil, title: String? = nil,
                 name: String? = nil, model: String? = nil,
                 contextPercent: Int? = nil,
                 rateLimits: AgentRateLimits? = nil,
@@ -74,9 +96,12 @@ public struct TaskRecord: Codable, Equatable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.subagents = subagents
+        self.subagentRuns = subagentRuns
         self.agent = agent
         self.activity = activity
         self.seenAt = seenAt
+        self.finishedSubagents = finishedSubagents
+        self.pendingStatus = pendingStatus
         self.title = title
         self.name = name
         self.model = model

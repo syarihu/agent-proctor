@@ -1,5 +1,29 @@
 import Foundation
 
+/// サブエージェント1体を表示向けに整えたもの。
+///
+/// 経過時間を表示側で数えさせないためにここで持たせる
+/// (親の `ageSeconds` / `idleSeconds` と同じ考え方)。
+public struct CollectedSubagent: Encodable, Identifiable, Equatable {
+    public var id: String
+    /// 見出しに出す名前 ("Explore" など)
+    public var name: String
+    /// 何をさせているか (Task ツールの description)。無いこともある
+    public var label: String?
+    /// この子がいま触っているツール
+    public var activity: String?
+    /// 生まれてからの時間。長いと、重い調べものか詰まっているかの手がかりになる
+    public var elapsedSeconds: Int
+
+    public init(run: SubagentRun, elapsedSeconds: Int) {
+        id = run.id
+        name = run.displayName
+        label = run.label
+        activity = run.activity
+        self.elapsedSeconds = elapsedSeconds
+    }
+}
+
 /// 台帳の1件に、その場で数えた情報を足したもの。
 ///
 /// CLI の表もサイドバーもメニューバーもこれを整形するだけにする。
@@ -15,7 +39,10 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     public var status: String
     public var createdAt: Int
     public var updatedAt: Int
+    /// 走っているサブエージェントの数。中身が分かるなら、その件数を正とする
     public var subagents: Int
+    /// 走っているサブエージェント1体ずつ。中身を送ってこないエージェントでは空になる
+    public var subagentRuns: [CollectedSubagent]
     public var agent: String?
     /// いま触っているツール。台帳の値そのまま (止まったあとも残っている)
     public var activity: String?
@@ -57,6 +84,23 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         status == TaskStatus.running ? activity : nil
     }
 
+    /// いま出してよいサブエージェント。
+    ///
+    /// 確認待ちの間も出す。手を挙げているのが子のほうだったとき、
+    /// 消してしまうと何を聞かれているのか分からなくなる。
+    ///
+    /// **終わったセッションでも台帳には子が残っていることがある。**
+    /// 子は親のターンより長く生きるので、台帳側で消すわけにいかない
+    /// (消すと走っている最中の子が一覧から落ちる)。門番はここに置く
+    public var currentSubagents: [CollectedSubagent] {
+        CollectedTask.visibleSubagents(subagentRuns, status: status)
+    }
+
+    static func visibleSubagents(_ runs: [CollectedSubagent],
+                                 status: String) -> [CollectedSubagent] {
+        status == TaskStatus.running || status == TaskStatus.waiting ? runs : []
+    }
+
     /// エージェント種別の解決 ("agy" または "claude")
     public var resolvedAgent: String {
         if let agent, !agent.isEmpty { return agent }
@@ -88,7 +132,7 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     }
 
     public init(record: TaskRecord, repoName: String, exists: Bool, status: String,
-                diff: DiffCounts, ageSeconds: Int, idleSeconds: Int) {
+                diff: DiffCounts, ageSeconds: Int, idleSeconds: Int, now: Int) {
         id = record.id
         repo = record.repo
         branch = record.branch
@@ -98,7 +142,17 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         self.status = status
         createdAt = record.createdAt
         updatedAt = record.updatedAt
-        subagents = record.subagents ?? 0
+        subagentRuns = (record.subagentRuns ?? []).map {
+            CollectedSubagent(run: $0, elapsedSeconds: max(0, now - $0.startedAt))
+        }
+        // 中身が分かっているならそれを数える。数のほうは、古い繋ぎ方
+        // (PreToolUse で +1 する) を残したままだと二重に増えるため当てにしない。
+        //
+        // **数にも同じ門番を通す。** アプリの 🤖 は数だけを見て出しているので、
+        // 素通りさせると、行は出ていないのに完了した行で 🤖 だけが脈打つ
+        subagents = subagentRuns.isEmpty
+            ? (record.subagents ?? 0)
+            : CollectedTask.visibleSubagents(subagentRuns, status: status).count
         agent = record.agent
         activity = record.activity
         seenAt = record.seenAt

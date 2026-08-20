@@ -47,7 +47,7 @@ is ever removed.
 | `Stop` | none | `proctor _touch done` | the turn finished |
 | `StopFailure` | none | `proctor _touch failed` | the turn died (rate limit, overloaded) |
 | `SessionEnd` | none | `proctor _touch clear` | the session ended |
-| `PreToolUse` | `Task\|Agent` | `proctor _subagent start` | a subagent started |
+| `SubagentStart` | none | `proctor _subagent start` | a subagent started |
 | `SubagentStop` | none | `proctor _subagent stop` | a subagent stopped |
 
 Each of these needs the hook JSON passed through on stdin. Claude Code does this
@@ -68,6 +68,12 @@ by default, so you do not need to add any piping yourself.
 - **Why `StopFailure` is included**: when a turn dies on a rate limit or an
   overloaded error, `Stop` does not fire. Without this hook the session stays in
   the list as running and never settles.
+- **Why `SubagentStart` rather than `PreToolUse` on `Task|Agent`**: only
+  `SubagentStart` carries `agent_id`, the one thing that tells the subagents
+  apart. `PreToolUse` fires on the main thread before the subagent exists, so it
+  can only be counted, not listed. If you keep the old `PreToolUse` wiring as
+  well nothing breaks — proctor trusts the listed subagents over the count — but
+  it buys you nothing either.
 - **Why `SessionEnd` must be synchronous**: if you background it, it can be
   killed along with Claude itself before it finishes writing. The other events
   may be backgrounded with a trailing `&`, but leave `SessionEnd` synchronous.

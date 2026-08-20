@@ -25,16 +25,31 @@ func cmdTouch(_ args: Args) throws -> Int32 {
         }
         status = resolved
     }
-    // 台帳を触る前に返す。git の外での実行など、記録しない場合でも
-    // 「このイベントは確認待ちを意味する」ことは呼び出し側に伝わってほしい。
+    // 返すのは**台帳に記録した状態**。届いた状態とは限らない
+    // (子がまだ走っているセッションは、done が来ても実行中のまま記録する)。
+    // 呼び出し側がタブの色をこれで決めるので、ここで届いた値をそのまま返すと
+    // 一覧は実行中なのにタブだけ緑、という食い違いが起きる。
+    //
+    // ただし**食い違いが消えるわけではない**。保留していた終わりを確定させるのは
+    // SubagentStop で、あちらは何も返さない。今度はタブだけ実行中のまま残る。
+    // 向きを変えて先送りしているだけなので、タブまで揃えたいなら
+    // 呼び出し側が定期的に聞きに来る仕組みがいる。
+    //
+    // 記録しなかった場合 (git の外など) は届いた状態がそのまま返る。
     // Antigravity (agy) の hooks.json から呼ばれる場合は --json で空 JSON を返す
-    if args.has("--json") {
-        print("{}")
-    } else {
-        print(status)
+    func emit(_ value: String) {
+        print(args.has("--json") ? "{}" : value)
     }
-
-    try RecordHookEvent.touch(status: status, payload: payload)
+    let recorded: String
+    do {
+        recorded = try RecordHookEvent.touch(status: status, payload: payload)
+    } catch {
+        // 台帳に書けなくても、このイベントが何を意味するかは伝える。
+        // 黙って落ちると、呼び出し側はタブの色を決められない
+        emit(status)
+        throw error
+    }
+    emit(recorded)
     return 0
 }
 

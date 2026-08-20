@@ -285,6 +285,19 @@ private struct TaskRow: View {
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+
+                // 走っているサブエージェント。数 (🤖2) だけでは何をさせているか
+                // 分からないので、1体ずつぶら下げる
+                if !task.currentSubagents.isEmpty {
+                    VStack(alignment: .leading, spacing: base * 0.2) {
+                        ForEach(Array(task.currentSubagents.enumerated()), id: \.element.id) {
+                            index, sub in
+                            SubagentRow(sub: sub, base: base,
+                                        isLast: index == task.currentSubagents.count - 1)
+                        }
+                    }
+                    .padding(.top, base * 0.1)
+                }
             }
         }
         .padding(.horizontal, base * 0.4)
@@ -423,12 +436,67 @@ private struct TaskRow: View {
         .font(.system(size: base * 0.8).monospacedDigit())
     }
 
-    private func shortAge(_ seconds: Int) -> String {
-        if seconds < 60 { return "\(seconds)s" }
-        if seconds < 3600 { return "\(seconds / 60)m" }
-        if seconds < 86400 { return "\(seconds / 3600)h" }
-        return "\(seconds / 86400)d"
+}
+
+/// 親の下にぶら下がるサブエージェント1体。
+///
+/// 2行に分けているのは、**何をさせているか**と**いま何をしているか**が
+/// 別の情報だから。前者は最後まで変わらず、後者はツールのたびに入れ替わる。
+/// 1行に混ぜると、変わらないはずの部分まで動いて見えて落ち着かない。
+private struct SubagentRow: View {
+    let sub: CollectedSubagent
+    let base: CGFloat
+    /// 最後の1体だけ枝の形を変える。何体で終わりかが目で分かる
+    let isLast: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: base * 0.3) {
+            Text(isLast ? "└" : "├")
+                .font(.system(size: base * 0.75).monospaced())
+                .foregroundStyle(Palette.agents.opacity(0.55))
+
+            VStack(alignment: .leading, spacing: base * 0.1) {
+                HStack(alignment: .firstTextBaseline, spacing: base * 0.3) {
+                    Text(sub.name)
+                        .font(.system(size: base * 0.72, weight: .medium))
+                        .foregroundStyle(Palette.agents)
+                        .layoutPriority(1)
+                    if let label = sub.label {
+                        Text(label)
+                            .font(.system(size: base * 0.72))
+                            .foregroundStyle(Palette.dim)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+
+                HStack(alignment: .firstTextBaseline, spacing: base * 0.3) {
+                    // 手元がまだ分からない子もいる (起動した直後など)。
+                    // 行の高さが揺れないよう、そのときも経過だけは出す
+                    if let activity = sub.activity {
+                        Text(activity)
+                            .font(.system(size: base * 0.68).monospaced())
+                            .foregroundStyle(Palette.activity)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    Text(shortAge(sub.elapsedSeconds))
+                        .font(.system(size: base * 0.68).monospacedDigit())
+                        .foregroundStyle(Palette.dim)
+                        .layoutPriority(1)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
+
+/// 経過時間の短い表記。親の行も子の行も同じ読み方にしたいので、外に出してある
+private func shortAge(_ seconds: Int) -> String {
+    if seconds < 60 { return "\(seconds)s" }
+    if seconds < 3600 { return "\(seconds / 60)m" }
+    if seconds < 86400 { return "\(seconds / 3600)h" }
+    return "\(seconds / 86400)d"
 }
 
 /// コンテキスト使用率の文字とミニカプセルバー

@@ -27,6 +27,14 @@ func cmdLs(_ args: Args) throws -> Int32 {
             let (label, code) = Terminal.style(task.displayStatus)
             return [task.id, Terminal.color(code, label), task.branch,
                     Terminal.diff(task.diff), Terminal.age(task.createdAt)]
+        },
+        // 走っているサブエージェントはその行の下にぶら下げる。
+        // 列に入れると数しか置けず、何をさせているかが出せない
+        notes: tasks.map { task in
+            let subs = task.currentSubagents
+            return subs.enumerated().map { index, sub in
+                Terminal.subagent(sub, isLast: index == subs.count - 1)
+            }
         })
     return 0
 }
