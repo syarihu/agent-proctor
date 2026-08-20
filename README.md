@@ -60,7 +60,7 @@ ProctorKit/
                ProcessLiveness, Paths
   UseCase/     One per thing you want to do. Every decision lives here
                CollectTasks, RecordHookEvent, RecordSessionStats,
-               MarkSessionSeen, ReapClosedSessions, HookPayload
+               MarkSessionSeen, ReapClosedSessions, ForgetTask, HookPayload
 
 proctor/       CLI (view). Reads arguments, calls a use case, formats for a terminal
 ProctorApp/    App (view). SwiftUI and AppKit. TaskStore wraps the repository
@@ -142,7 +142,9 @@ the ledger and `git diff`, and writes nothing but the ledger.
 
 Sessions appear on their own as soon as your hooks report them; there is nothing
 to register by hand. Clicking a row in the sidebar focuses that tab if it is
-still alive, and otherwise opens a new tab resuming the conversation.
+still alive, and otherwise opens a new tab resuming the conversation. Hovering a
+row reveals a close button that drops it from the list — the worktree is left
+alone, and a session that is still running comes back on its next hook.
 
 They leave on their own too. `SessionEnd` drops the row, but that hook does not
 arrive when a tab is closed or the process is killed, so the row is also dropped

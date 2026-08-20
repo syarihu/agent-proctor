@@ -69,6 +69,20 @@ final class TaskStore: ObservableObject {
         focusedSession = session
     }
 
+    /// 一覧から1件外す。サイドバーの閉じるボタンから呼ばれる。
+    ///
+    /// 台帳を読み直す前に手元の一覧からも落とす。読み直しは git を起動するので
+    /// 数百ミリ秒かかることがあり、押したのに消えない時間ができてしまう。
+    func forget(id: String) {
+        do {
+            try ForgetTask.run(id: id)
+        } catch {
+            return  // 既に消えているなど。台帳が正なので何もしない
+        }
+        tasks.removeAll { $0.id == id }
+        refreshNow()
+    }
+
     /// 台帳が外から変わったかもしれないときに呼ぶ (自分で書き換えた直後など)。
     func refreshNow() {
         reloadRecords()

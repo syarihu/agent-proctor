@@ -56,7 +56,7 @@ ProctorKit/
                ProcessLiveness, Paths
   UseCase/     やりたいこと1つに1つ。判断はすべてここが持つ
                CollectTasks, RecordHookEvent, RecordSessionStats,
-               MarkSessionSeen, ReapClosedSessions, HookPayload
+               MarkSessionSeen, ReapClosedSessions, ForgetTask, HookPayload
 
 proctor/       CLI (View)。引数を読んで UseCase を呼び、結果を端末向けに整える
 ProctorApp/    アプリ (View)。SwiftUI と AppKit。TaskStore が Repository を包む
@@ -130,7 +130,9 @@ proctor sidebar         # サイドバー（アプリ）を起動する
 
 セッションは hooks が知らせてくれた時点で勝手に並ぶので、手で登録するものは無い。
 サイドバーの行をクリックすると、そのタブが生きていればフォーカスし、
-閉じていれば新しいタブで会話の続きから開く。
+閉じていれば新しいタブで会話の続きから開く。行にマウスを乗せると閉じるボタンが
+出て、押すと一覧から外れる。worktree には触らないし、まだ動いているセッションなら
+次のフックで戻ってくる。
 
 消えるのも勝手にやる。`SessionEnd` で外れるが、このフックはタブごと閉じたときや
 殺されたときには届かないので、**エージェントのプロセスが居なくなったこと**でも外す。

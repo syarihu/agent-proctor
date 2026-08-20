@@ -69,8 +69,7 @@ func cmdAttach(_ args: Args) throws -> Int32 {
 /// プロセスを追えないまま残った古い記録 (この仕組みより前のもの・Claude Code 以外) を
 /// 期限切れを待たずに片付けるための逃げ道として置いてある。
 func cmdRm(_ args: Args) throws -> Int32 {
-    let task = try LedgerStore.find(id: try args.require(0, "セッションID"))
-    try LedgerStore.drop(ids: [task.id])
+    let task = try ForgetTask.run(id: try args.require(0, "セッションID"))
     // 消したのは記録だけ。作業していた場所は残っていることを断っておく
     print("台帳から外しました: \(task.id) (\(task.worktree) はそのまま)")
     return 0

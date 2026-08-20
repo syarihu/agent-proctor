@@ -33,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             content: TaskListView(store: store, appearance: appearance,
                                   onOpen: { [weak self] task in
                 self?.open(taskID: task.id)
+            }, onClose: { [weak self] task in
+                self?.store.forget(id: task.id)
             }))
         sidebar.onVisibilityChange = { [weak self] visible in
             // 見えていない間は git を起動しない

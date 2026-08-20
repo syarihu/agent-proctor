@@ -11,6 +11,7 @@ struct TaskListView: View {
     @ObservedObject var store: TaskStore
     @ObservedObject var appearance: Appearance
     var onOpen: (CollectedTask) -> Void
+    var onClose: (CollectedTask) -> Void
 
     /// 文字の大きさはここだけで決める。余白も記号もこれに追従する。
     /// メニューバーから変えられる (Appearance)
@@ -45,7 +46,8 @@ struct TaskListView: View {
                                 }
                                 ForEach(group.tasks) { task in
                                     TaskRow(task: task, base: base,
-                                            isCurrent: isCurrent(task), onOpen: onOpen)
+                                            isCurrent: isCurrent(task),
+                                            onOpen: onOpen, onClose: onClose)
                                         .padding(.leading, groups.count > 1 ? base : 0)
                                 }
                             }
@@ -127,9 +129,12 @@ private struct TaskRow: View {
     /// いま iTerm2 で開いているタブ
     let isCurrent: Bool
     var onOpen: (CollectedTask) -> Void
+    var onClose: (CollectedTask) -> Void
 
     @State private var hovering = false
     @State private var diving = false
+    /// 閉じるボタンの上にいるか。行のホバーとは別に持つ (色を変えるため)
+    @State private var closeHovering = false
 
     /// 終わったあと、そのタブを見たもの
     private var isSeen: Bool { task.displayStatus == TaskStatus.seen }
@@ -208,6 +213,8 @@ private struct TaskRow: View {
         .padding(.horizontal, base * 0.4)
         .padding(.vertical, base * 0.5)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // 重ねて置く。行の中に並べると、出入りのたびに幅が変わって文字がずれる
+        .overlay(alignment: .topTrailing) { closeButton }
         // 見終わったものは役目を終えたので引いて背景に馴染ませる。消さずに残すのは、
         // 何をやったかを後から辿れるようにするため。
         // ただし今開いているタブは、引いた分を打ち消して居場所が埋もれないようにする
@@ -256,6 +263,30 @@ private struct TaskRow: View {
             }
         }
         .help(task.worktree)
+    }
+
+    /// ホバー中だけ出る「一覧から外す」ボタン。
+    ///
+    /// 押しても消えるのは台帳の記録だけで、worktree には触らない。
+    /// 常に出しておくと、ただでさえ情報の多い行がさらに読みにくくなるので隠しておく。
+    ///
+    /// クリックは行と同じ onTapGesture で受ける。内側のタップが優先されるので
+    /// 行の「開く」は動かない。サイドバーは nonactivatingPanel で、この方式なら
+    /// 手前に出ていなくても1回目のクリックから効く
+    @ViewBuilder
+    private var closeButton: some View {
+        Image(systemName: "xmark.circle.fill")
+            .font(.system(size: base * 0.85))
+            .foregroundStyle(closeHovering ? Palette.removed : Palette.dim)
+            // 記号そのものは小さいので、当たり判定だけ広げて押しやすくする
+            .padding(base * 0.3)
+            .contentShape(Rectangle())
+            .onHover { closeHovering = $0 }
+            .onTapGesture { onClose(task) }
+            .help("一覧から外す (worktree はそのまま)")
+            .opacity(hovering ? 1 : 0)
+            .allowsHitTesting(hovering)
+            .animation(.easeOut(duration: 0.12), value: hovering)
     }
 
     /// 待たせているものは目に留まってほしいので少し強く出す。
