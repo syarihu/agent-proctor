@@ -183,6 +183,11 @@ proctor 側が payload の `message` を見て切り分ける。アイドルな�
 `id of session` は `ITERM_SESSION_ID` の `:` 以降と同じ値（どちらも
 PTYSession の guid）なので、台帳に持っておけばそのまま突き合わせられる。
 
+台帳に guid が無いセッションはアプリに出さない。サイドバーの一覧も、メニューの
+一覧も、要約の数も外す。押しても新しいタブが開くだけで、どこか別の場所で動いている
+本体には辿り着けないので、並べても行き先が無い。台帳から消すわけではないので
+`proctor ls` には今までどおり出るし、終わったあとの片付けも `pid` を見て続く。
+
 hardened runtime の下では `com.apple.security.automation.apple-events` の
 entitlement が要る。これが無いと Apple Event がランタイムに弾かれ、
 TCC まで届かないためシステム設定のオートメーション一覧にも出てこない。

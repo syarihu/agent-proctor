@@ -130,7 +130,15 @@ final class TaskStore: ObservableObject {
 
     private func reloadRecords() {
         let ledger = LedgerStore.read()
-        records = ledger.tasks
+        // iTerm2 のタブを持たないセッションは出さない。押しても元のタブへは戻れず、
+        // 新しいタブが開くだけなので、一覧に並んでいても行き先が無い。
+        // 台帳から消すわけではないので、CLI (proctor ls) には今までどおり出るし、
+        // 死んだセッションの片付け (Reaper) も pid を見て続く。
+        //
+        // **絞る条件は recount() の itermOnly: true と揃えること。** 片方だけ変えると
+        // applyLedgerValues() の照合 (顔ぶれが同じか) が常に外れ、台帳が動くたびに
+        // worktree の数だけ git が起きる。エラーにはならないので気づけない
+        records = ledger.tasks.filter(\.isItermManaged)
         agentRateLimits = ledger.agentRateLimits
         summary = TaskStatus.counts(records)
     }
@@ -139,7 +147,7 @@ final class TaskStore: ObservableObject {
         lastRecount = Date()
         // git の起動を待つ間 UI を止めない。数え終わったらメインに戻して差し替える
         Task.detached(priority: .utility) {
-            let collected = CollectTasks.run(allRepos: true)
+            let collected = CollectTasks.run(allRepos: true, itermOnly: true)
             await MainActor.run { self.tasks = collected }
         }
     }

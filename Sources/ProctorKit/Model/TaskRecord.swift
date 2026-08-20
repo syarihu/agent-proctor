@@ -85,6 +85,13 @@ public struct TaskRecord: Codable, Equatable {
         self.account = account
     }
 
+    /// iTerm2 のタブとして開き直せるか。
+    ///
+    /// guid を持っているものだけが、押したときに元のタブへ戻れる。
+    /// 無いものは新しいタブが開くだけで、動いている本体には辿り着けない。
+    /// 空文字は「無い」と同じ扱いにする (空同士が一致してしまうため)
+    public var isItermManaged: Bool { !(itermSession ?? "").isEmpty }
+
     /// 表示に使う状態。見たあとの完了は確認済みに畳む
     public var displayStatus: String {
         TaskStatus.display(status: status, seenAt: seenAt)

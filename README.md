@@ -202,6 +202,12 @@ Focusing a tab and opening a new one are done through AppleScript.
 `id of session` is the same value as the part of `ITERM_SESSION_ID` after the `:`
 (both are the PTYSession guid), so keeping it in the ledger is enough to match them.
 
+Sessions the ledger has no guid for are left out of the app entirely — the
+sidebar list, the menu and the summary counts. Clicking one could only ever open
+a new tab; it can't reach the agent already running somewhere else, so the row
+leads nowhere. Nothing is dropped from the ledger: `proctor ls` still shows
+them, and the reaper still clears them out by `pid` once they exit.
+
 Under the hardened runtime the `com.apple.security.automation.apple-events`
 entitlement is required. Without it Apple Events are blocked by the runtime before
 they reach TCC, which means proctor never even appears in the Automation list in

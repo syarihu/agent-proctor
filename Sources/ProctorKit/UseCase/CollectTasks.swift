@@ -9,10 +9,17 @@ public enum CollectTasks {
     /// - Parameters:
     ///   - repo: 指定したリポジトリだけに絞る。allRepos が true なら無視される
     ///   - allRepos: 全リポジトリを対象にする
-    public static func run(repo: String? = nil, allRepos: Bool = false) -> [CollectedTask] {
+    ///   - itermOnly: iTerm2 のタブとして開き直せるものだけに絞る。
+    ///     既定は false。台帳に載っているものをそのまま見せるのが CLI の役目で、
+    ///     絞るかどうかは「押したら開けるか」を気にする側 (アプリ) の都合
+    public static func run(repo: String? = nil, allRepos: Bool = false,
+                           itermOnly: Bool = false) -> [CollectedTask] {
         var records = LedgerStore.tasks()
         if !allRepos, let repo {
             records = records.filter { $0.repo == repo }
+        }
+        if itermOnly {
+            records = records.filter(\.isItermManaged)
         }
 
         let now = Int(Date().timeIntervalSince1970)
