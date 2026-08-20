@@ -66,15 +66,23 @@ public enum TaskStatus {
 
     /// 状態ごとの件数。メニューバーの要約などで使う。
     ///
-    /// 件数が 0 の状態は入れない。何も動いていなければ空になる。
-    /// 呼び出し側が並べ替えずに済むよう order の順で返す。
-    ///
     /// **確認済みは数えない。** ここに出したいのは「まだ手を付けていないもの」で、
-    /// 見終わったものまで数えると、片付けても数字が減らない
+    /// 見終わったものまで数えると、片付けても数字が減らない。
+    /// 逆に「中に何件あるか」を出したい側は、下の displayStatuses 版を直に呼ぶ
     public static func counts(_ tasks: [TaskRecord]) -> [(status: String, count: Int)] {
+        counts(displayStatuses: tasks.map(\.displayStatus).filter { $0 != seen })
+    }
+
+    /// 表示に使う状態そのものから数える。**渡されたものは全部数える。**
+    ///
+    /// 数えた一覧 (CollectedTask) からも呼べるように状態だけを受ける。
+    /// 数え方 (件数が 0 の状態は入れない・order の順) を写し取らせないために口を分けている。
+    /// どれを数えるかは呼ぶ側が決める。ここで黙って間引くと、
+    /// 「状態の配列を渡したら数えてくれる」つもりの呼び出しが静かに欠ける
+    public static func counts(displayStatuses: [String]) -> [(status: String, count: Int)] {
         var tally: [String: Int] = [:]
-        for task in tasks where task.displayStatus != seen {
-            tally[task.displayStatus, default: 0] += 1
+        for status in displayStatuses {
+            tally[status, default: 0] += 1
         }
         return order.compactMap { key in
             guard let n = tally[key], n > 0 else { return nil }

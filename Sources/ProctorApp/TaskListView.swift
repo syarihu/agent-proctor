@@ -10,6 +10,7 @@ import ProctorKit
 struct TaskListView: View {
     @ObservedObject var store: TaskStore
     @ObservedObject var appearance: Appearance
+    @ObservedObject var folding: RepoFolding
     var onOpen: (CollectedTask) -> Void
     var onClose: (CollectedTask) -> Void
 
@@ -34,21 +35,23 @@ struct TaskListView: View {
                     } else {
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(groups, id: \.repo) { group in
-                                // 1つしかないなら見出しは情報を持たない。縦を空けるだけなので出さない
-                                if groups.count > 1 {
-                                    Text(group.name)
-                                        .font(.system(size: base * 0.75, weight: .semibold))
-                                        .foregroundStyle(Palette.dim)
-                                        .lineLimit(1)
-                                        .padding(.horizontal, base * 0.4)
-                                        .padding(.top, base * 0.6)
-                                        .padding(.bottom, base * 0.1)
-                                }
-                                ForEach(group.tasks) { task in
-                                    TaskRow(task: task, base: base,
-                                            isCurrent: isCurrent(task),
-                                            onOpen: onOpen, onClose: onClose)
-                                        .padding(.leading, groups.count > 1 ? base : 0)
+                                // 1つしかないときも出す。畳む取っ手はここにしかないし、
+                                // どのリポジトリを見ているのかは1つでも知りたい
+                                RepoHeader(
+                                    name: group.name,
+                                    repo: group.repo,
+                                    base: base,
+                                    collapsed: folding.isCollapsed(group.repo),
+                                    tally: TaskStatus.counts(
+                                        displayStatuses: group.tasks.map(\.displayStatus)),
+                                    onToggle: { toggle(group.repo) })
+                                if !folding.isCollapsed(group.repo) {
+                                    ForEach(group.tasks) { task in
+                                        TaskRow(task: task, base: base,
+                                                isCurrent: isCurrent(task),
+                                                onOpen: onOpen, onClose: onClose)
+                                            .padding(.leading, base)
+                                    }
                                 }
                             }
                         }
@@ -75,6 +78,12 @@ struct TaskListView: View {
     private func isCurrent(_ task: CollectedTask) -> Bool {
         guard let focused = store.focusedSession, !focused.isEmpty else { return false }
         return task.itermSession == focused
+    }
+
+    /// 折りたたみの開け閉め。畳むと行が消えるので、動かして見せないと
+    /// 何が起きたのか分からない (押した場所の下が急に詰まる)
+    private func toggle(_ repo: String) {
+        withAnimation(.easeOut(duration: 0.18)) { folding.toggle(repo) }
     }
 
     private var taskOrderKey: String {
@@ -120,6 +129,74 @@ struct TaskListView: View {
                 .stroke(Palette.spinner.opacity(0.08), lineWidth: 1.0)
                 .ignoresSafeArea()
         }
+    }
+}
+
+/// プロジェクトごとの見出し。押すとその下を畳む。
+///
+/// 畳んでいる間は中身の状態を数で出す。**畳んだせいで確認待ちに気づけない、
+/// を作らないため。**開いているときは行そのものが出ているので、
+/// 同じ数を見出しにも書くと同じことを二度言うことになる。
+///
+/// ここでは確認済み (✔) も数える。メニューバーの数字と違って、この数は
+/// 「中に何件あるか」でもある。見終わったものを外すと、畳んだ先に何も
+/// 入っていないように見えてしまう。
+private struct RepoHeader: View {
+    let name: String
+    /// リポジトリのパス。ツールチップに出すのと、鍵として渡すのに使う
+    let repo: String
+    let base: CGFloat
+    let collapsed: Bool
+    /// 畳んでいるときに出す内訳。確認済みも含めて渡してもらう
+    let tally: [(status: String, count: Int)]
+    var onToggle: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: base * 0.3) {
+            // 三角は回して向きを変える。開閉のたびに別の記号に差し替えると、
+            // 同じ場所で形が飛んで見える
+            Image(systemName: "chevron.right")
+                .font(.system(size: base * 0.7, weight: .semibold))
+                .foregroundStyle(Palette.dim)
+                .rotationEffect(.degrees(collapsed ? 0 : 90))
+                .frame(width: base * 0.8)
+
+            // セッション名 (base) より一段だけ小さくする。見出しなので
+            // 目に入る大きさは要るが、主役の名前より大きいと読む順が入れ替わる
+            Text(name)
+                .font(.system(size: base * 0.9, weight: .semibold))
+                .foregroundStyle(Palette.dim)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: base * 0.3)
+
+            if collapsed {
+                HStack(spacing: base * 0.35) {
+                    ForEach(tally, id: \.status) { entry in
+                        Text("\(TaskStatus.mark(entry.status))\(entry.count)")
+                            .foregroundStyle(Palette.status(entry.status))
+                    }
+                }
+                .font(.system(size: base * 0.8).monospacedDigit())
+                .layoutPriority(1)
+            }
+        }
+        .padding(.horizontal, base * 0.4)
+        .padding(.vertical, base * 0.3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: base * 0.3)
+                .fill(hovering ? Palette.hover : Color.clear))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture(perform: onToggle)
+        .help(repo)
+        // グループを区切る余白。下地とタップ範囲の外に出しておく。
+        // 内側に入れると、上だけ広く光って押せる範囲も上下でずれる
+        .padding(.top, base * 0.3)
     }
 }
 
@@ -507,6 +584,23 @@ enum Palette {
     static let activity = Color.secondary.opacity(0.85)
     static let claude = Color(red: 0.878, green: 0.478, blue: 0.345)       // #e07a58 (テラコッタ)
     static let antigravity = Color(red: 0.353, green: 0.647, blue: 0.980)  // #5aa5fa (ブルー)
+
+    /// 状態そのものを表す色。畳んだ見出しの内訳のように、
+    /// 印と数だけで状態を見せる場所で使う。
+    ///
+    /// 行のタイトル (TaskRow.titleColor) とは別に持つ。あちらは読ませるのが仕事なので
+    /// 実行中まで色を付けず、待たせているものだけを目立たせている
+    static func status(_ status: String) -> Color {
+        switch status {
+        case TaskStatus.waiting: return waiting
+        case TaskStatus.running: return spinner
+        case TaskStatus.done: return done
+        // 失敗は見たあとも失敗のまま残る = まだ片付いていない。
+        // 畳んで数だけになったときこそ、脇役の色にしてはいけない
+        case TaskStatus.failed: return removed
+        default: return dim
+        }
+    }
 
     /// 残りが少なくなってきたら色で知らせる (statusline と同じ考え方)
     static func context(_ percent: Int) -> Color {

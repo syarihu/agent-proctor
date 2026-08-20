@@ -146,6 +146,11 @@ still alive, and otherwise opens a new tab resuming the conversation. Hovering a
 row reveals a close button that drops it from the list — the worktree is left
 alone, and a session that is still running comes back on its next hook.
 
+Rows sit under the repository they belong to, and clicking that heading folds the
+repository away. The fold is remembered across restarts. A folded heading carries
+the tally of what is inside it (`⏳1 ▶2`), so a session waiting on you still shows
+while its group is closed.
+
 They leave on their own too. `SessionEnd` drops the row, but that hook does not
 arrive when a tab is closed or the process is killed, so the row is also dropped
 once **the agent process is gone** — proctor records the pid the agent exports

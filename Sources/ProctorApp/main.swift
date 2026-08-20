@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var appearance: Appearance!
     private var sidebar: SidebarPanel!
     private var menuBar: MenuBarController!
+    private var folding: RepoFolding!
     private var reaper: Reaper!
     private var focus: FocusWatcher!
     private var settings: SettingsWindow!
@@ -25,12 +26,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         store = TaskStore()
         appearance = Appearance()
+        folding = RepoFolding()
         let store = store!
         let appearance = appearance!
+        let folding = folding!
 
         sidebar = SidebarPanel(
             appearance: appearance,
-            content: TaskListView(store: store, appearance: appearance,
+            content: TaskListView(store: store, appearance: appearance, folding: folding,
                                   onOpen: { [weak self] task in
                 self?.open(taskID: task.id)
             }, onClose: { [weak self] task in
