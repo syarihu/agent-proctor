@@ -10,6 +10,7 @@ worktree で働くコーディングエージェントを見張り、手が挙�
                    --all              全リポジトリを対象にする
                    --json             JSON で出す (AI・サイドバー向け)
   attach <ID>    そのセッションのエージェント (claude / agy) を開く (続きから)
+  rm <ID>        台帳から1件外す (worktree には触らない)
   sidebar        iTerm2 に吸着するサイドバー (Agent Proctor.app) を起動する
 
 worktree を作ったり片付けたりはしない。それは proctor を呼ぶ側の仕事で、
@@ -42,6 +43,7 @@ do {
     switch command {
     case "ls": code = try cmdLs(parsed)
     case "attach": code = try cmdAttach(parsed)
+    case "rm": code = try cmdRm(parsed)
     case "sidebar": code = try cmdSidebar(parsed)
     // hooks 専用。人が打つものではないのでヘルプには出さない
     case "_touch": code = try cmdTouch(parsed)

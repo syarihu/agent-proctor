@@ -28,7 +28,7 @@ export PROCTOR_STATE_DIR="$LAB/state"
 scrub() {
     sed -E \
         -e "s#$LAB#<LAB>#g" \
-        -e 's/"(ageSeconds|idleSeconds|createdAt|updatedAt)" : [0-9]+/"\1" : <N>/g' \
+        -e 's/"(ageSeconds|idleSeconds|createdAt|updatedAt|pid|pidStartedAt)" : [0-9]+/"\1" : <N>/g' \
         -e 's/[0-9]+[smhd]$/<AGE>/'
 }
 
@@ -108,6 +108,36 @@ payload() {
 
     say "git の外では登録しない"
     payload s3 "$LAB" | "$BIN" _touch running
+    "$BIN" ls --all --json | grep '"id"'
+
+    say "プロセスが生きているうちは残る / 死んだら次のフックで片付く"
+    # CLAUDE_PID は Claude Code が子プロセスへ渡すもの。ここでは使い捨ての
+    # プロセスで代用して、それが死んだときに記録が落ちることを見る。
+    # 端末のセッションID (ITERM_SESSION_ID) は渡していない。iTerm2 以外で
+    # 動かしているセッションでも片付くことを、ここで確かめている
+    sleep 30 & FAKE=$!
+    payload s4 "$LAB/work" | CLAUDE_PID=$FAKE "$BIN" _touch running
+    echo "登録直後 (生きている):"; "$BIN" ls --all --json | grep -E '"(id|sessionId)"'
+    kill "$FAKE" 2>/dev/null; wait "$FAKE" 2>/dev/null
+    # 掃除は台帳を触るときに走るので、既にいるセッションのフックで起こす
+    # (新しく登録すると、空いた ID を拾って消えたことが見えなくなる)
+    payload s1 "$LAB/work" | "$BIN" _touch running
+    echo "プロセスを殺したあと (s4 が消えている):"; "$BIN" ls --all --json | grep -E '"(id|sessionId)"'
+
+    say "開き直した当人からのフックなら、前のプロセスが死んでいても残る (--resume)"
+    sleep 30 & FAKE=$!
+    payload s6 "$LAB/work" | CLAUDE_PID=$FAKE "$BIN" _touch running
+    echo "登録直後:"; "$BIN" ls --all --json | grep -E '"(id|sessionId)"' | head -2
+    kill "$FAKE" 2>/dev/null; wait "$FAKE" 2>/dev/null
+    # 同じセッションを別のプロセスで開き直す。ID も経過時間も引き継がれてほしい
+    payload s6 "$LAB/work" | CLAUDE_PID=$$ "$BIN" _touch running
+    echo "開き直したあと (work-3 のまま。新しい記録が増えない):"
+    "$BIN" ls --all --json | grep -E '"(id|sessionId)"'
+
+    say "rm (台帳から外す)"
+    payload s5 "$LAB/work" | "$BIN" _touch running
+    "$BIN" rm work-4
+    "$BIN" rm nope; echo "exit=$?"
     "$BIN" ls --all --json | grep '"id"'
 
     say "_touch clear (セッションが一覧から消える)"

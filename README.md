@@ -56,7 +56,8 @@ ProctorKit/
   Model/       Data and vocabulary. No I/O
                TaskRecord, DiffCounts, CollectedTask, TaskStatus, TaskID, RateLimits
   Repository/  The only door to the outside: the ledger, git and the environment
-               LedgerStore, GitClient, ProcessRunner, EnvironmentSource, Paths
+               LedgerStore, GitClient, ProcessRunner, EnvironmentSource,
+               ProcessLiveness, Paths
   UseCase/     One per thing you want to do. Every decision lives here
                CollectTasks, RecordHookEvent, RecordSessionStats,
                MarkSessionSeen, ReapClosedSessions, HookPayload
@@ -130,6 +131,7 @@ Turn on *Launch at login* in the menu bar and it will start on its own from then
 ```bash
 proctor ls              # list (--all for every repository, --json for machines)
 proctor attach <id>     # open the agent (claude / agy) for that session, resuming the conversation
+proctor rm <id>         # drop one row from the ledger (the worktree is left alone)
 proctor sidebar         # launch the sidebar app
 ```
 
@@ -141,6 +143,14 @@ the ledger and `git diff`, and writes nothing but the ledger.
 Sessions appear on their own as soon as your hooks report them; there is nothing
 to register by hand. Clicking a row in the sidebar focuses that tab if it is
 still alive, and otherwise opens a new tab resuming the conversation.
+
+They leave on their own too. `SessionEnd` drops the row, but that hook does not
+arrive when a tab is closed or the process is killed, so the row is also dropped
+once **the agent process is gone** — proctor records the pid the agent exports
+(`CLAUDE_PID`) along with its start time, since macOS reuses pids. That check
+works whatever terminal you use. Sessions whose pid is unknown (anything other
+than Claude Code) fall back to the old rule: they expire 24 hours after their
+last change, and `proctor rm` is there if you would rather not wait.
 
 ## Wiring up your agent
 

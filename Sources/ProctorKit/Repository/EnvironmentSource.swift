@@ -16,6 +16,22 @@ public enum EnvironmentSource {
         return raw.components(separatedBy: ":").last
     }
 
+    /// セッションを動かしているエージェント本体 (claude) のプロセスID。
+    ///
+    /// Claude Code が子プロセスへ CLAUDE_PID を渡してくれるので、それを使う。
+    /// 親を辿って claude を探す手もあるが、hooks は `proctor _touch ... &` と
+    /// バックグラウンドに投げられることがあり、フックのシェルが先に終わると
+    /// 親子の鎖が切れて辿れなくなる。環境変数なら投げられても引き継がれる。
+    ///
+    /// 取れないとき (Antigravity など Claude Code 以外) は nil。
+    /// 生死が分からないものは触らず、期限切れに任せる。
+    public static func agentPID(
+        _ environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Int? {
+        guard let raw = environment["CLAUDE_PID"], let pid = Int(raw), pid > 0 else { return nil }
+        return pid
+    }
+
     /// hooks から「このタスクを見ろ」と名指しされている場合の ID。
     public static func taskID(
         _ environment: [String: String] = ProcessInfo.processInfo.environment

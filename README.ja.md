@@ -52,7 +52,8 @@ ProctorKit/
   Model/       データと語彙。I/O を持たない
                TaskRecord, DiffCounts, CollectedTask, TaskStatus, TaskID, RateLimits
   Repository/  外の世界との出入り口。ここだけが台帳・git・環境を触る
-               LedgerStore, GitClient, ProcessRunner, EnvironmentSource, Paths
+               LedgerStore, GitClient, ProcessRunner, EnvironmentSource,
+               ProcessLiveness, Paths
   UseCase/     やりたいこと1つに1つ。判断はすべてここが持つ
                CollectTasks, RecordHookEvent, RecordSessionStats,
                MarkSessionSeen, ReapClosedSessions, HookPayload
@@ -119,6 +120,7 @@ scripts/install.sh               # /Applications に入れ、~/bin/proctor を�
 ```bash
 proctor ls              # 一覧（--all で全リポジトリ、--json で機械向け）
 proctor attach <ID>     # そのセッションのエージェント (claude / agy) を開く（続きから）
+proctor rm <ID>         # 台帳から1件外す（worktree には触らない）
 proctor sidebar         # サイドバー（アプリ）を起動する
 ```
 
@@ -129,6 +131,13 @@ proctor sidebar         # サイドバー（アプリ）を起動する
 セッションは hooks が知らせてくれた時点で勝手に並ぶので、手で登録するものは無い。
 サイドバーの行をクリックすると、そのタブが生きていればフォーカスし、
 閉じていれば新しいタブで会話の続きから開く。
+
+消えるのも勝手にやる。`SessionEnd` で外れるが、このフックはタブごと閉じたときや
+殺されたときには届かないので、**エージェントのプロセスが居なくなったこと**でも外す。
+エージェントが渡してくる pid (`CLAUDE_PID`) を起動時刻と一緒に控えてあり
+（macOS は pid を使い回すため）、これはどの端末で動かしていても効く。
+pid が分からないもの（Claude Code 以外）は今までどおり、最後に変わってから
+24時間で期限切れになる。待たずに片付けたいときは `proctor rm` を使う。
 
 ## エージェントとの連携
 

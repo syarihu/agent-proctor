@@ -18,6 +18,13 @@ public struct TaskRecord: Codable, Equatable {
     public var worktree: String
     public var sessionId: String?
     public var itermSession: String?
+    /// セッションを動かしているエージェント本体のプロセスID。
+    /// 端末に依存せず生死を確かめられる唯一の手掛かりで、これがあれば
+    /// iTerm2 以外で動かしているセッションも閉じた時点で片付けられる
+    public var pid: Int?
+    /// pid の起動時刻 (epoch 秒)。macOS は pid を使い回すので、
+    /// これが違えば「同じ番号の別のプロセス」として死んだ扱いにする
+    public var pidStartedAt: Int?
     public var status: String
     public var createdAt: Int
     public var updatedAt: Int
@@ -47,6 +54,7 @@ public struct TaskRecord: Codable, Equatable {
 
     public init(id: String, repo: String, branch: String, worktree: String,
                 sessionId: String? = nil, itermSession: String? = nil,
+                pid: Int? = nil, pidStartedAt: Int? = nil,
                 status: String, createdAt: Int, updatedAt: Int,
                 subagents: Int? = nil, agent: String? = nil,
                 activity: String? = nil, seenAt: Int? = nil, title: String? = nil,
@@ -60,6 +68,8 @@ public struct TaskRecord: Codable, Equatable {
         self.worktree = worktree
         self.sessionId = sessionId
         self.itermSession = itermSession
+        self.pid = pid
+        self.pidStartedAt = pidStartedAt
         self.status = status
         self.createdAt = createdAt
         self.updatedAt = updatedAt

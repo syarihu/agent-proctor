@@ -26,7 +26,12 @@ public enum RecordHookEvent {
 
         let now = Int(Date().timeIntervalSince1970)
         try LedgerStore.withLock { ledger in
-            pruneStaleSessions(&ledger, now: now)
+            // このフックを送ってきたセッションだけは掃除から外す。生きている証拠が
+            // いま届いているのに消すのはおかしいし、--resume で開き直したときに
+            // 「前のプロセスが死んでいる」を理由に落とすと、付けた名前も経過時間も
+            // 引き継げず、別のタスクとして並び直してしまう
+            let current = findTask(in: ledger, payload: payload).map { ledger.tasks[$0].id }
+            pruneStaleSessions(&ledger, now: now, keeping: current)
 
             guard let index = findTask(in: ledger, payload: payload) else {
                 try register(&ledger, status: status, payload: payload, top: top, now: now)
@@ -57,6 +62,16 @@ public enum RecordHookEvent {
             if let iterm = EnvironmentSource.itermSessionID(),
                ledger.tasks[index].itermSession != iterm {
                 ledger.tasks[index].itermSession = iterm
+            }
+            // --resume で開き直すと同じセッションでもプロセスが変わるので、
+            // 毎回入れ直す。同じプロセスなら起動時刻も動かないため書き込みは増えない
+            if let pid = EnvironmentSource.agentPID() {
+                let startedAt = ProcessLiveness.startedAt(pid: pid)
+                if ledger.tasks[index].pid != pid
+                    || ledger.tasks[index].pidStartedAt != startedAt {
+                    ledger.tasks[index].pid = pid
+                    ledger.tasks[index].pidStartedAt = startedAt
+                }
             }
             if let agent = payload.agent, ledger.tasks[index].agent != agent {
                 ledger.tasks[index].agent = agent
@@ -148,6 +163,7 @@ public enum RecordHookEvent {
               let session = payload.sessionID else { return }
 
         let branch = GitClient.currentBranch(top)
+        let pid = EnvironmentSource.agentPID()
         ledger.tasks.append(TaskRecord(
             id: try TaskID.unique(
                 base: TaskID.slugify(URL(fileURLWithPath: top).lastPathComponent),
@@ -157,6 +173,8 @@ public enum RecordHookEvent {
             worktree: top,
             sessionId: session,
             itermSession: EnvironmentSource.itermSessionID(),
+            pid: pid,
+            pidStartedAt: pid.flatMap { ProcessLiveness.startedAt(pid: $0) },
             status: status,
             createdAt: now,
             updatedAt: now,
@@ -186,14 +204,28 @@ public enum RecordHookEvent {
 
     /// 終了を取りこぼしたセッションの記録を捨てる。
     ///
-    /// SessionEnd が飛ばないまま終わることがあるため、古くなったものは掃除する。
+    /// SessionEnd が飛ばないまま終わることがあるため (タブごと閉じられた・殺された)、
+    /// ここで掃除する。判断は2段構えになっている。
     ///
-    /// 実行中のものは残す。更新時刻は状態が変わったときだけ動くので、
-    /// 長いターンを回している間は時刻が古いままになる。まさに追いかけたい
-    /// 「夜通し動いているエージェント」を消してしまっては本末転倒になる。
-    static func pruneStaleSessions(_ ledger: inout LedgerFile, now: Int) {
+    /// - **プロセスが分かるもの**: 生きているかどうかで決める。死んでいれば状態に
+    ///   関係なく落とす。実行中のまま殺されたセッションは、これが無いと
+    ///   期限切れ (下) にも引っかからず永久に残ってしまう
+    /// - **プロセスが分からないもの** (Claude Code 以外・この変更より前の記録):
+    ///   生死を確かめる手立てが無いので期限切れに任せる。
+    ///   ただし実行中のものは残す。更新時刻は状態が変わったときだけ動くので、
+    ///   長いターンを回している間は時刻が古いままになる。まさに追いかけたい
+    ///   「夜通し動いているエージェント」を消してしまっては本末転倒になる
+    ///
+    /// - Parameter keeping: 何があっても残すタスクのID。いま知らせてきた当人を指す。
+    /// - Parameter isAlive: プロセスの生死。差し替えられるようにしてあるのは試験のため。
+    static func pruneStaleSessions(
+        _ ledger: inout LedgerFile, now: Int, keeping: String? = nil,
+        isAlive: (Int, Int?) -> Bool = { ProcessLiveness.isAlive(pid: $0, startedAt: $1) }
+    ) {
         ledger.tasks.removeAll { task in
-            task.status != TaskStatus.running && now - task.updatedAt >= sessionTTL
+            if let keeping, task.id == keeping { return false }
+            if let pid = task.pid { return !isAlive(pid, task.pidStartedAt) }
+            return task.status != TaskStatus.running && now - task.updatedAt >= sessionTTL
         }
     }
 }

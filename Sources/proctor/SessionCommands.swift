@@ -63,6 +63,19 @@ func cmdAttach(_ args: Args) throws -> Int32 {
     throw ProctorError("\(binary) を起動できません")
 }
 
+/// 台帳から1件外す。
+///
+/// 掃除はプロセスの生死で自動的に回るので、普段は要らない。
+/// プロセスを追えないまま残った古い記録 (この仕組みより前のもの・Claude Code 以外) を
+/// 期限切れを待たずに片付けるための逃げ道として置いてある。
+func cmdRm(_ args: Args) throws -> Int32 {
+    let task = try LedgerStore.find(id: try args.require(0, "セッションID"))
+    try LedgerStore.drop(ids: [task.id])
+    // 消したのは記録だけ。作業していた場所は残っていることを断っておく
+    print("台帳から外しました: \(task.id) (\(task.worktree) はそのまま)")
+    return 0
+}
+
 /// iTerm2 の左側に吸着するサイドバー (Agent Proctor.app) を起動する。
 ///
 /// 描画も iTerm2 との連携もアプリ側が持つので、ここは起動して渡すだけ。
