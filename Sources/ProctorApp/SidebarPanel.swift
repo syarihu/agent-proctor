@@ -82,8 +82,9 @@ final class SidebarPanel: NSObject {
         self.appearance = appearance
         super.init()
 
-        // 枠なし・最前面・影付きのフローティングパネル。
-        // nonactivatingPanel なので、触っても iTerm2 からフォーカスを奪わない
+        // 枠なし・影付きのフローティングパネル。
+        // nonactivatingPanel なので、触っても iTerm2 からフォーカスを奪わない。
+        // 高さ (level) は前面のアプリに合わせて updateLevel が動かす
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: 600),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -151,6 +152,7 @@ final class SidebarPanel: NSObject {
             name: NSWorkspace.didActivateApplicationNotification, object: nil)
 
         refreshBackground()
+        updateLevel()
         schedule()
     }
 
@@ -165,7 +167,34 @@ final class SidebarPanel: NSObject {
         backgroundTintView?.layer?.backgroundColor = color.cgColor
     }
 
-    @objc private func appActivated() { wakeUp() }
+    @objc private func appActivated() {
+        updateLevel()
+        wakeUp()
+    }
+
+    /// パネルの高さ (level) を前面のアプリで決める。
+    ///
+    /// 端末の脇に居る間は端末より上に居てほしいので浮かせる。**別のアプリに
+    /// 移ったあとまで浮かせたままにしない。** 切り替えた先のウィンドウの上に
+    /// 居座って、関係の無い作業の邪魔をするため。普通の高さまで下げれば、
+    /// 重なるウィンドウの下に潜り、重ならなければ見えたまま残る。
+    ///
+    /// ステージマネージャーではこれが問題にならなかった。アプリを移ると
+    /// iTerm2 のウィンドウごと画面から外れ、追う相手を失ったパネルが
+    /// そのまま引っ込んでいたため。切っていると窓は画面に残るので、
+    /// 浮いたままのパネルだけが上に出てしまう。
+    ///
+    /// 自分が前面のときも浮かせるのは、**サイドバーを押した瞬間に前面が
+    /// こちらへ移る**から。ここで下げると指の下でパネルが沈む。
+    private func updateLevel() {
+        // 誰が前面か分からないときは触らない。読めなかっただけで
+        // 上げ下げすると、パネルがちらつく
+        guard let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        else { return }
+        let alongsideTerminal = front == ItermBridge.bundleID
+            || front == Bundle.main.bundleIdentifier
+        panel.level = alongsideTerminal ? .floating : .normal
+    }
 
     private func wakeUp() {
         stationaryCount = 0
@@ -255,6 +284,9 @@ final class SidebarPanel: NSObject {
         }
 
         if !isShowing {
+            // 出し直すときは高さも決め直す。隠れている間にアプリを移られると
+            // アクティブになった知らせを取り逃がしている
+            updateLevel()
             panel.orderFront(nil)
             isShowing = true
             onVisibilityChange?(true)

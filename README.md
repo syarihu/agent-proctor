@@ -304,10 +304,18 @@ System Settings.
 
 The focused tab is polled once a second (`FocusWatcher`). From iTerm2's bundled
 Python, FocusMonitor pushes those changes; from outside, asking is all there is.
-A failed query keeps the previous value. **Whether iTerm2 is frontmost only
-gates marking things as seen** — the sidebar takes focus away from iTerm2 the
-moment you click it, so gating the highlight on that would erase it under your
-finger.
+A failed query keeps the previous value. **Being frontmost never gates the
+highlight** — the sidebar takes focus away from iTerm2 the moment you click it,
+so gating it on that would erase the mark under your finger. What it does gate
+is marking things as seen, and how high the panel sits.
+
+The panel floats above the terminal only while iTerm2 — or the sidebar itself —
+is frontmost. Switch to another app and it drops to an ordinary window level, so
+a window that overlaps it covers it and one that does not leaves it in view.
+Floating unconditionally meant it sat on top of whatever you had switched to.
+Stage Manager hid that: moving to another app takes the iTerm2 window off the
+screen, so the panel was already being ordered out for want of a window to
+follow.
 
 The sidebar positions itself by reading iTerm2's window frame from CGWindowList.
 That needs no Automation permission, so snapping works even before you grant it.
