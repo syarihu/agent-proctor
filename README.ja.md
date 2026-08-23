@@ -91,7 +91,7 @@ ProctorKit/
                TaskID, RateLimits
   Repository/  外の世界との出入り口。ここだけが台帳・git・環境を触る
                LedgerStore, GitClient, ProcessRunner, EnvironmentSource,
-               ProcessLiveness, Paths
+               ProcessLiveness, Paths, AppVersion
   UseCase/     やりたいこと1つに1つ。判断はすべてここが持つ
                CollectTasks, RecordHookEvent, RecordSessionStats,
                MarkSessionSeen, ReapClosedSessions, ForgetTask, HookPayload
@@ -215,6 +215,7 @@ proctor ls              # 一覧（--all で全リポジトリ、--json で機�
 proctor attach <ID>     # そのセッションのエージェント (claude / agy) を開く（続きから）
 proctor rm <ID>         # 台帳から1件外す（worktree には触らない）
 proctor sidebar         # サイドバー（アプリ）を起動する
+proctor --version       # 版を表示する
 ```
 
 これで全部。**agent-proctor は worktree を作らないし消さない**——用意と後片付けは

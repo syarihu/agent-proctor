@@ -26,8 +26,11 @@ struct SettingsView: View {
         // 節にすると「設定できる項目」に見えてしまう
         VStack(spacing: 0) {
             form
-            Text(Localized.text("app.settings.version",
-                                AppVersion.current ?? Localized.text("common.version.unknown")))
+            // 版が無いときは文ごと差し替える。"Version %@" の穴に
+            // "development build" を差すと "Version development build" になり、
+            // 文にならない。**穴に入れる語は、どんな語でも文になる保証が作れない**
+            Text(AppVersion.current.map { Localized.text("app.settings.version", $0) }
+                 ?? Localized.text("app.settings.version.development"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 12)

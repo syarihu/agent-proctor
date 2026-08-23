@@ -76,7 +76,9 @@ public enum Paths {
     /// spawn されると (subprocess.run(["proctor", ...]) など) argv[0] が
     /// "proctor" になり、そこからでは自分の居場所を辿れないため。
     /// executablePath は symlink を解決しないので、その先は自分で辿る。
-    public static var enclosingAppBundle: URL? {
+    /// public にしないのは、View から見えると `appBundle` と並んで補完に出て、
+    /// 説明を読まずに近いほうを選ばれるため。要るのは Kit の中だけ
+    static var enclosingAppBundle: URL? {
         let executable = URL(fileURLWithPath:
             Bundle.main.executablePath ?? CommandLine.arguments[0])
             .resolvingSymlinksInPath().deletingLastPathComponent()

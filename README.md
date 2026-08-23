@@ -98,7 +98,7 @@ ProctorKit/
                TaskID, RateLimits
   Repository/  The only door to the outside: the ledger, git and the environment
                LedgerStore, GitClient, ProcessRunner, EnvironmentSource,
-               ProcessLiveness, Paths
+               ProcessLiveness, Paths, AppVersion
   UseCase/     One per thing you want to do. Every decision lives here
                CollectTasks, RecordHookEvent, RecordSessionStats,
                MarkSessionSeen, ReapClosedSessions, ForgetTask, HookPayload
@@ -231,6 +231,7 @@ proctor ls              # list (--all for every repository, --json for machines)
 proctor attach <id>     # open the agent (claude / agy) for that session, resuming the conversation
 proctor rm <id>         # drop one row from the ledger (the worktree is left alone)
 proctor sidebar         # launch the sidebar app
+proctor --version       # print the version
 ```
 
 That is the whole surface. **agent-proctor never creates or removes a worktree**

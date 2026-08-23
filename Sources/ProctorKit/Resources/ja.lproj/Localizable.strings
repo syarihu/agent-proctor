@@ -94,3 +94,5 @@
 /* 版の表示。%@ は版そのもの (0.1.0 など) */
 "app.settings.version" = "バージョン %@";
 "common.version.unknown" = "開発ビルド";
+/* 版が分からないとき。"バージョン %@" に差すと文にならないので、文ごと持つ */
+"app.settings.version.development" = "開発ビルド";
