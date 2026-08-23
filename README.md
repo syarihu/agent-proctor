@@ -129,7 +129,7 @@ The app and the CLI read the same table, so a word is only translated once.
 | `Sources/ProctorKit/Localized.swift` | Looks a word up. It picks the language itself, because an executable outside an `.app` — the CLI — is otherwise always told the language is English |
 
 **Add a key to both files.** A key that only exists in one of them comes out raw
-in the other language. `scripts/install.sh` copies both `.lproj` into
+in the other language. `scripts/build-app.sh` copies both `.lproj` into
 `Contents/Resources`, and the bundled CLI reads them from there as well.
 
 ### Invariants
@@ -195,12 +195,33 @@ to the pair of bundle identifier and code signature. With an ad-hoc signature th
 signature changes on every build, so macOS asks you to approve controlling iTerm2
 again each time.
 
+`install.sh` is two smaller scripts and the housekeeping around them.
+
+| Script | What it does |
+| --- | --- |
+| `scripts/build-app.sh [dir]` | Builds both executables and assembles the `.app`. Prints its path on stdout and everything else on stderr. Signs nothing |
+| `scripts/sign-app.sh <app>` | Signs the bundle with the local certificate, or ad-hoc if there is none |
+
+They are separate so that each can be run on its own. **If the permission gets
+asked for again after an install, the signature is the reason, and re-running
+just the signing step is enough** — no rebuild:
+
+```bash
+scripts/sign-app.sh "/Applications/Agent Proctor.app"
+```
+
+`VERSION` holds the version string, and it is the only place it is written.
+
 On first launch macOS asks for permission to control iTerm2 — allow it.
-Open *Settings…* from the menu bar and turn on *Open at login*, and it will start
-on its own from then on.
+**It only ever asks once.** If you refuse, it will not ask again: open
+*Settings…* from the menu bar, and the *Permission* section will take you to the
+right page of System Settings to turn it back on.
+
+Open *Settings…* and turn on *Open at login*, and it will start on its own from
+then on.
 
 <p align="center">
-  <img src="docs/images/settings.png" alt="The settings window: sidebar text size, width, opacity, background, the make-room toggle, and open at login" width="454">
+  <img src="docs/images/settings.png" alt="The settings window: sidebar text size, width, opacity, background, the make-room toggle, open at login, and whether controlling iTerm2 is allowed" width="460">
 </p>
 
 ## Usage
