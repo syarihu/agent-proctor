@@ -7,12 +7,23 @@
 *[日本語版はこちら](README.ja.md)*
 
 A Mac app and CLI that acts as your **proctor**, watching over every coding agent
-at work across your git worktrees and telling you the moment one raises its hand.
+at work across your git worktrees — one iTerm2 tab each — and telling you the
+moment one raises its hand.
 
 A proctor does not sit the exam. They watch the room, and they go to whoever
 raises a hand. That is exactly the job here: instead of checking tabs one by one,
 you see which session is blocked waiting for you and which one is still working
 in the background.
+
+**The app is one half of a pair with iTerm2.** The sidebar rides against the edge
+of your iTerm2 window and every row stands for one of its tabs, so clicking a row
+goes to that tab. A session with no iTerm2 tab behind it is left out of the app
+altogether, because the row would lead nowhere. The `proctor` CLI is not tied to
+a terminal and lists those sessions all the same.
+
+<p align="center">
+  <img src="docs/images/sidebar-and-terminal.png" alt="The sidebar beside iTerm2, listing four sessions of one repository" width="880">
+</p>
 
 ```
 ⏳ Fix the empty state of the sidebar  (context: 13%)
@@ -67,6 +78,10 @@ A failure stays a failure after you have seen it; looking is not fixing.
 The tab you currently have open gets a thin bar on the left and a faint
 background, which also cancels the dimming so the place you are looking at never
 sinks into the list.
+
+<p align="center">
+  <img src="docs/images/status-transitions.gif" alt="Subagent rows appearing and leaving, another session turning orange when it needs an answer, and a finished one going quiet once its tab has been looked at" width="420">
+</p>
 
 ## Structure
 
@@ -181,7 +196,12 @@ signature changes on every build, so macOS asks you to approve controlling iTerm
 again each time.
 
 On first launch macOS asks for permission to control iTerm2 — allow it.
-Turn on *Launch at login* in the menu bar and it will start on its own from then on.
+Open *Settings…* from the menu bar and turn on *Open at login*, and it will start
+on its own from then on.
+
+<p align="center">
+  <img src="docs/images/settings.png" alt="The settings window: sidebar text size, width, opacity, background, the make-room toggle, and open at login" width="454">
+</p>
 
 ## Usage
 
@@ -207,6 +227,13 @@ Rows sit under the repository they belong to, and clicking that heading folds th
 repository away. The fold is remembered across restarts. A folded heading carries
 the tally of what is inside it (`⏳1 ▶2`), so a session waiting on you still shows
 while its group is closed.
+
+The menu bar carries the same tally, and its menu lists every session with the
+same marks. Picking one goes to that tab, exactly as clicking a row does.
+
+<p align="center">
+  <img src="docs/images/menu-bar.png" alt="The menu bar item showing the tally, with the menu listing every session" width="382">
+</p>
 
 They leave on their own too. `SessionEnd` drops the row, but that hook does not
 arrive when a tab is closed or the process is killed, so the row is also dropped
@@ -319,7 +346,7 @@ moved it yourself.
 - Only the most recent window is remembered: move two of them and only the later
   one gets its width back. The main screen only, too — a window maximized on a
   secondary display is left alone.
-- The make-room setting (*iTerm2 の幅を詰めて場所を空ける*) turns this off, which
+- The make-room setting (*Shrink iTerm2 to make room*) turns this off, which
   brings back the old behaviour: the sidebar stops at the screen edge and
   overlaps the terminal.
 
