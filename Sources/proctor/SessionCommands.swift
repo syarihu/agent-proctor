@@ -86,9 +86,9 @@ func cmdRm(_ args: Args) throws -> Int32 {
 /// iTerm2 の左側に吸着するサイドバー (Agent Proctor.app) を起動する。
 ///
 /// 描画も iTerm2 との連携もアプリ側が持つので、ここは起動して渡すだけ。
+/// どこに入っているかは置き方で変わるので、探すのは Paths に任せる。
 func cmdSidebar(_ args: Args) throws -> Int32 {
-    let bundle = "/Applications/Agent Proctor.app"
-    guard FileManager.default.fileExists(atPath: bundle) else {
+    guard let bundle = Paths.appBundle?.path else {
         throw ProctorError(Localized.text("cli.error.app_not_found"))
     }
     guard ProcessRunner.inherit(["open", "-a", bundle]) == 0 else {
