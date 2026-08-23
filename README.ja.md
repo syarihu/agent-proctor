@@ -1,3 +1,5 @@
+[English](README.md) | 日本語
+
 <p align="center">
   <img src="docs/images/agent-proctor-logo.png" alt="agent-proctor" width="720">
 </p>

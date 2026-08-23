@@ -1,10 +1,10 @@
+English | [日本語](README.ja.md)
+
 <p align="center">
   <img src="docs/images/agent-proctor-logo.png" alt="agent-proctor" width="720">
 </p>
 
 # agent-proctor
-
-*[日本語版はこちら](README.ja.md)*
 
 A Mac app and CLI that acts as your **proctor**, watching over every coding agent
 at work across your git worktrees — one iTerm2 tab each — and telling you the
