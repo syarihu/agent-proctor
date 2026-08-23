@@ -16,7 +16,9 @@ import ProctorKit
 /// NSAppleScript はスレッド安全ではないので、必ずメインスレッドから呼ぶ。
 @MainActor
 enum ItermBridge {
-    static let bundleID = "com.googlecode.iterm2"
+    // AutomationPermission がメインスレッド外から読むので隔離から外す。
+    // 変わらない文字列なので、どのスレッドから読んでも困らない
+    nonisolated static let bundleID = "com.googlecode.iterm2"
 
     /// オートメーションの許可が下りていないときに一度だけ知らせるための記録。
     /// 毎回出すと、許可しないと決めた人にとって邪魔にしかならない
@@ -212,7 +214,14 @@ enum ItermBridge {
             alert.messageText = Localized.text("app.alert.automation.title")
             alert.informativeText = Localized.text("app.alert.automation.body")
             alert.alertStyle = .warning
-            alert.runModal()
+            // 場所を文字で伝えるだけだと、設定のどこにあるかを探すところから始まる。
+            // ここまで来た時点で断られた記録があり、聞き直させる手立ては無いので
+            // (詳しくは AutomationPermission)、せめて開くところまでは引き受ける
+            alert.addButton(withTitle: Localized.text("app.action.open_settings"))
+            alert.addButton(withTitle: Localized.text("app.alert.automation.later"))
+            if alert.runModal() == .alertFirstButtonReturn {
+                AutomationPermission.openSettings()
+            }
         }
         // 許可以外の失敗はログに出るので、ここで重ねて騒がない
     }

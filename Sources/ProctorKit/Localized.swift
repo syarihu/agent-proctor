@@ -40,8 +40,12 @@ public enum Localized {
     /// 3. ビルドディレクトリから直に走らせたとき … SwiftPM が作った .bundle が隣にいる
     private static let source: Bundle? = {
         var candidates: [Bundle?] = [.main]
-        // 実行ファイルが symlink 越し (~/bin/proctor) でも辿れるように実体も見る
-        let executable = URL(fileURLWithPath: CommandLine.arguments[0])
+        // 実行ファイルが symlink 越し (~/bin/proctor) でも辿れるように実体も見る。
+        // argv[0] ではなく executablePath なのは、PATH 解決で名前だけ渡して
+        // spawn されると argv[0] が "proctor" になり、自分の居場所を辿れないため
+        // (Paths.appBundle も同じ理由で同じものを見ている)
+        let executable = URL(fileURLWithPath:
+            Bundle.main.executablePath ?? CommandLine.arguments[0])
             .resolvingSymlinksInPath().deletingLastPathComponent()
         let siblingResources = executable.appendingPathComponent("../Resources").standardized
         for directory in [Bundle.main.bundleURL, Bundle.main.resourceURL,

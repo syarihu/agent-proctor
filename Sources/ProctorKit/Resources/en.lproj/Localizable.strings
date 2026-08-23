@@ -44,7 +44,7 @@
 "cli.error.worktree_missing" = "The worktree is gone: %@";
 "cli.error.worktree_unreachable" = "Cannot move into the worktree: %@";
 "cli.error.launch_failed" = "Cannot launch %@";
-"cli.error.app_not_found" = "Agent Proctor.app is not installed. Run scripts/install.sh";
+"cli.error.app_not_found" = "Agent Proctor.app was not found. If it is installed somewhere unusual, point PROCTOR_APP at it.";
 "cli.error.app_launch_failed" = "Could not launch Agent Proctor.app";
 
 /* メニューバー。押したら何が起きるかを書く (macOS の流儀) */
@@ -77,3 +77,16 @@
 "app.alert.open_failed.body" = "Check that iTerm2 is running and that automation is allowed.";
 "app.alert.automation.title" = "Agent Proctor is not allowed to control iTerm2";
 "app.alert.automation.body" = "Allow Agent Proctor to control iTerm2 in System Settings → Privacy & Security → Automation.\nUntil you do, clicking a row cannot take you to its tab.";
+"app.action.open_settings" = "Open System Settings";
+"app.alert.automation.later" = "Later";
+
+/* オートメーションの許可。設定ウィンドウ側 */
+"app.settings.automation_section" = "Permission";
+"app.settings.automation" = "Controlling iTerm2";
+"app.settings.automation_footer" = "macOS asks only once. If you have already refused, it will not ask again, so the switch has to be turned back on in System Settings. The permission is tied to the code signature, so a rebuild signed differently starts over.";
+"app.settings.automation.granted" = "Allowed";
+"app.settings.automation.denied" = "Not allowed";
+"app.settings.automation.undecided" = "Not asked yet";
+"app.settings.automation.not_running" = "iTerm2 is not running";
+"app.settings.automation.unknown" = "Cannot tell right now";
+"app.settings.automation.ask" = "Allow…";

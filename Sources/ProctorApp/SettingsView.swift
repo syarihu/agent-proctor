@@ -1,3 +1,4 @@
+import AppKit
 import ProctorKit
 import SwiftUI
 
@@ -14,6 +15,11 @@ struct SettingsView: View {
 
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginError: String?
+    // 読むだけなら即返るので、最初の描画からほんとうの状態を出せる。
+    // 一瞬だけ違う状態が見えると、それが答えだと思われてしまう
+    @State private var automation = AutomationPermission.state()
+    /// 尋ねている間。答えを待つ間にもう一度押せると、ダイアログが重なる
+    @State private var asking = false
 
     var body: some View {
         Form {
@@ -91,12 +97,72 @@ struct SettingsView: View {
             } header: {
                 Text(Localized.text("app.settings.launch_section"))
             }
+
+            Section {
+                LabeledContent(Localized.text("app.settings.automation")) {
+                    HStack(spacing: 12) {
+                        Text(automationState)
+                            .foregroundStyle(automation == .granted ? .secondary : .primary)
+                        Spacer()
+                        Button(automationAction, action: requestAutomation)
+                            .disabled(asking)
+                    }
+                }
+            } header: {
+                Text(Localized.text("app.settings.automation_section"))
+            } footer: {
+                Text(Localized.text("app.settings.automation_footer"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
         // 画面を開き直したときに、外で変えられていた設定を拾い直す
-        .onAppear { launchAtLogin = LoginItem.isEnabled }
+        .onAppear {
+            launchAtLogin = LoginItem.isEnabled
+            automation = AutomationPermission.state()
+        }
+        // この画面が一番出す動作は「システム設定を開く」で、それは設定ウィンドウを
+        // 閉じない。onAppear だけだと、向こうで許可して戻ってきても表示が
+        // 「許可されていません」のままになる。前面に戻った時点で見に行く
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification)) { _ in
+            automation = AutomationPermission.state()
+        }
+    }
+
+    private var automationState: String {
+        switch automation {
+        case .granted: return Localized.text("app.settings.automation.granted")
+        case .denied: return Localized.text("app.settings.automation.denied")
+        case .undecided: return Localized.text("app.settings.automation.undecided")
+        case .targetNotRunning: return Localized.text("app.settings.automation.not_running")
+        case .unknown: return Localized.text("app.settings.automation.unknown")
+        }
+    }
+
+    /// まだ決まっていないときだけ、ここからダイアログを出せる。
+    /// それ以外は設定を開くしかない (理由は AutomationPermission)
+    private var automationAction: String {
+        automation == .undecided
+            ? Localized.text("app.settings.automation.ask")
+            : Localized.text("app.action.open_settings")
+    }
+
+    private func requestAutomation() {
+        guard automation == .undecided else {
+            AutomationPermission.openSettings()
+            return
+        }
+        // 尋ねる経路はメインスレッドで呼べない (理由は AutomationPermission.request)。
+        // 待っている間はボタンを止めて、ダイアログが重ならないようにする
+        asking = true
+        Task {
+            automation = await AutomationPermission.request()
+            asking = false
+        }
     }
 
     /// つまみ・現在値・戻すボタンの1行。項目が増えても形が揃うようにまとめる

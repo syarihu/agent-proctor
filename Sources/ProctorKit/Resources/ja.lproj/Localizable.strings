@@ -44,13 +44,13 @@
 "cli.error.worktree_missing" = "作業していた場所がありません: %@";
 "cli.error.worktree_unreachable" = "作業していた場所に移動できません: %@";
 "cli.error.launch_failed" = "%@ を起動できません";
-"cli.error.app_not_found" = "Agent Proctor.app が見つかりません。scripts/install.sh でインストールしてください";
+"cli.error.app_not_found" = "Agent Proctor.app が見つかりません。変わった場所に入れている場合は PROCTOR_APP でその場所を指してください";
 "cli.error.app_launch_failed" = "Agent Proctor.app を起動できませんでした";
 
 /* メニューバー。押したら何が起きるかを書く (macOS の流儀) */
 "app.menu.show_sidebar" = "サイドバーを表示";
 "app.menu.hide_sidebar" = "サイドバーを隠す";
-"app.menu.settings" = "設定...";
+"app.menu.settings" = "設定…";
 "app.menu.quit" = "Agent Proctor を終了";
 
 /* 設定画面 */
@@ -77,3 +77,16 @@
 "app.alert.open_failed.body" = "iTerm2 が起動しているか、オートメーションが許可されているか確かめてください。";
 "app.alert.automation.title" = "iTerm2 の操作が許可されていません";
 "app.alert.automation.body" = "システム設定 → プライバシーとセキュリティ → オートメーション で Agent Proctor に iTerm2 の操作を許可してください。\n許可するまで、一覧をクリックしてもタブに移動できません。";
+"app.action.open_settings" = "システム設定を開く";
+"app.alert.automation.later" = "あとで";
+
+/* オートメーションの許可。設定ウィンドウ側 */
+"app.settings.automation_section" = "許可";
+"app.settings.automation" = "iTerm2 の操作";
+"app.settings.automation_footer" = "macOS が尋ねるのは一度きりです。すでに断っている場合は聞き直してこないので、システム設定で入れ直すことになります。許可はコード署名に紐づくので、別の署名でビルドし直すと最初からになります。";
+"app.settings.automation.granted" = "許可済み";
+"app.settings.automation.denied" = "許可されていません";
+"app.settings.automation.undecided" = "まだ尋ねていません";
+"app.settings.automation.not_running" = "iTerm2 が起動していません";
+"app.settings.automation.unknown" = "いま確かめられません";
+"app.settings.automation.ask" = "許可…";

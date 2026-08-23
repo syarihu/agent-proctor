@@ -25,6 +25,12 @@ BUNDLE_ID="net.syarihu.proctor"
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 
 DEST="${1:-$ROOT/.build/app}"
+# 相対で渡されても呼ぶ側の cwd に左右されないよう、ここで絶対にしておく。
+# stdout に出したパスは呼ぶ側がそのまま使うので、相対のままだと
+# このスクリプトが cd したあとの位置を基準にした値を渡すことになり、
+# 受け取った側が別の場所を指してしまう
+mkdir -p "$DEST"
+DEST="$(cd "$DEST" && pwd)"
 APP="$DEST/$APP_NAME.app"
 
 echo "==> ビルド (release)" >&2

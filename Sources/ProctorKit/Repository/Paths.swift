@@ -24,7 +24,7 @@ public enum Paths {
         stateDir.appendingPathComponent("state.json.broken")
     }
 
-    /// scripts/install.sh が組み立てるバンドルの名前。探すときもこれで揃える
+    /// scripts/build-app.sh が組み立てるバンドルの名前。探すときもこれで揃える
     private static let appBundleName = "Agent Proctor.app"
 
     /// サイドバーの .app の在り処。置かれ方が何通りかあるので順に当たる。
@@ -41,12 +41,22 @@ public enum Paths {
     /// 3. /Applications … .app だけ手で置いた・CLI を通さず起動したいとき
     /// 4. ~/Applications … 管理者権限なしで入れた場合
     public static var appBundle: URL? {
-        var candidates: [URL] = []
+        // 明示された場所は「ここを使え」であって「候補に加えろ」ではない。
+        // 外れたときに黙って別の .app へ流れると、使い捨てのつもりで
+        // 動いている本物を起動してしまう。指定が効かないならそう言う
         let override = ProcessInfo.processInfo.environment["PROCTOR_APP"]
         if let override, !override.isEmpty {
-            candidates.append(URL(fileURLWithPath: (override as NSString).expandingTildeInPath))
+            let url = URL(fileURLWithPath: (override as NSString).expandingTildeInPath)
+            return isAppBundle(url) ? url : nil
         }
-        let executable = URL(fileURLWithPath: CommandLine.arguments[0])
+
+        var candidates: [URL] = []
+        // argv[0] ではなく executablePath を見る。PATH 解決で名前だけ渡して
+        // spawn されると (subprocess.run(["proctor", ...]) など) argv[0] は
+        // "proctor" になり、そこからでは自分の居場所を辿れない。
+        // executablePath は symlink を解決しないので、その先は自分で辿る
+        let executable = URL(fileURLWithPath:
+            Bundle.main.executablePath ?? CommandLine.arguments[0])
             .resolvingSymlinksInPath().deletingLastPathComponent()
         candidates.append(executable.appendingPathComponent("../..").standardized)
         candidates.append(URL(fileURLWithPath: "/Applications").appendingPathComponent(appBundleName))
