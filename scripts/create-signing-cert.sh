@@ -16,7 +16,7 @@ KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 # -v を付けると信頼済みのものしか出ない。信頼はしない方針なので付けない
 if security find-identity -p codesigning 2>/dev/null | grep -q "\"$NAME\""; then
     echo "すでにあります: $NAME"
-    echo "scripts/install.sh がこれを使って署名します。"
+    echo "署名するとき (scripts/install.sh・sign-app.sh) はこれが使われます。"
     exit 0
 fi
 
@@ -50,7 +50,15 @@ if security find-identity -p codesigning 2>/dev/null | grep -q "\"$NAME\""; then
     echo "「この証明書は信頼されていません」と出ますが、それで構いません。"
     echo "codesign は信頼の有無を問わず署名に使えます。"
     echo
-    echo "次は scripts/install.sh を実行してください。"
+    # ソースツリーから走らせたのか、Homebrew が libexec に置いた物を走らせたのかで
+    # 次の一手が変わる。Package.swift の有無で見分ける
+    HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [ -f "$HERE/../Package.swift" ]; then
+        echo "次は scripts/install.sh を実行してください。"
+    else
+        echo "次は署名をやり直してください。Homebrew から入れた場合は:"
+        echo "  brew postinstall agent-proctor"
+    fi
 else
     echo "証明書を作れませんでした。" >&2
     exit 1

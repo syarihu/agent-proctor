@@ -54,6 +54,12 @@ codesign --force --options runtime --sign "$SIGN_ID" \
 codesign --force --options runtime --sign "$SIGN_ID" \
     --entitlements "$ENTITLEMENTS" "$APP" 2>&1 | sed 's/^/    /' >&2
 if [ "$SIGN_ID" = "-" ]; then
-    echo "    注意: アドホック署名です。ビルドのたびにオートメーションの許可を聞かれます。" >&2
-    echo "          scripts/create-signing-cert.sh を一度実行すると解消します。" >&2
+    # 証明書を作るスクリプトの在り処も、entitlement と同じ理由で決め打ちにできない。
+    # Homebrew から入れた場合はソースツリーが無く、libexec に置かれている
+    CERT_SCRIPT="$HERE/create-signing-cert.sh"
+    [ -f "$CERT_SCRIPT" ] || CERT_SCRIPT="$ROOT/scripts/create-signing-cert.sh"
+    echo "    注意: アドホック署名です。入れ直すたびにオートメーションの許可を聞かれます。" >&2
+    echo "          次の2つを順に実行すると解消します。" >&2
+    echo "            \"$CERT_SCRIPT\"" >&2
+    echo "            \"$0\" \"$APP\"" >&2
 fi
