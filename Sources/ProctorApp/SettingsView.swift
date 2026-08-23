@@ -22,6 +22,21 @@ struct SettingsView: View {
     @State private var asking = false
 
     var body: some View {
+        // 版はどの節にも属さないので Form の外に置く。
+        // 節にすると「設定できる項目」に見えてしまう
+        VStack(spacing: 0) {
+            form
+            Text(Localized.text("app.settings.version",
+                                AppVersion.current ?? Localized.text("common.version.unknown")))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 12)
+        }
+        .frame(width: 460)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var form: some View {
         Form {
             Section {
                 slider(title: Localized.text("app.settings.font_size"),
@@ -120,8 +135,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460)
-        .fixedSize(horizontal: false, vertical: true)
         // 画面を開き直したときに、外で変えられていた設定を拾い直す
         .onAppear {
             launchAtLogin = LoginItem.isEnabled

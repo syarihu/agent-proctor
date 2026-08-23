@@ -22,6 +22,13 @@ if command == "-h" || command == "--help" || command == "help" {
     print(usage)
     exit(0)
 }
+if command == "-v" || command == "--version" || command == "version" {
+    // "proctor 0.1.0" の形。読むのが機械のこともあるので、版そのものは訳さない。
+    // .app の外から走らせていると版が分からないので、そのときはそう言う
+    // (それらしい数字を出すと、どのビルドの話か分からなくなる)
+    print("proctor \(AppVersion.current ?? Localized.text("common.version.unknown"))")
+    exit(0)
+}
 
 let parsed = Args(Array(argv.dropFirst()))
 

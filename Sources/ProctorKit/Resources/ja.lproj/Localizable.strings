@@ -25,7 +25,7 @@
 "error.task_id.exhausted" = "ID を採番できません";
 
 /* proctor --help。行の並びがそのまま画面に出る */
-"cli.usage" = "使い方: proctor <コマンド> [オプション]\n\nworktree で働くコーディングエージェントを見張り、手が挙がったら知らせる。\n\n  ls             動いているエージェントの一覧\n                   --all              全リポジトリを対象にする\n                   --json             JSON で出す (AI・サイドバー向け)\n  attach <ID>    そのセッションのエージェント (claude / agy) を開く (続きから)\n  rm <ID>        台帳から1件外す (worktree には触らない)\n  sidebar        iTerm2 に吸着するサイドバー (Agent Proctor.app) を起動する\n\nworktree を作ったり片付けたりはしない。それは proctor を呼ぶ側の仕事で、\nここは走っているものを見せることに徹する。";
+"cli.usage" = "使い方: proctor <コマンド> [オプション]\n\nworktree で働くコーディングエージェントを見張り、手が挙がったら知らせる。\n\n  ls             動いているエージェントの一覧\n                   --all              全リポジトリを対象にする\n                   --json             JSON で出す (AI・サイドバー向け)\n  attach <ID>    そのセッションのエージェント (claude / agy) を開く (続きから)\n  rm <ID>        台帳から1件外す (worktree には触らない)\n  sidebar        iTerm2 に吸着するサイドバー (Agent Proctor.app) を起動する\n  --version      版を表示する\n\nworktree を作ったり片付けたりはしない。それは proctor を呼ぶ側の仕事で、\nここは走っているものを見せることに徹する。";
 
 "cli.unknown_command" = "知らないコマンドです: %@";
 "cli.outside_repo" = "git リポジトリの外なので、すべてのセッションを表示します";
@@ -90,3 +90,7 @@
 "app.settings.automation.not_running" = "iTerm2 が起動していません";
 "app.settings.automation.unknown" = "いま確かめられません";
 "app.settings.automation.ask" = "許可…";
+
+/* 版の表示。%@ は版そのもの (0.1.0 など) */
+"app.settings.version" = "バージョン %@";
+"common.version.unknown" = "開発ビルド";

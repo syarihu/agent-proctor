@@ -54,21 +54,37 @@ public enum Paths {
         }
 
         var candidates: [URL] = []
-        // argv[0] ではなく executablePath を見る。PATH 解決で名前だけ渡して
-        // spawn されると (subprocess.run(["proctor", ...]) など) argv[0] は
-        // "proctor" になり、そこからでは自分の居場所を辿れない。
-        // executablePath は symlink を解決しないので、その先は自分で辿る
-        let executable = URL(fileURLWithPath:
-            Bundle.main.executablePath ?? CommandLine.arguments[0])
-            .resolvingSymlinksInPath().deletingLastPathComponent()
-        candidates.append(executable.appendingPathComponent("../..").standardized)
+        if let enclosing = enclosingAppBundle { candidates.append(enclosing) }
         candidates.append(URL(fileURLWithPath: "/Applications").appendingPathComponent(appBundleName))
         candidates.append(FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Applications").appendingPathComponent(appBundleName))
         return candidates.first { isAppBundle($0) }
     }
 
-    /// .app かどうか。ビルドディレクトリから直に走らせたときは 2 番目の候補が
+    /// **いま動いているこの実行ファイルが入っている .app。** 入っていなければ nil。
+    ///
+    /// `appBundle` と混同しないこと。あちらは「起動すべき .app はどこか」を
+    /// 答えるもので、自分が入っていなければ /Applications まで見に行く。
+    /// こちらは「自分は何者か」なので、**入っていないなら nil を返すのが正しい**
+    /// (.build/release から走らせたときに、入っている .app の版を
+    /// 自分の版として答えてしまうのを防ぐ)。
+    ///
+    /// CLI は Contents/Helpers、アプリ本体は Contents/MacOS にいるので、
+    /// どちらも2つ上がバンドルになる。
+    ///
+    /// argv[0] ではなく executablePath を見るのは、PATH 解決で名前だけ渡して
+    /// spawn されると (subprocess.run(["proctor", ...]) など) argv[0] が
+    /// "proctor" になり、そこからでは自分の居場所を辿れないため。
+    /// executablePath は symlink を解決しないので、その先は自分で辿る。
+    public static var enclosingAppBundle: URL? {
+        let executable = URL(fileURLWithPath:
+            Bundle.main.executablePath ?? CommandLine.arguments[0])
+            .resolvingSymlinksInPath().deletingLastPathComponent()
+        let bundle = executable.appendingPathComponent("../..").standardized
+        return isAppBundle(bundle) ? bundle : nil
+    }
+
+    /// .app かどうか。ビルドディレクトリから直に走らせたときは
     /// ただのディレクトリになるので、拡張子と Info.plist の両方を見て弾く
     private static func isAppBundle(_ url: URL) -> Bool {
         guard url.pathExtension == "app" else { return false }
