@@ -15,14 +15,14 @@ let package = Package(
             name: "ProctorKit",
             // 表示する言葉は CLI とアプリで同じものを使うので、
             // 訳文も1か所 (Kit) に置いて両方から引く。
-            // scripts/install.sh がここの .lproj を .app の中へ配る
+            // scripts/build-app.sh がここの .lproj を .app の中へ配る
             resources: [.process("Resources")],
             swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
             name: "proctor",
             dependencies: ["ProctorKit"],
             swiftSettings: [.swiftLanguageMode(.v5)]),
-        // アプリ本体。scripts/install.sh がこれを Proctor.app に組み立てる
+        // アプリ本体。scripts/build-app.sh がこれを Agent Proctor.app に組み立てる
         .executableTarget(
             name: "ProctorApp",
             dependencies: ["ProctorKit"],

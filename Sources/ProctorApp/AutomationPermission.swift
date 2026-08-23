@@ -42,11 +42,22 @@ enum AutomationPermission {
 
     /// まだ決まっていないときに尋ねる。決まっていれば、その答えがそのまま返る。
     ///
-    /// **メインスレッドで呼んではいけない API なので、ここで別スレッドへ逃がす。**
+    /// **メインスレッドで呼んではいけない API なので、ここで外へ逃がす。**
     /// 人が答えるまで戻らず、その間メインスレッドを止めると
     /// サイドバーの描画も FocusWatcher の追従も一緒に止まってしまう。
+    ///
+    /// `Task.detached` ではなく GCD に投げているのは、逃がし先が
+    /// **Swift 並行処理の協調プールだと幅が CPU のコア数で頭打ちになる**ため。
+    /// この呼び出しは人が答えるまで戻らないので、プールの1本を
+    /// 人間の注意力の長さだけ塞ぐことになり、同じプールを使う
+    /// TaskStore の集計 (git を回す) がその間つかえる。
+    /// GCD は塞がれた分だけスレッドを増やすので、待つならこちらが向いている。
     static func request() async -> State {
-        await Task.detached(priority: .userInitiated) { determine(askIfNeeded: true) }.value
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: determine(askIfNeeded: true))
+            }
+        }
     }
 
     private static func determine(askIfNeeded: Bool) -> State {

@@ -27,19 +27,22 @@ public enum Paths {
     /// scripts/build-app.sh が組み立てるバンドルの名前。探すときもこれで揃える
     private static let appBundleName = "Agent Proctor.app"
 
-    /// サイドバーの .app の在り処。置かれ方が何通りかあるので順に当たる。
+    /// サイドバーの .app の在り処。
     ///
     /// /Applications 決め打ちにできないのは、Homebrew から入れると .app が Cellar の
     /// 下に置かれるため。formula は HOMEBREW_PREFIX の外に書けないので、
     /// /Applications にあるのはそこへの symlink か、あるいは何も無い。
     ///
-    /// 1. `PROCTOR_APP` … 試験と、変な入れ方をしたときの逃げ道
-    /// 2. 自分の居場所から2つ上 … CLI は Contents/Helpers にいるので、そこが .app。
+    /// **まず `PROCTOR_APP` を見る。指定があればそれだけで決める。**
+    /// 外れていても他を探さない (試験と、変な入れ方をしたときの逃げ道であり、
+    /// 「ここを使え」の意味だから)。指定が無いときだけ、次の順に当たる。
+    ///
+    /// 1. 自分の居場所から2つ上 … CLI は Contents/Helpers にいるので、そこが .app。
     ///    これを先に見るのは「今動いている CLI と対の .app」を確実に指すから。
     ///    別の場所に入れ直したあと、古いほうを起動してしまうのを防ぐ。
     ///    symlink (~/bin/proctor や Homebrew の bin/proctor) 越しでも辿れるよう実体を見る
-    /// 3. /Applications … .app だけ手で置いた・CLI を通さず起動したいとき
-    /// 4. ~/Applications … 管理者権限なしで入れた場合
+    /// 2. /Applications … .app だけ手で置いた・CLI を通さず起動したいとき
+    /// 3. ~/Applications … 管理者権限なしで入れた場合
     public static var appBundle: URL? {
         // 明示された場所は「ここを使え」であって「候補に加えろ」ではない。
         // 外れたときに黙って別の .app へ流れると、使い捨てのつもりで

@@ -105,7 +105,10 @@ struct SettingsView: View {
                             .foregroundStyle(automation == .granted ? .secondary : .primary)
                         Spacer()
                         Button(automationAction, action: requestAutomation)
-                            .disabled(asking)
+                            // iTerm2 が居ないときに設定を開かせても行き止まりになる。
+                            // 一度も尋ねていなければ TCC に記録が無く、
+                            // オートメーションの一覧にこのアプリの行が出てこない
+                            .disabled(asking || automation == .targetNotRunning)
                     }
                 }
             } header: {
@@ -126,7 +129,13 @@ struct SettingsView: View {
         }
         // この画面が一番出す動作は「システム設定を開く」で、それは設定ウィンドウを
         // 閉じない。onAppear だけだと、向こうで許可して戻ってきても表示が
-        // 「許可されていません」のままになる。前面に戻った時点で見に行く
+        // 「許可されていません」のままになる。前面に戻った時点で見に行く。
+        //
+        // 尋ねている最中にも飛んでくる (ダイアログを閉じるとアプリが前面に戻る) が、
+        // **どちらが後に代入されても同じ値になるので競合しない**。
+        // ここも request() も TCC という同じ正本を読みに行くだけで、
+        // 後から読んだほうが必ず新しい。片方が答えを手元で組み立てたり
+        // 覚え込んだりするようになると、この前提は崩れる
         .onReceive(NotificationCenter.default.publisher(
             for: NSApplication.didBecomeActiveNotification)) { _ in
             automation = AutomationPermission.state()
