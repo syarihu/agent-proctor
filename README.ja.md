@@ -205,7 +205,7 @@ scripts/sign-app.sh "/Applications/Agent Proctor.app"
 「設定…」で「ログイン時に起動」を入れておくと、次からは自動で立ち上がる。
 
 <p align="center">
-  <img src="docs/images/settings.png" alt="設定ウィンドウ。文字の大きさ・幅・不透明度・下地・iTerm2 の幅を詰める設定、ログイン時に起動、iTerm2 の操作を許可しているか" width="460">
+  <img src="docs/images/settings.png" alt="設定ウィンドウ。文字の大きさ・幅・不透明度・下地・iTerm2 の幅を詰める設定、ログイン時に起動、iTerm2 の操作を許可しているか、バージョン" width="460">
 </p>
 
 ## 使い方

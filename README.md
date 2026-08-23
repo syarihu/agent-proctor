@@ -221,7 +221,7 @@ Open *Settings…* and turn on *Open at login*, and it will start on its own fro
 then on.
 
 <p align="center">
-  <img src="docs/images/settings.png" alt="The settings window: sidebar text size, width, opacity, background, the make-room toggle, open at login, and whether controlling iTerm2 is allowed" width="460">
+  <img src="docs/images/settings.png" alt="The settings window: sidebar text size, width, opacity, background, the make-room toggle, open at login, whether controlling iTerm2 is allowed, and the version" width="460">
 </p>
 
 ## Usage
