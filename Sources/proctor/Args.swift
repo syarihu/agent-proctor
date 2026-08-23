@@ -21,10 +21,11 @@ struct Args {
 
     func has(_ names: String...) -> Bool { names.contains { flags.contains($0) } }
 
-    /// 位置引数を1つ取り出す。無ければ何が要るかを添えて止める
+    /// 位置引数を1つ取り出す。無ければ何が要るかを添えて止める。
+    /// what は呼ぶ側が訳したもの (語順が言語で変わるので、文にするのはここ)
     func require(_ index: Int, _ what: String) throws -> String {
         guard index < positional.count else {
-            throw ProctorError("\(what) を指定してください")
+            throw ProctorError(Localized.text("cli.error.missing_argument", what))
         }
         return positional[index]
     }

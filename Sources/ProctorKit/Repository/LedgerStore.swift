@@ -65,7 +65,7 @@ public enum LedgerStore {
         // (台帳は初回の書き込み時にはまだ存在しない)
         guard rename(tmp.path, Paths.stateFile.path) == 0 else {
             try? FileManager.default.removeItem(at: tmp)
-            throw ProctorError("台帳を書き込めません: \(Paths.stateFile.path)")
+            throw ProctorError(Localized.text("error.ledger.write_failed", Paths.stateFile.path))
         }
     }
 
@@ -86,11 +86,11 @@ public enum LedgerStore {
 
         let fd = open(Paths.lockFile.path, O_WRONLY | O_CREAT, 0o644)
         guard fd >= 0 else {
-            throw ProctorError("ロックを開けません: \(Paths.lockFile.path)")
+            throw ProctorError(Localized.text("error.ledger.lock_open_failed", Paths.lockFile.path))
         }
         defer { close(fd) }
         guard flock(fd, LOCK_EX) == 0 else {
-            throw ProctorError("ロックを取得できません: \(Paths.lockFile.path)")
+            throw ProctorError(Localized.text("error.ledger.lock_failed", Paths.lockFile.path))
         }
 
         var ledger = read()
@@ -128,9 +128,10 @@ public enum LedgerStore {
         let hits = all.filter { $0.id.hasPrefix(id) }
         if hits.count == 1 { return hits[0] }
         if hits.count > 1 {
-            throw ProctorError("ID が曖昧です: " + hits.map(\.id).joined(separator: ", "))
+            throw ProctorError(Localized.text("error.ledger.ambiguous_id",
+                                              hits.map(\.id).joined(separator: ", ")))
         }
-        throw ProctorError("タスクが見つかりません: \(id)")
+        throw ProctorError(Localized.text("error.ledger.not_found", id))
     }
 
     /// 指定したタスクを台帳から外す。worktree には触らない。

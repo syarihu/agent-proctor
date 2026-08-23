@@ -1,0 +1,5 @@
+/* .app の Info.plist を訳すための表 (鍵は Info.plist のキー名)。
+   scripts/install.sh が Localizable.strings と一緒に .app の中へ配る。 */
+
+/* オートメーションの許可を求めるときにシステムが出す説明 */
+"NSAppleEventsUsageDescription" = "Agent Proctor controls iTerm2 to move you to an open tab and to open a task in a new tab.";

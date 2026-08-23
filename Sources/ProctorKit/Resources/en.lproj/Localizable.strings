@@ -1,0 +1,79 @@
+/* 表に出る言葉の正本。訳は ja.lproj/Localizable.strings。
+   片方だけ足すと、もう片方の言語では鍵がそのまま出るので必ず両方に入れる。 */
+
+/* CLI の一覧・メニューバー・サイドバーで共通に使う */
+"common.no_agents" = "No agents are running";
+
+/* 状態の名前 (TaskStatus)。CLI の表と、アプリの読み上げに出る */
+"status.idle" = "Idle";
+"status.running" = "Running";
+"status.waiting" = "Waiting";
+"status.done" = "Done";
+"status.seen" = "Seen";
+"status.failed" = "Failed";
+"status.missing" = "Missing";
+
+/* 名乗るものが何も無いサブエージェントの見出し */
+"subagent.fallback_name" = "Subagent";
+
+/* 台帳まわりの失敗。%@ はファイルの場所や ID */
+"error.ledger.write_failed" = "Cannot write the ledger: %@";
+"error.ledger.lock_open_failed" = "Cannot open the lock file: %@";
+"error.ledger.lock_failed" = "Cannot acquire the lock: %@";
+"error.ledger.ambiguous_id" = "Ambiguous ID: %@";
+"error.ledger.not_found" = "No such task: %@";
+"error.task_id.exhausted" = "Cannot assign an ID";
+
+/* proctor --help。行の並びがそのまま画面に出る */
+"cli.usage" = "Usage: proctor <command> [options]\n\nWatches coding agents working in worktrees and tells you when one raises its hand.\n\n  ls             list the agents that are running\n                   --all              cover every repository\n                   --json             print JSON (for AI and the sidebar)\n  attach <ID>    open that session's agent (claude / agy), resuming it\n  rm <ID>        drop one entry from the ledger (the worktree is left alone)\n  sidebar        launch the sidebar that clings to iTerm2 (Agent Proctor.app)\n\nIt neither creates nor cleans up worktrees. That is the job of whoever calls\nproctor; this only shows what is running.";
+
+"cli.unknown_command" = "unknown command: %@";
+"cli.outside_repo" = "Not in a git repository, so every session is listed";
+/* %1$@ は台帳から外した ID、%2$@ は残した worktree の場所 */
+"cli.removed" = "Dropped from the ledger: %1$@ (%2$@ is left as it is)";
+
+/* 引数が足りないときに「何が要るか」として差し込む言葉 */
+"cli.arg.session_id" = "a session ID";
+"cli.arg.status" = "a status (%@)";
+"cli.arg.start_or_stop" = "start or stop";
+
+"cli.error.missing_argument" = "%@ is required";
+/* %1$@ は受け付ける状態の一覧、%2$@ は渡された値 */
+"cli.error.invalid_status" = "The status must be one of %1$@: %2$@";
+"cli.error.invalid_subagent_action" = "Specify start or stop: %@";
+"cli.error.worktree_missing" = "The worktree is gone: %@";
+"cli.error.worktree_unreachable" = "Cannot move into the worktree: %@";
+"cli.error.launch_failed" = "Cannot launch %@";
+"cli.error.app_not_found" = "Agent Proctor.app is not installed. Run scripts/install.sh";
+"cli.error.app_launch_failed" = "Could not launch Agent Proctor.app";
+
+/* メニューバー。押したら何が起きるかを書く (macOS の流儀) */
+"app.menu.show_sidebar" = "Show Sidebar";
+"app.menu.hide_sidebar" = "Hide Sidebar";
+"app.menu.settings" = "Settings…";
+"app.menu.quit" = "Quit Agent Proctor";
+
+/* 設定画面 */
+"app.settings.window_title" = "Agent Proctor Settings";
+"app.settings.font_size" = "Text size";
+"app.settings.width" = "Width";
+"app.settings.opacity" = "Opacity";
+"app.settings.background" = "Background";
+"app.settings.background.match_iterm" = "Match iTerm2";
+"app.settings.background.custom" = "Custom";
+"app.settings.reset" = "Reset";
+"app.settings.make_room" = "Shrink iTerm2 to make room";
+"app.settings.sidebar_section" = "Sidebar";
+"app.settings.sidebar_footer" = "Row spacing follows the text size, and you can also drag the left edge of the sidebar to change its width.\nWith “Shrink iTerm2 to make room” on, a full-width iTerm2 window has its left edge moved right so the sidebar does not cover it, and gets its width back when the sidebar is hidden or Agent Proctor quits.";
+"app.settings.launch_section" = "Startup";
+"app.settings.launch_at_login" = "Open at login";
+
+/* 一覧の行。%1$@ はブランチ名、%2$@ は経過時間 (5m など) */
+"app.row.branch_age" = "%1$@ · idle %2$@";
+"app.row.close_help" = "Remove from the list (the worktree is left alone)";
+
+/* タブを開けなかったとき。%@ はセッションの名前 */
+"app.alert.open_failed.title" = "Could not open %@";
+"app.alert.open_failed.body" = "Check that iTerm2 is running and that automation is allowed.";
+"app.alert.automation.title" = "Agent Proctor is not allowed to control iTerm2";
+"app.alert.automation.body" = "Allow Agent Proctor to control iTerm2 in System Settings → Privacy & Security → Automation.\nUntil you do, clicking a row cannot take you to its tab.";

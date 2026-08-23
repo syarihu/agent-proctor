@@ -8,7 +8,7 @@ func cmdLs(_ args: Args) throws -> Int32 {
     let repo = all ? nil : GitClient.mainWorktree(from: EnvironmentSource.currentDirectory())
     if !all && repo == nil && !args.has("--json") {
         // 黙って全件出すと、絞り込めているのか区別がつかない
-        Terminal.note("git リポジトリの外なので、すべてのセッションを表示します")
+        Terminal.note(Localized.text("cli.outside_repo"))
     }
     let tasks = CollectTasks.run(repo: repo, allRepos: all)
 
@@ -17,7 +17,7 @@ func cmdLs(_ args: Args) throws -> Int32 {
         return 0
     }
     if tasks.isEmpty {
-        print("動いているエージェントはいません")
+        print(Localized.text("common.no_agents"))
         return 0
     }
 
@@ -44,9 +44,9 @@ func cmdLs(_ args: Args) throws -> Int32 {
 /// 自分のプロセスをエージェントに置き換えるので、成功した場合ここから戻らない。
 /// サイドバーの行をクリックしたとき、タブが既に閉じていればこれが新しいタブで走る。
 func cmdAttach(_ args: Args) throws -> Int32 {
-    let task = try LedgerStore.find(id: try args.require(0, "セッションID"))
+    let task = try LedgerStore.find(id: try args.require(0, Localized.text("cli.arg.session_id")))
     guard FileManager.default.fileExists(atPath: task.worktree) else {
-        throw ProctorError("作業していた場所がありません: \(task.worktree)")
+        throw ProctorError(Localized.text("cli.error.worktree_missing", task.worktree))
     }
 
     let isAgy = task.agent == "agy"
@@ -62,13 +62,13 @@ func cmdAttach(_ args: Args) throws -> Int32 {
     }
 
     guard FileManager.default.changeCurrentDirectoryPath(task.worktree) else {
-        throw ProctorError("作業していた場所に移動できません: \(task.worktree)")
+        throw ProctorError(Localized.text("cli.error.worktree_unreachable", task.worktree))
     }
     var cargs: [UnsafeMutablePointer<CChar>?] = argv.map { strdup($0) }
     cargs.append(nil)
     execvp(binary, &cargs)
     // execvp は成功すれば戻らない。ここに来たのは起動できなかったということ
-    throw ProctorError("\(binary) を起動できません")
+    throw ProctorError(Localized.text("cli.error.launch_failed", binary))
 }
 
 /// 台帳から1件外す。
@@ -77,9 +77,9 @@ func cmdAttach(_ args: Args) throws -> Int32 {
 /// プロセスを追えないまま残った古い記録 (この仕組みより前のもの・Claude Code 以外) を
 /// 期限切れを待たずに片付けるための逃げ道として置いてある。
 func cmdRm(_ args: Args) throws -> Int32 {
-    let task = try ForgetTask.run(id: try args.require(0, "セッションID"))
+    let task = try ForgetTask.run(id: try args.require(0, Localized.text("cli.arg.session_id")))
     // 消したのは記録だけ。作業していた場所は残っていることを断っておく
-    print("台帳から外しました: \(task.id) (\(task.worktree) はそのまま)")
+    print(Localized.text("cli.removed", task.id, task.worktree))
     return 0
 }
 
@@ -89,11 +89,10 @@ func cmdRm(_ args: Args) throws -> Int32 {
 func cmdSidebar(_ args: Args) throws -> Int32 {
     let bundle = "/Applications/Agent Proctor.app"
     guard FileManager.default.fileExists(atPath: bundle) else {
-        throw ProctorError(
-            "Agent Proctor.app が見つかりません。scripts/install.sh でインストールしてください")
+        throw ProctorError(Localized.text("cli.error.app_not_found"))
     }
     guard ProcessRunner.inherit(["open", "-a", bundle]) == 0 else {
-        throw ProctorError("Agent Proctor.app を起動できませんでした")
+        throw ProctorError(Localized.text("cli.error.app_launch_failed"))
     }
     return 0
 }

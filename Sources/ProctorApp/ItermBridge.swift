@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import ProctorKit
 
 /// iTerm2 との連携。
 ///
@@ -208,12 +209,8 @@ enum ItermBridge {
         if code == -1743, !permissionWarned {
             permissionWarned = true
             let alert = NSAlert()
-            alert.messageText = "iTerm2 の操作が許可されていません"
-            alert.informativeText = """
-                システム設定 → プライバシーとセキュリティ → オートメーション で
-                Agent Proctor に iTerm2 の操作を許可してください。
-                許可するまで、一覧をクリックしてもタブに移動できません。
-                """
+            alert.messageText = Localized.text("app.alert.automation.title")
+            alert.informativeText = Localized.text("app.alert.automation.body")
             alert.alertStyle = .warning
             alert.runModal()
         }

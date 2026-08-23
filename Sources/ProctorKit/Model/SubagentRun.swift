@@ -47,6 +47,6 @@ public struct SubagentRun: Codable, Equatable, Identifiable {
     /// 一覧に出す見出し。名乗るものが何も無いときのための最後の受け皿を持つ
     public var displayName: String {
         if let type, !type.isEmpty { return type }
-        return "サブエージェント"
+        return Localized.text("subagent.fallback_name")
     }
 }

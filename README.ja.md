@@ -80,6 +80,8 @@ ProctorKit/
   UseCase/     やりたいこと1つに1つ。判断はすべてここが持つ
                CollectTasks, RecordHookEvent, RecordSessionStats,
                MarkSessionSeen, ReapClosedSessions, ForgetTask, HookPayload
+  Localized    人に見せる言葉。どの層からも要るもので、引くだけで何も決めないので
+               3層のどれにも入れていない
 
 proctor/       CLI (View)。引数を読んで UseCase を呼び、結果を端末向けに整える
 ProctorApp/    アプリ (View)。SwiftUI と AppKit。TaskStore が Repository を包む
@@ -88,6 +90,25 @@ ProctorApp/    アプリ (View)。SwiftUI と AppKit。TaskStore が Repository 
 | ファイル | 役割 |
 | --- | --- |
 | `~/.local/state/proctor/state.json` | 台帳。リポジトリを横断して1つ。実行時に自動で作られる |
+
+### 表示する言語
+
+UI はシステムの言語に従う。macOS が日本語なら日本語、それ以外は英語で、
+設定する項目は無い。訳を `.lproj` として持たせてあるので、
+*システム設定 → 一般 → 言語と地域 → アプリケーション* にもこのアプリが並び、
+ここだけ別の言語に固定することもできる。
+
+アプリと CLI は同じ表を読む。同じ言葉を2か所で訳さないため。
+
+| ファイル | 役割 |
+| --- | --- |
+| `Sources/ProctorKit/Resources/en.lproj/Localizable.strings` | 正本 |
+| `Sources/ProctorKit/Resources/ja.lproj/Localizable.strings` | その訳 |
+| `Sources/ProctorKit/Localized.swift` | 訳文を引く。言語を自分で選んでいるのは、`.app` の外にいる実行ファイル (CLI) には常に英語と伝わってしまうため |
+
+**鍵は両方のファイルに足す。** 片方にしか無い鍵は、もう片方の言語では
+鍵がそのまま出る。`scripts/install.sh` が2つの `.lproj` を
+`Contents/Resources` に配り、同梱の CLI もそこから読む。
 
 ### 設計上の約束
 

@@ -1,4 +1,5 @@
 import AppKit
+import ProctorKit
 import SwiftUI
 
 /// 設定画面の器。
@@ -29,7 +30,7 @@ final class SettingsWindow {
     private func make() -> NSWindow {
         let hosting = NSHostingController(rootView: SettingsView(appearance: appearance))
         let window = NSWindow(contentViewController: hosting)
-        window.title = "Agent Proctor の設定"
+        window.title = Localized.text("app.settings.window_title")
         window.styleMask = [.titled, .closable]
         // 閉じても捨てない。次に開くときに作り直さずに済む
         window.isReleasedWhenClosed = false

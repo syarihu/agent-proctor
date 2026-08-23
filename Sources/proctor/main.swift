@@ -1,21 +1,8 @@
 import Foundation
 import ProctorKit
 
-let usage = """
-使い方: proctor <コマンド> [オプション]
-
-worktree で働くコーディングエージェントを見張り、手が挙がったら知らせる。
-
-  ls             動いているエージェントの一覧
-                   --all              全リポジトリを対象にする
-                   --json             JSON で出す (AI・サイドバー向け)
-  attach <ID>    そのセッションのエージェント (claude / agy) を開く (続きから)
-  rm <ID>        台帳から1件外す (worktree には触らない)
-  sidebar        iTerm2 に吸着するサイドバー (Agent Proctor.app) を起動する
-
-worktree を作ったり片付けたりはしない。それは proctor を呼ぶ側の仕事で、
-ここは走っているものを見せることに徹する。
-"""
+// ヘルプもシステムの言語で出す。訳文は ProctorKit の Localizable.strings
+let usage = Localized.text("cli.usage")
 
 func prettyJSON<T: Encodable>(_ value: T) throws -> String {
     let encoder = JSONEncoder()
@@ -51,7 +38,7 @@ do {
     case "_stats": code = try cmdStats(parsed)
     default:
         FileHandle.standardError.write(
-            Data("proctor: 知らないコマンドです: \(command)\n\n".utf8))
+            Data("proctor: \(Localized.text("cli.unknown_command", command))\n\n".utf8))
         print(usage)
         code = 2
     }

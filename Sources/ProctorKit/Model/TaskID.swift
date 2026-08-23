@@ -26,6 +26,6 @@ public enum TaskID {
             let candidate = "\(base)-\(n)"
             if !used.contains(candidate) { return candidate }
         }
-        throw ProctorError("ID を採番できません")
+        throw ProctorError(Localized.text("error.task_id.exhausted"))
     }
 }

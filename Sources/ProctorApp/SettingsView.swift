@@ -1,3 +1,4 @@
+import ProctorKit
 import SwiftUI
 
 /// 設定画面。
@@ -17,7 +18,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
-                slider(title: "文字の大きさ",
+                slider(title: Localized.text("app.settings.font_size"),
                        value: $appearance.fontSize,
                        range: Appearance.sizeRange,
                        step: Appearance.sizeStep,
@@ -25,7 +26,7 @@ struct SettingsView: View {
                        isDefault: appearance.fontSize == Appearance.defaultSize,
                        reset: appearance.resetFontSize)
 
-                slider(title: "幅",
+                slider(title: Localized.text("app.settings.width"),
                        value: $appearance.sidebarWidth,
                        range: Appearance.widthRange,
                        step: Appearance.widthStep,
@@ -33,7 +34,7 @@ struct SettingsView: View {
                        isDefault: appearance.sidebarWidth == Appearance.defaultWidth,
                        reset: appearance.resetWidth)
 
-                slider(title: "不透明度",
+                slider(title: Localized.text("app.settings.opacity"),
                        value: Binding(
                            get: { CGFloat(appearance.opacity * 100) },
                            set: { appearance.opacity = Double($0 / 100) }
@@ -44,11 +45,11 @@ struct SettingsView: View {
                        isDefault: abs(appearance.opacity - Appearance.defaultOpacity) < 0.005,
                        reset: appearance.resetOpacity)
 
-                LabeledContent("背景色") {
+                LabeledContent(Localized.text("app.settings.background")) {
                     HStack(spacing: 12) {
                         Picker("", selection: $appearance.useCustomBackgroundColor) {
-                            Text("iTerm2 に合わせる").tag(false)
-                            Text("カスタム").tag(true)
+                            Text(Localized.text("app.settings.background.match_iterm")).tag(false)
+                            Text(Localized.text("app.settings.background.custom")).tag(true)
                         }
                         .labelsHidden()
                         .pickerStyle(.segmented)
@@ -62,21 +63,16 @@ struct SettingsView: View {
 
                         Spacer()
 
-                        Button("もとに戻す", action: appearance.resetBackgroundColor)
+                        Button(Localized.text("app.settings.reset"), action: appearance.resetBackgroundColor)
                             .disabled(!appearance.useCustomBackgroundColor && appearance.customColorHex == Appearance.defaultCustomHex)
                     }
                 }
-                Toggle("iTerm2 の幅を詰めて場所を空ける",
+                Toggle(Localized.text("app.settings.make_room"),
                        isOn: $appearance.makeRoomForSidebar)
             } header: {
-                Text("サイドバー")
+                Text(Localized.text("app.settings.sidebar_section"))
             } footer: {
-                Text("行の余白も文字の大きさに合わせて変わります。"
-                     + "幅はサイドバーの左端をドラッグしても変えられます。\n"
-                     + "「幅を詰めて場所を空ける」を入れておくと、"
-                     + "iTerm2 が画面いっぱいのときにウィンドウの左端を右へ寄せて、"
-                     + "サイドバーが重ならないようにします。"
-                     + "サイドバーを隠すか終了すると元の幅に戻します。")
+                Text(Localized.text("app.settings.sidebar_footer"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -84,7 +80,7 @@ struct SettingsView: View {
             Section {
                 // onChange の2引数版は macOS 14 からなので、
                 // 書き込みを受けるバインディングを自分で作る
-                Toggle("ログイン時に起動", isOn: Binding(
+                Toggle(Localized.text("app.settings.launch_at_login"), isOn: Binding(
                     get: { launchAtLogin },
                     set: { apply(launchAtLogin: $0) }))
                 if let loginError {
@@ -93,11 +89,7 @@ struct SettingsView: View {
                         .foregroundStyle(.red)
                 }
             } header: {
-                Text("起動")
-            } footer: {
-                Text("入れておくと、次からは自分で起動しなくても居ます。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(Localized.text("app.settings.launch_section"))
             }
         }
         .formStyle(.grouped)
@@ -128,7 +120,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     // 数字の桁で幅が動くと、つまみまで揺れて掴みにくい
                     .frame(width: 52, alignment: .trailing)
-                Button("もとに戻す", action: reset)
+                Button(Localized.text("app.settings.reset"), action: reset)
                     .disabled(isDefault)
             }
         }

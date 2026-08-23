@@ -54,11 +54,11 @@ before its children do** — `Stop` arrives while they are still working, and th
 parent is woken again when they report back. A session in that state is not
 finished and is not waiting for you, so proctor holds the ending back and keeps
 it running until the last child returns. Otherwise it would flash a green
-`✅ 完了` at you and then go back to work, and the colour would stop meaning
+`✅ Done` at you and then go back to work, and the colour would stop meaning
 *this one needs you*.
 
-A finished session shows as a green `✅ 完了` **only until you look at it**.
-Focus that tab and it turns into a quiet `✔ 確認済み` with the whole row dimmed,
+A finished session shows as a green `✅ Done` **only until you look at it**.
+Focus that tab and it turns into a quiet `✔ Seen` with the whole row dimmed,
 so that colour means work you have not dealt with yet. It stays in the list
 rather than disappearing, so you can still trace what happened. Starting again
 clears the mark — the next ending is a different result and deserves a look.
@@ -87,6 +87,8 @@ ProctorKit/
   UseCase/     One per thing you want to do. Every decision lives here
                CollectTasks, RecordHookEvent, RecordSessionStats,
                MarkSessionSeen, ReapClosedSessions, ForgetTask, HookPayload
+  Localized    The words shown to people. Outside the three layers because
+               every one of them needs words, and looking one up decides nothing
 
 proctor/       CLI (view). Reads arguments, calls a use case, formats for a terminal
 ProctorApp/    App (view). SwiftUI and AppKit. TaskStore wraps the repository
@@ -95,6 +97,25 @@ ProctorApp/    App (view). SwiftUI and AppKit. TaskStore wraps the repository
 | File | Role |
 | --- | --- |
 | `~/.local/state/proctor/state.json` | The ledger. One across all repositories. Created on first use |
+
+### Language
+
+The UI follows the system language: English, and Japanese when macOS is set to
+Japanese. There is nothing to configure. Because the app ships real `.lproj`
+resources, it also appears in *System Settings → General → Language & Region →
+Applications*, where it can be pinned to one language on its own.
+
+The app and the CLI read the same table, so a word is only translated once.
+
+| File | Role |
+| --- | --- |
+| `Sources/ProctorKit/Resources/en.lproj/Localizable.strings` | The source of truth |
+| `Sources/ProctorKit/Resources/ja.lproj/Localizable.strings` | Its translation |
+| `Sources/ProctorKit/Localized.swift` | Looks a word up. It picks the language itself, because an executable outside an `.app` — the CLI — is otherwise always told the language is English |
+
+**Add a key to both files.** A key that only exists in one of them comes out raw
+in the other language. `scripts/install.sh` copies both `.lproj` into
+`Contents/Resources`, and the bundled CLI reads them from there as well.
 
 ### Invariants
 

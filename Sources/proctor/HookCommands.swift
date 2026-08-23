@@ -8,10 +8,11 @@ import ProctorKit
 /// (タブの色を変えるなど)。判断をシェル側に写すと、片方だけ直したときに食い違う。
 func cmdTouch(_ args: Args) throws -> Int32 {
     let accepted = TaskStatus.fromHooks + ["notification"]
-    var status = try args.require(0, "状態 (\(accepted.joined(separator: "|")))")
+    var status = try args.require(
+        0, Localized.text("cli.arg.status", accepted.joined(separator: "|")))
     guard accepted.contains(status) else {
-        throw ProctorError(
-            "状態は \(accepted.joined(separator: "/")) のいずれかです: \(status)")
+        throw ProctorError(Localized.text(
+            "cli.error.invalid_status", accepted.joined(separator: "/"), status))
     }
 
     let payload = HookPayload.fromStandardInput()
@@ -54,9 +55,9 @@ func cmdTouch(_ args: Args) throws -> Int32 {
 }
 
 func cmdSubagent(_ args: Args) throws -> Int32 {
-    let action = try args.require(0, "start か stop")
+    let action = try args.require(0, Localized.text("cli.arg.start_or_stop"))
     guard action == "start" || action == "stop" else {
-        throw ProctorError("start か stop を指定してください: \(action)")
+        throw ProctorError(Localized.text("cli.error.invalid_subagent_action", action))
     }
     try RecordHookEvent.countSubagent(
         delta: action == "start" ? 1 : -1,

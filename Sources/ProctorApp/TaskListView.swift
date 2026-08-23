@@ -26,7 +26,7 @@ struct TaskListView: View {
             VStack(spacing: 0) {
                 ScrollView {
                     if store.tasks.isEmpty {
-                        Text("動いているエージェントはいません")
+                        Text(Localized.text("common.no_agents"))
                             .font(.system(size: base * 0.9))
                             .foregroundStyle(Palette.dim)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -259,7 +259,7 @@ private struct TaskRow: View {
 
                 // ブランチ・経過時間・サブエージェント・diff
                 HStack(alignment: .firstTextBaseline, spacing: base * 0.6) {
-                    Text("\(task.branch) · 経過: \(shortAge(task.idleSeconds))")
+                    Text(Localized.text("app.row.branch_age", task.branch, shortAge(task.idleSeconds)))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     if task.subagents > 0 {
@@ -373,7 +373,7 @@ private struct TaskRow: View {
             .contentShape(Rectangle())
             .onHover { closeHovering = $0 }
             .onTapGesture { onClose(task) }
-            .help("一覧から外す (worktree はそのまま)")
+            .help(Localized.text("app.row.close_help"))
             .opacity(hovering ? 1 : 0)
             .allowsHitTesting(hovering)
             .animation(.easeOut(duration: 0.12), value: hovering)

@@ -52,6 +52,11 @@ View（CLI とアプリ）は UseCase を呼んで整形するだけにする。
   「どんな状態があり、どんな記号と名前で呼ぶか」まで
 - **View は Repository を直接触らない。** アプリ側は `TaskStore` が台帳を包む
 - **集計は `CollectTasks.run()` だけを通る。** 表示側に集計を書かない
+- **人に見せる言葉をコードに直接書かない。** `Localized.text("…")` で引く。
+  訳文は `Sources/ProctorKit/Resources/{en,ja}.lproj/Localizable.strings` にあり、
+  **鍵は必ず両方に足す**（片方にしか無い鍵は、もう片方の言語では鍵がそのまま出る）。
+  `Localized` を3層のどれにも入れていないのは、言葉がどの層からも要るものであり、
+  引くだけで何も決めないため
 
 ## 変更後の確認
 

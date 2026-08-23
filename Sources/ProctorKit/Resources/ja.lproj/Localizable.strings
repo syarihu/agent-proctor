@@ -1,0 +1,79 @@
+/* en.lproj/Localizable.strings の訳。鍵の並びは正本と揃えてある。
+   片方だけ足すと、もう片方の言語では鍵がそのまま出るので必ず両方に入れる。 */
+
+/* CLI の一覧・メニューバー・サイドバーで共通に使う */
+"common.no_agents" = "動いているエージェントはいません";
+
+/* 状態の名前 (TaskStatus)。CLI の表と、アプリの読み上げに出る */
+"status.idle" = "待機";
+"status.running" = "実行中";
+"status.waiting" = "確認待ち";
+"status.done" = "完了";
+"status.seen" = "確認済み";
+"status.failed" = "失敗";
+"status.missing" = "消失";
+
+/* 名乗るものが何も無いサブエージェントの見出し */
+"subagent.fallback_name" = "サブエージェント";
+
+/* 台帳まわりの失敗。%@ はファイルの場所や ID */
+"error.ledger.write_failed" = "台帳を書き込めません: %@";
+"error.ledger.lock_open_failed" = "ロックを開けません: %@";
+"error.ledger.lock_failed" = "ロックを取得できません: %@";
+"error.ledger.ambiguous_id" = "ID が曖昧です: %@";
+"error.ledger.not_found" = "タスクが見つかりません: %@";
+"error.task_id.exhausted" = "ID を採番できません";
+
+/* proctor --help。行の並びがそのまま画面に出る */
+"cli.usage" = "使い方: proctor <コマンド> [オプション]\n\nworktree で働くコーディングエージェントを見張り、手が挙がったら知らせる。\n\n  ls             動いているエージェントの一覧\n                   --all              全リポジトリを対象にする\n                   --json             JSON で出す (AI・サイドバー向け)\n  attach <ID>    そのセッションのエージェント (claude / agy) を開く (続きから)\n  rm <ID>        台帳から1件外す (worktree には触らない)\n  sidebar        iTerm2 に吸着するサイドバー (Agent Proctor.app) を起動する\n\nworktree を作ったり片付けたりはしない。それは proctor を呼ぶ側の仕事で、\nここは走っているものを見せることに徹する。";
+
+"cli.unknown_command" = "知らないコマンドです: %@";
+"cli.outside_repo" = "git リポジトリの外なので、すべてのセッションを表示します";
+/* %1$@ は台帳から外した ID、%2$@ は残した worktree の場所 */
+"cli.removed" = "台帳から外しました: %1$@ (%2$@ はそのまま)";
+
+/* 引数が足りないときに「何が要るか」として差し込む言葉 */
+"cli.arg.session_id" = "セッションID";
+"cli.arg.status" = "状態 (%@)";
+"cli.arg.start_or_stop" = "start か stop";
+
+"cli.error.missing_argument" = "%@ を指定してください";
+/* %1$@ は受け付ける状態の一覧、%2$@ は渡された値 */
+"cli.error.invalid_status" = "状態は %1$@ のいずれかです: %2$@";
+"cli.error.invalid_subagent_action" = "start か stop を指定してください: %@";
+"cli.error.worktree_missing" = "作業していた場所がありません: %@";
+"cli.error.worktree_unreachable" = "作業していた場所に移動できません: %@";
+"cli.error.launch_failed" = "%@ を起動できません";
+"cli.error.app_not_found" = "Agent Proctor.app が見つかりません。scripts/install.sh でインストールしてください";
+"cli.error.app_launch_failed" = "Agent Proctor.app を起動できませんでした";
+
+/* メニューバー。押したら何が起きるかを書く (macOS の流儀) */
+"app.menu.show_sidebar" = "サイドバーを表示";
+"app.menu.hide_sidebar" = "サイドバーを隠す";
+"app.menu.settings" = "設定...";
+"app.menu.quit" = "Agent Proctor を終了";
+
+/* 設定画面 */
+"app.settings.window_title" = "Agent Proctor の設定";
+"app.settings.font_size" = "文字の大きさ";
+"app.settings.width" = "幅";
+"app.settings.opacity" = "不透明度";
+"app.settings.background" = "背景色";
+"app.settings.background.match_iterm" = "iTerm2 に合わせる";
+"app.settings.background.custom" = "カスタム";
+"app.settings.reset" = "もとに戻す";
+"app.settings.make_room" = "iTerm2 の幅を詰めて場所を空ける";
+"app.settings.sidebar_section" = "サイドバー";
+"app.settings.sidebar_footer" = "行の余白も文字の大きさに合わせて変わります。幅はサイドバーの左端をドラッグしても変えられます。\n「幅を詰めて場所を空ける」を入れておくと、iTerm2 が画面いっぱいのときにウィンドウの左端を右へ寄せて、サイドバーが重ならないようにします。サイドバーを隠すか終了すると元の幅に戻します。";
+"app.settings.launch_section" = "起動";
+"app.settings.launch_at_login" = "ログイン時に起動";
+
+/* 一覧の行。%1$@ はブランチ名、%2$@ は経過時間 (5m など) */
+"app.row.branch_age" = "%1$@ · 経過: %2$@";
+"app.row.close_help" = "一覧から外す (worktree はそのまま)";
+
+/* タブを開けなかったとき。%@ はセッションの名前 */
+"app.alert.open_failed.title" = "%@ を開けませんでした";
+"app.alert.open_failed.body" = "iTerm2 が起動しているか、オートメーションが許可されているか確かめてください。";
+"app.alert.automation.title" = "iTerm2 の操作が許可されていません";
+"app.alert.automation.body" = "システム設定 → プライバシーとセキュリティ → オートメーション で Agent Proctor に iTerm2 の操作を許可してください。\n許可するまで、一覧をクリックしてもタブに移動できません。";

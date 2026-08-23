@@ -97,7 +97,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // メニューを開くたびに固まるので、数えた一覧 (store.tasks) は使わない
         let tasks = store.records
         if tasks.isEmpty {
-            menu.addItem(withTitle: "動いているエージェントはいません", action: nil, keyEquivalent: "")
+            menu.addItem(withTitle: Localized.text("common.no_agents"),
+                         action: nil, keyEquivalent: "")
         } else {
             for task in tasks {
                 let entry = NSMenuItem(title: "",
@@ -117,20 +118,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // 「表示」のままだと、出ているのか消えているのか字面で分からない。
         // 押したら何が起きるかを書く (macOS のツールバー表示と同じ流儀)
         let hidden = isSidebarHidden?() ?? false
-        let toggle = NSMenuItem(title: hidden ? "サイドバーを表示" : "サイドバーを隠す",
-                                action: #selector(toggleSidebar), keyEquivalent: "")
+        let toggle = NSMenuItem(
+            title: Localized.text(hidden ? "app.menu.show_sidebar" : "app.menu.hide_sidebar"),
+            action: #selector(toggleSidebar), keyEquivalent: "")
         toggle.target = self
         menu.addItem(toggle)
 
         // 設定はここには並べない。文字の大きさのように少しずつ動かして
         // 確かめたいものは、メニューだと開き直すたびに手が止まる
-        let settings = NSMenuItem(title: "設定...",
+        let settings = NSMenuItem(title: Localized.text("app.menu.settings"),
                                   action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
 
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Agent Proctor を終了",
+        let quit = NSMenuItem(title: Localized.text("app.menu.quit"),
                               action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)

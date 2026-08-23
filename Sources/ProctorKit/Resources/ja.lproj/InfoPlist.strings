@@ -1,0 +1,4 @@
+/* en.lproj/InfoPlist.strings の訳。 */
+
+/* オートメーションの許可を求めるときにシステムが出す説明 */
+"NSAppleEventsUsageDescription" = "開いているタブへ移動したり、新しいタブでタスクを開くために iTerm2 を操作します。";

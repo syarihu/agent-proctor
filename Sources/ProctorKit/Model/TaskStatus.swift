@@ -31,14 +31,16 @@ public enum TaskStatus {
         missing: "⚠",
     ]
 
-    public static let labels: [String: String] = [
-        idle: "待機",
-        running: "実行中",
-        waiting: "確認待ち",
-        done: "完了",
-        seen: "確認済み",
-        failed: "失敗",
-        missing: "消失",
+    /// 名前は言語ごとに変わるので、ここで持つのは訳文を引く鍵まで。
+    /// 訳文そのものは Resources/*.lproj/Localizable.strings にある
+    public static let labelKeys: [String: String] = [
+        idle: "status.idle",
+        running: "status.running",
+        waiting: "status.waiting",
+        done: "status.done",
+        seen: "status.seen",
+        failed: "status.failed",
+        missing: "status.missing",
     ]
 
     /// 一覧に出したい順。数の要約もこの順に並べる
@@ -62,7 +64,10 @@ public enum TaskStatus {
     public static let fromHooks = [running, waiting, done, failed, "clear"]
 
     public static func mark(_ status: String) -> String { marks[status] ?? "?" }
-    public static func label(_ status: String) -> String { labels[status] ?? status }
+    public static func label(_ status: String) -> String {
+        guard let key = labelKeys[status] else { return status }
+        return Localized.text(key)
+    }
 
     /// 状態ごとの件数。メニューバーの要約などで使う。
     ///

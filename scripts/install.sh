@@ -46,6 +46,13 @@ cp "$BIN/proctor" "$APP/Contents/Helpers/proctor"
 # 目にする機会は多くないが、無いと白紙の書類の絵になる
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
+# 訳文。アプリ本体と同梱の CLI が同じ物を読む。
+# ここに .lproj が無いと macOS は「訳のあるアプリ」と見なさず、
+# システム設定の「アプリごとの言語」にこのアプリが出てこない。
+# SwiftPM が作る .bundle をそのまま入れないのは、.app の作法に合わないため
+# (Helpers 側に .lproj を置くのも駄目。codesign が入れ子のバンドルと解釈して失敗する)
+cp -R "$ROOT"/Sources/ProctorKit/Resources/*.lproj "$APP/Contents/Resources/"
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -63,8 +70,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <!-- 端末に寄り添う道具なので Dock には出さない -->
     <key>LSUIElement</key><true/>
+    <!-- 訳が無い言語ではここが出る。日本語などの訳は各 .lproj の InfoPlist.strings -->
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>開いているタブへ移動したり、新しいタブでタスクを開くために iTerm2 を操作します。</string>
+    <string>Agent Proctor controls iTerm2 to move you to an open tab and to open a task in a new tab.</string>
 </dict>
 </plist>
 PLIST
