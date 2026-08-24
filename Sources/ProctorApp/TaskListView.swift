@@ -392,15 +392,7 @@ private struct TaskRow: View {
 
     @ViewBuilder
     private var agentIcon: some View {
-        if task.resolvedAgent == "agy" {
-            Image(systemName: "atom")
-                .font(.system(size: base * 0.7))
-                .foregroundStyle(Palette.antigravity)
-        } else {
-            Image(systemName: "terminal.fill")
-                .font(.system(size: base * 0.7))
-                .foregroundStyle(Palette.claude)
-        }
+        AgentIcon(agent: task.resolvedAgent, size: base * 0.7)
     }
 
     /// 実行中は回っているリング、確認待ちはゆっくり明滅、完了時はシュッと描かれるチェックマーク。
@@ -652,6 +644,7 @@ enum Palette {
     static let activity = Color.secondary.opacity(0.85)
     static let claude = Color(red: 0.878, green: 0.478, blue: 0.345)       // #e07a58 (テラコッタ)
     static let antigravity = Color(red: 0.353, green: 0.647, blue: 0.980)  // #5aa5fa (ブルー)
+    static let codex = Color(red: 0.063, green: 0.639, blue: 0.498)        // #10a37f (グリーン)
 
     /// 状態そのものを表す色。畳んだ見出しの内訳のように、
     /// 印と数だけで状態を見せる場所で使う。
@@ -727,14 +720,39 @@ private struct AgentRateLimitRow: View {
 
     @ViewBuilder
     private var agentIcon: some View {
-        if summary.agent == "agy" {
-            Image(systemName: "atom")
-                .font(.system(size: base * 0.75))
-                .foregroundStyle(Palette.antigravity)
-        } else {
-            Image(systemName: "terminal.fill")
-                .font(.system(size: base * 0.75))
-                .foregroundStyle(Palette.claude)
+        AgentIcon(agent: summary.agent, size: base * 0.75)
+    }
+}
+
+/// どのエージェントが動かしているかの印。
+///
+/// 行の頭と、レートリミットの見出しの2か所に出る。**同じ絵柄でなければ
+/// 別のものに見える**ので、片方だけ足せる形にはしない。
+/// 絵柄と色は AgentKind の値で引く (名前と並び順は Kit 側が持っている)
+private struct AgentIcon: View {
+    let agent: String
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: size))
+            .foregroundStyle(tint)
+    }
+
+    private var symbol: String {
+        switch agent {
+        case AgentKind.antigravity: return "atom"
+        // OpenAI の印は六角の結び目。SF Symbols で一番近いのがこれ
+        case AgentKind.codex: return "circle.hexagongrid.fill"
+        default: return "terminal.fill"
+        }
+    }
+
+    private var tint: Color {
+        switch agent {
+        case AgentKind.antigravity: return Palette.antigravity
+        case AgentKind.codex: return Palette.codex
+        default: return Palette.claude
         }
     }
 }

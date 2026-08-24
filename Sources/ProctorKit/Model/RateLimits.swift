@@ -15,8 +15,11 @@ public struct RateLimitWindow: Codable, Equatable {
 
 /// エージェントのレートリミット情報。
 ///
-/// Claude Code や Antigravity の statusline から送られてくる
 /// 5時間枠 (five_hour) と 7日間枠 (seven_day) の使用状況。
+///
+/// Claude Code と Antigravity は statusline が送ってくる。Codex には
+/// statusline が無いので、あちらだけは hooks の経路で入ってくる
+/// (中身は Codex 自身が rollout に残した記録から拾ったもの)。
 public struct AgentRateLimits: Codable, Equatable {
     public var fiveHour: RateLimitWindow?
     public var sevenDay: RateLimitWindow?
@@ -36,13 +39,13 @@ public struct AgentQuotaSummary: Equatable, Identifiable {
     public var id: String { key }
     /// 集約キー ("claude", "claude:work", "agy" など)
     public var key: String
-    /// エージェント種別 ("claude" または "agy")
+    /// エージェント種別 ("claude" / "agy" / "codex")
     public var agent: String
     /// アカウント名 (例: "work", "personal", nil)
     public var account: String?
     /// 一覧に出す表示名 ("Claude Code", "Claude Code (work)", "Antigravity")
     public var agentDisplayName: String {
-        let base = agent == "agy" ? "Antigravity" : "Claude Code"
+        let base = AgentKind.displayName(agent)
         if let account, !account.isEmpty {
             return "\(base) (\(account))"
         }

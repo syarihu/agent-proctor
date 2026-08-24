@@ -44,8 +44,8 @@ running for a long time, that is a hint that it is either thinking hard or stuck
 The tool line is what the agent is touching right now. It shows only while a
 session is running: keeping it afterwards makes finished work look like it is
 still going. It is built from the `PostToolUse` payload the hooks already send,
-so there is nothing extra to wire up (verified with Claude Code; any agent that
-sends `tool_name` and `tool_input` the same way gets it too).
+so there is nothing extra to wire up (verified with Claude Code and Codex; any
+agent that sends `tool_name` and `tool_input` the same way gets it too).
 
 Subagents hang under the session that spawned them, one row each. A count alone
 (`🤖2`) says work is happening somewhere but not what it is, which still sends
@@ -95,10 +95,11 @@ exist and what symbol and name to call them by.
 ProctorKit/
   Model/       Data and vocabulary. No I/O
                TaskRecord, DiffCounts, CollectedTask, SubagentRun, TaskStatus,
-               TaskID, RateLimits
+               TaskID, RateLimits, AgentKind
   Repository/  The only door to the outside: the ledger, git and the environment
                LedgerStore, GitClient, ProcessRunner, EnvironmentSource,
-               ProcessLiveness, Paths, AppVersion
+               ProcessLiveness, Paths, AppVersion,
+               AntigravityMetadataReader, CodexMetadataReader
   UseCase/     One per thing you want to do. Every decision lives here
                CollectTasks, RecordHookEvent, RecordSessionStats,
                MarkSessionSeen, ReapClosedSessions, ForgetTask, HookPayload
@@ -228,7 +229,7 @@ then on.
 
 ```bash
 proctor ls              # list (--all for every repository, --json for machines)
-proctor attach <id>     # open the agent (claude / agy) for that session, resuming the conversation
+proctor attach <id>     # open the agent (claude / agy / codex) for that session, resuming the conversation
 proctor rm <id>         # drop one row from the ledger (the worktree is left alone)
 proctor sidebar         # launch the sidebar app
 proctor --version       # print the version
@@ -269,13 +270,13 @@ last change, and `proctor rm` is there if you would rather not wait.
 
 **Installing it is not enough — the list stays empty.** agent-proctor is a passive tool
 that reads the ledger and displays it; the thing that writes state into the ledger
-is your agent hooks (Claude Code or Antigravity).
+is your agent hooks (Claude Code, Antigravity or Codex).
 
 How to wire it up depends on your setup (if you already use hooks or a statusLine,
 they have to be merged rather than replaced), so instead of a procedure this is
 written as **instructions to hand to an AI**.
 
-→ paste [docs/setup-prompt.md](docs/setup-prompt.md) into Claude Code or Antigravity
+→ paste [docs/setup-prompt.md](docs/setup-prompt.md) into Claude Code, Antigravity or Codex
 
 Hooks call these three. They are not meant to be typed by a person, so they are
 not listed in the help. All of them read the hook JSON from stdin.
@@ -285,6 +286,10 @@ not listed in the help. All of them read the hook JSON from stdin.
 | `proctor _touch <status>` | hooks | running / waiting / done / failed / clear / notification |
 | `proctor _subagent start\|stop` | hooks | subagents (one row each, or a count) |
 | `proctor _stats` | statusline | session name, model, context usage |
+
+Codex has no statusLine to hand anything to, so it never calls `_stats`. Its hooks
+carry the model, and proctor reads the session name, the context usage and the rate
+limits out of the records Codex keeps for itself.
 
 The heading in the list is picked in this order: **a name a person gave it, the
 agent's own session name, the id**. Hooks can put such a name — the title on the

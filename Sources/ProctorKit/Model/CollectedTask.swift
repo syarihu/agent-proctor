@@ -101,17 +101,11 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         status == TaskStatus.running || status == TaskStatus.waiting ? runs : []
     }
 
-    /// エージェント種別の解決 ("agy" または "claude")
+    /// エージェント種別の解決 ("claude" / "agy" / "codex")
     public var resolvedAgent: String {
         if let agent, !agent.isEmpty { return agent }
-        if let model {
-            let lower = model.lowercased()
-            if lower.contains("gemini") { return "agy" }
-            if lower.contains("claude") || lower.contains("sonnet") || lower.contains("opus") || lower.contains("haiku") {
-                return "claude"
-            }
-        }
-        return "claude"
+        if let model, let guessed = AgentKind.guessed(fromModel: model) { return guessed }
+        return AgentKind.claude
     }
 
     /// アカウントを含むエージェント識別キー ("claude", "claude:work", "agy" など)
@@ -124,7 +118,7 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
 
     /// 一覧に出すエージェントの表示名
     public var agentDisplayName: String {
-        let base = resolvedAgent == "agy" ? "Antigravity" : "Claude Code"
+        let base = AgentKind.displayName(resolvedAgent)
         if let account, !account.isEmpty {
             return "\(base) (\(account))"
         }

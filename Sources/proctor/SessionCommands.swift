@@ -39,7 +39,7 @@ func cmdLs(_ args: Args) throws -> Int32 {
     return 0
 }
 
-/// そのセッションのエージェント (claude または agy) を開く。会話の続きから始める。
+/// そのセッションのエージェント (claude / agy / codex) を開く。会話の続きから始める。
 ///
 /// 自分のプロセスをエージェントに置き換えるので、成功した場合ここから戻らない。
 /// サイドバーの行をクリックしたとき、タブが既に閉じていればこれが新しいタブで走る。
@@ -49,17 +49,22 @@ func cmdAttach(_ args: Args) throws -> Int32 {
         throw ProctorError(Localized.text("cli.error.worktree_missing", task.worktree))
     }
 
-    let isAgy = task.agent == "agy"
-    let binary = isAgy ? "agy" : "claude"
-
-    var argv = [binary]
-    if let session = task.sessionId {
-        if isAgy {
-            argv += ["--conversation", session]
-        } else {
-            argv += ["--resume", session]
-        }
+    // 続きから開く言い方はエージェントごとに違う。
+    // codex だけは副コマンド (`codex resume <ID>`) で、旗ではない
+    let binary: String
+    var resumption: [String] = []
+    switch task.agent {
+    case AgentKind.antigravity:
+        binary = "agy"
+        if let session = task.sessionId { resumption = ["--conversation", session] }
+    case AgentKind.codex:
+        binary = "codex"
+        if let session = task.sessionId { resumption = ["resume", session] }
+    default:
+        binary = "claude"
+        if let session = task.sessionId { resumption = ["--resume", session] }
     }
+    let argv = [binary] + resumption
 
     guard FileManager.default.changeCurrentDirectoryPath(task.worktree) else {
         throw ProctorError(Localized.text("cli.error.worktree_unreachable", task.worktree))

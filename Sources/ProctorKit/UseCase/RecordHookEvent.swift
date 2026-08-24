@@ -148,6 +148,19 @@ public enum RecordHookEvent {
             if let ctx = payload.contextPercent, ledger.tasks[index].contextPercent != ctx {
                 ledger.tasks[index].contextPercent = ctx
             }
+            // レートリミットは普通 statusline (`_stats`) が運んでくる。
+            // **Codex には statusline に相当する差し込み口が無い**ので、
+            // そちらだけは hooks の経路でも受け取る。他のエージェントの payload には
+            // 入っていないので、ここは素通りするだけで何も変わらない
+            if let limits = payload.rateLimits {
+                if ledger.tasks[index].rateLimits != limits {
+                    ledger.tasks[index].rateLimits = limits
+                }
+                let key = payload.agentKey
+                if ledger.agentRateLimits[key] != limits {
+                    ledger.agentRateLimits[key] = limits
+                }
+            }
             // いま何をしているか。updatedAt はここでは動かさない
             // (ツールのたびに動かすと「経過」が 0 に戻り、並び順も落ち着かない)。
             //
@@ -385,7 +398,13 @@ public enum RecordHookEvent {
             title: payload.tabTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
             name: payload.sessionName,
             model: payload.modelName,
-            contextPercent: payload.contextPercent))
+            contextPercent: payload.contextPercent,
+            // statusline を持たないエージェント (Codex) はここでしか渡す機会がない。
+            // 持っているほうは payload に入っていないので nil のまま通る
+            rateLimits: payload.rateLimits))
+        if let limits = payload.rateLimits {
+            ledger.agentRateLimits[payload.agentKey] = limits
+        }
     }
 
     /// hook の情報から対象のタスクを引く。

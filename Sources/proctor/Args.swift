@@ -21,6 +21,19 @@ struct Args {
 
     func has(_ names: String...) -> Bool { names.contains { flags.contains($0) } }
 
+    /// 値を持つオプションを取り出す (`--agent=codex`)。
+    ///
+    /// **値を次のトークンでは受けない。** `--agent codex` の形にすると、
+    /// 値なのか位置引数なのかがここでは区別できず、`_touch running` の
+    /// 状態そのものを取り違える。hooks の設定に書き写すものなので、
+    /// 1つのトークンに収まっているほうが間違いも起きにくい
+    func value(_ name: String) -> String? {
+        let prefix = name + "="
+        guard let hit = flags.first(where: { $0.hasPrefix(prefix) }) else { return nil }
+        let value = String(hit.dropFirst(prefix.count))
+        return value.isEmpty ? nil : value
+    }
+
     /// 位置引数を1つ取り出す。無ければ何が要るかを添えて止める。
     /// what は呼ぶ側が訳したもの (語順が言語で変わるので、文にするのはここ)
     func require(_ index: Int, _ what: String) throws -> String {

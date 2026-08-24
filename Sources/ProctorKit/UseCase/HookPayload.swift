@@ -2,8 +2,8 @@ import Foundation
 
 /// hooks と statusline が stdin に流してくる JSON。
 ///
-/// Claude Code と Antigravity の両方から呼ばれるので、キーの名前は
-/// どちらの流儀も受ける。
+/// Claude Code・Antigravity・Codex のどれからも呼ばれるので、キーの名前は
+/// どの流儀も受ける。
 public struct HookPayload {
     private let box: [String: Any]
 
@@ -74,7 +74,7 @@ public struct HookPayload {
         let input = box["tool_input"] as? [String: Any] ?? [:]
         var detail: String?
         for key in ["command", "file_path", "url", "description"] {
-            guard let value = input[key] as? String, !value.isEmpty else { continue }
+            guard let value = HookPayload.plainText(input[key]) else { continue }
             // ファイルはパスを丸ごと出すと横に長い。名前だけで用は足りる
             detail = key == "file_path" ? URL(fileURLWithPath: value).lastPathComponent : value
             break
@@ -115,6 +115,20 @@ public struct HookPayload {
         return (id, type, label)
     }
 
+    /// ツールの引数から1つの文字列を取り出す。
+    ///
+    /// **command は文字列とは限らない。** codex のシェルは `["bash", "-lc", "…"]` の
+    /// ように配列で渡してくるので、文字列だけを見ていると
+    /// 「Bash」とだけ出て何を叩いているのか分からない行になる
+    static func plainText(_ value: Any?) -> String? {
+        if let text = value as? String { return text.isEmpty ? nil : text }
+        if let parts = value as? [Any] {
+            let joined = parts.compactMap { $0 as? String }.joined(separator: " ")
+            return joined.isEmpty ? nil : joined
+        }
+        return nil
+    }
+
     /// 台帳に載せる前に1行へ均す。command にはヒアドキュメントが丸ごと
     /// 入ってくることがあり、そのまま持つと台帳が肥大化する
     static func condensed(_ text: String, limit: Int = 80) -> String {
@@ -122,15 +136,46 @@ public struct HookPayload {
         return flat.count <= limit ? flat : String(flat.prefix(limit))
     }
 
-    /// セッションを動かしているエージェント ("claude" または "agy")。
+    /// セッションを動かしているエージェント ("claude" / "agy" / "codex")。
+    ///
+    /// **Codex は Claude Code とほとんど同じ形の payload を送ってくる**
+    /// (`session_id` も `cwd` も `tool_name` も同じ名前)。キーの有無では
+    /// 見分けが付かないので、記録の置き場所で判じる。それも当てにならない
+    /// 場合に備えて、hooks 側から `--agent=codex` で名乗れるようにしてある
     public var agent: String? {
         if let explicit = box["agent"] as? String, !explicit.isEmpty { return explicit }
         if box["conversationId"] != nil || box["conversation_id"] != nil
             || box["transcriptPath"] != nil || box["artifactDirectoryPath"] != nil {
-            return "agy"
+            return AgentKind.antigravity
         }
-        if box["session_id"] != nil { return "claude" }
+        if isCodexTranscript { return AgentKind.codex }
+        if box["session_id"] != nil { return AgentKind.claude }
         return nil
+    }
+
+    /// transcript が codex の rollout かどうか。
+    ///
+    /// codex は `~/.codex/sessions/<年>/<月>/<日>/rollout-<日時>-<id>.jsonl` に
+    /// 会話を積む。Claude Code のほうは `~/.claude/projects/` の下なので、
+    /// ファイル名の頭 (`rollout-`) だけで取り違えずに分けられる
+    private var isCodexTranscript: Bool {
+        for key in ["transcript_path", "agent_transcript_path"] {
+            guard let path = box[key] as? String, !path.isEmpty else { continue }
+            if URL(fileURLWithPath: path).lastPathComponent.hasPrefix("rollout-") { return true }
+        }
+        return false
+    }
+
+    /// hooks を呼ぶ側から名乗られたエージェントを混ぜた payload を返す。
+    ///
+    /// 元の中身は触らない。`agent` は payload に無いものを外から足す唯一の項目なので、
+    /// 読み出し側 (`agent` / `agentKey`) がどちらの経路も同じように扱えるよう、
+    /// 箱に入れた形に揃えてから渡す
+    public func naming(agent name: String?) -> HookPayload {
+        guard let name, !name.isEmpty else { return self }
+        var merged = box
+        merged["agent"] = name
+        return HookPayload(merged)
     }
 
     /// アカウント名 ("work", "personal" など)。
@@ -143,11 +188,13 @@ public struct HookPayload {
         }
         if let configDir = box["config_dir"] as? String {
             let last = URL(fileURLWithPath: configDir).lastPathComponent
-            if last != ".claude" && last != ".gemini" && !last.isEmpty {
+            if last != ".claude" && last != ".gemini" && last != ".codex" && !last.isEmpty {
                 return last.replacingOccurrences(of: ".claude-", with: "")
                     .replacingOccurrences(of: ".claude_", with: "")
                     .replacingOccurrences(of: ".gemini-", with: "")
                     .replacingOccurrences(of: ".gemini_", with: "")
+                    .replacingOccurrences(of: ".codex-", with: "")
+                    .replacingOccurrences(of: ".codex_", with: "")
             }
         }
         return nil
@@ -155,7 +202,7 @@ public struct HookPayload {
 
     /// アカウント情報を含む台帳集約用のキー ("claude", "claude:work", "agy:personal" など)
     public var agentKey: String {
-        let baseAgent = agent ?? "claude"
+        let baseAgent = agent ?? AgentKind.claude
         if let account, !account.isEmpty {
             return "\(baseAgent):\(account)"
         }
@@ -170,8 +217,13 @@ public struct HookPayload {
             }
         }
         // Antigravity は payload にタイトルが入ってこないため、DB/アーティファクト/プロンプトから解決する
-        if agent == "agy", let session = sessionID {
+        if agent == AgentKind.antigravity, let session = sessionID {
             return AntigravityMetadataReader.resolveTitle(conversationID: session)
+        }
+        // Codex も同じで、名前は payload に載ってこない。あちらが自分で
+        // 持っているセッション台帳 (threads 表) から引く
+        if agent == AgentKind.codex, let session = sessionID {
+            return CodexMetadataReader.resolveTitle(sessionID: session)
         }
         return nil
     }
@@ -199,11 +251,25 @@ public struct HookPayload {
         } else if let value = box["context_window"] as? Double {
             percent = value
         }
+        if percent == nil { return codexUsage?.contextPercent }
         return percent.map { Int($0.rounded()) }
     }
 
-    /// レートリミット（5時間枠・7日間枠）情報。statusline から届く
+    /// Codex が rollout に残している消費量。
+    ///
+    /// Codex には statusline が無く、文脈量もレートリミットも hooks には来ない。
+    /// 他のエージェントでは statusline (`_stats`) が運んでくるものを、
+    /// ここだけは記録から拾い直している
+    private var codexUsage: CodexMetadataReader.Usage? {
+        guard agent == AgentKind.codex, let session = sessionID else { return nil }
+        return CodexMetadataReader.resolveUsage(
+            sessionID: session, transcriptPath: box["transcript_path"] as? String)
+    }
+
+    /// レートリミット（5時間枠・7日間枠）情報。statusline から届く。
+    /// Codex だけは statusline が無いので、あちらの記録から拾ったものを使う
     public var rateLimits: AgentRateLimits? {
+        if let limits = codexUsage?.rateLimits { return limits }
         let quota = box["quota"] as? [String: Any] ?? [:]
         let rateLimits = box["rate_limits"] as? [String: Any] ?? [:]
 

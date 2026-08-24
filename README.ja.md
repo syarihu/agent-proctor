@@ -43,7 +43,7 @@ CLI (`proctor`) のほうは端末を選ばず、そういうセッションも�
 ツールの行は、いま触っているもの。**動いているあいだだけ**出す
 (止まったあとも残すと、終わった作業を今やっているように見えるため)。
 hooks がすでに送っている `PostToolUse` の payload から組み立てるので、
-繋ぎ直すものは無い (確かめたのは Claude Code。`tool_name` と `tool_input` を
+繋ぎ直すものは無い (確かめたのは Claude Code と Codex。`tool_name` と `tool_input` を
 同じ形で送るエージェントなら同じように出る)。
 
 サブエージェントは、生んだセッションの下に1体ずつぶら下がる。数 (`🤖2`) だけでは
@@ -88,10 +88,11 @@ Kit が知っているのは「どんな状態があり、どんな記号と名�
 ProctorKit/
   Model/       データと語彙。I/O を持たない
                TaskRecord, DiffCounts, CollectedTask, SubagentRun, TaskStatus,
-               TaskID, RateLimits
+               TaskID, RateLimits, AgentKind
   Repository/  外の世界との出入り口。ここだけが台帳・git・環境を触る
                LedgerStore, GitClient, ProcessRunner, EnvironmentSource,
-               ProcessLiveness, Paths, AppVersion
+               ProcessLiveness, Paths, AppVersion,
+               AntigravityMetadataReader, CodexMetadataReader
   UseCase/     やりたいこと1つに1つ。判断はすべてここが持つ
                CollectTasks, RecordHookEvent, RecordSessionStats,
                MarkSessionSeen, ReapClosedSessions, ForgetTask, HookPayload
@@ -212,7 +213,7 @@ scripts/sign-app.sh "/Applications/Agent Proctor.app"
 
 ```bash
 proctor ls              # 一覧（--all で全リポジトリ、--json で機械向け）
-proctor attach <ID>     # そのセッションのエージェント (claude / agy) を開く（続きから）
+proctor attach <ID>     # そのセッションのエージェント (claude / agy / codex) を開く（続きから）
 proctor rm <ID>         # 台帳から1件外す（worktree には触らない）
 proctor sidebar         # サイドバー（アプリ）を起動する
 proctor --version       # 版を表示する
@@ -249,12 +250,12 @@ pid が分からないもの（Claude Code 以外）は今までどおり、最�
 ## エージェントとの連携
 
 **入れただけでは一覧は空のまま。** agent-proctor は台帳を読んで表示するだけの受け身の道具で、
-状態を書き込むのはエージェント（Claude Code または Antigravity）の hooks のほう。
+状態を書き込むのはエージェント（Claude Code・Antigravity・Codex）の hooks のほう。
 
 繋ぎ方は環境によって変わる（すでに hooks や statusLine を使っていれば混ぜる必要がある）ので、
 手順書ではなく **AI に渡す指示**にしてある。
 
-→ [docs/setup-prompt.ja.md](docs/setup-prompt.ja.md) を Claude Code または Antigravity に貼る
+→ [docs/setup-prompt.ja.md](docs/setup-prompt.ja.md) を Claude Code・Antigravity・Codex のどれかに貼る
 
 hooks から呼ばれるのは次の3つ。人が打つものではないのでヘルプには出していない。
 どれも stdin にフックの JSON を受ける。
@@ -264,6 +265,10 @@ hooks から呼ばれるのは次の3つ。人が打つものではないので�
 | `proctor _touch <状態>` | hooks | running / waiting / done / failed / clear / notification |
 | `proctor _subagent start\|stop` | hooks | サブエージェントの出入り (1体ずつ、または数) |
 | `proctor _stats` | statusline | セッション名・モデル・コンテキスト使用率 |
+
+Codex には statusline に相当する差し込み口が無いので、`_stats` は呼ばれない。
+モデル名は hooks が運んでくるが、セッション名・コンテキスト使用率・レートリミットは
+Codex 自身が残している記録から proctor が読み取る。
 
 一覧に出す見出しは **人が付けた名前 → エージェントのセッション名 → ID** の順で選ぶ。
 端末のタブに付けたタイトルなどを hooks が payload に `tab_title` として乗せれば、

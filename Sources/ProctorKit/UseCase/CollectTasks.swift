@@ -136,13 +136,12 @@ public enum CollectTasks {
             return (key, nil)
         }
 
-        // Claude を先、Antigravity を次、アカウント名順で安定させる
-        let priority = ["claude": 0, "agy": 1]
+        // エージェントの決まった順 (AgentKind.order)、次にアカウント名順で安定させる
         return adjustedMap.keys.sorted { lhs, rhs in
             let (baseL, accL) = parseKey(lhs)
             let (baseR, accR) = parseKey(rhs)
-            let p1 = priority[baseL] ?? 99
-            let p2 = priority[baseR] ?? 99
+            let p1 = AgentKind.order(baseL)
+            let p2 = AgentKind.order(baseR)
             if p1 != p2 { return p1 < p2 }
             if baseL != baseR { return baseL < baseR }
             if (accL == nil) != (accR == nil) {

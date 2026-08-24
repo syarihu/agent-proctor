@@ -25,7 +25,7 @@
 "error.task_id.exhausted" = "Cannot assign an ID";
 
 /* proctor --help。行の並びがそのまま画面に出る */
-"cli.usage" = "Usage: proctor <command> [options]\n\nWatches coding agents working in worktrees and tells you when one raises its hand.\n\n  ls             list the agents that are running\n                   --all              cover every repository\n                   --json             print JSON (for AI and the sidebar)\n  attach <ID>    open that session's agent (claude / agy), resuming it\n  rm <ID>        drop one entry from the ledger (the worktree is left alone)\n  sidebar        launch the sidebar that clings to iTerm2 (Agent Proctor.app)\n  --version      print the version\n\nIt neither creates nor cleans up worktrees. That is the job of whoever calls\nproctor; this only shows what is running.";
+"cli.usage" = "Usage: proctor <command> [options]\n\nWatches coding agents working in worktrees and tells you when one raises its hand.\n\n  ls             list the agents that are running\n                   --all              cover every repository\n                   --json             print JSON (for AI and the sidebar)\n  attach <ID>    open that session's agent (claude / agy / codex), resuming it\n  rm <ID>        drop one entry from the ledger (the worktree is left alone)\n  sidebar        launch the sidebar that clings to iTerm2 (Agent Proctor.app)\n  --version      print the version\n\nIt neither creates nor cleans up worktrees. That is the job of whoever calls\nproctor; this only shows what is running.";
 
 "cli.unknown_command" = "unknown command: %@";
 "cli.outside_repo" = "Not in a git repository, so every session is listed";

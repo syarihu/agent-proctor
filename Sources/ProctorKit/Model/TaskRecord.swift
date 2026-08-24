@@ -34,7 +34,7 @@ public struct TaskRecord: Codable, Equatable {
     /// `subagents` (数) と併存させているのは、`agent_id` を送らないエージェントが
     /// いるため。数のほうを捨てると、そちらの一覧から 🤖 が消えてしまう
     public var subagentRuns: [SubagentRun]?
-    /// セッションを動かしているエージェント ("claude" や "agy")。
+    /// セッションを動かしているエージェント ("claude" / "agy" / "codex")。
     /// タブを開き直すとき (attach) にどの CLI を呼ぶかの分岐に使う
     public var agent: String?
     /// いま触っているツール ("Edit: TaskStore.swift" など)。

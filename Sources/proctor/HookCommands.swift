@@ -15,7 +15,9 @@ func cmdTouch(_ args: Args) throws -> Int32 {
             "cli.error.invalid_status", accepted.joined(separator: "/"), status))
     }
 
-    let payload = HookPayload.fromStandardInput()
+    // hooks を書く側が `--agent=codex` と名乗れる。payload の形だけでは
+    // Codex と Claude Code の区別が付かないため、名乗りがあればそれを優先する
+    let payload = HookPayload.fromStandardInput().naming(agent: args.value("--agent"))
 
     // notification は権限確認でもアイドル通知でも飛んでくる。
     // どちらなのかの判断は UseCase が持つ
@@ -61,11 +63,12 @@ func cmdSubagent(_ args: Args) throws -> Int32 {
     }
     try RecordHookEvent.countSubagent(
         delta: action == "start" ? 1 : -1,
-        payload: HookPayload.fromStandardInput())
+        payload: HookPayload.fromStandardInput().naming(agent: args.value("--agent")))
     return 0
 }
 
 func cmdStats(_ args: Args) throws -> Int32 {
-    try RecordSessionStats.run(HookPayload.fromStandardInput())
+    try RecordSessionStats.run(
+        HookPayload.fromStandardInput().naming(agent: args.value("--agent")))
     return 0
 }
