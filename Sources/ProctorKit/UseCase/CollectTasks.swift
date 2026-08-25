@@ -117,11 +117,15 @@ public enum CollectTasks {
                                            persisted: [String: AgentRateLimits] = LedgerStore.agentRateLimits(),
                                            now: Int = Int(Date().timeIntervalSince1970)) -> [AgentQuotaSummary] {
         var map: [String: AgentRateLimits] = persisted
-        // 稼働中のタスクから最新の rateLimits を上書き反映
+        // persisted に無いエージェント（古い台帳からの移行など）のフォールバックとしてタスクから拾う。
+        // tasks は新しい順 (createdAt 降順) に並んでいるため、最初に見つかった最新タスクのみを採用する。
+        // 過去の完了タスクが最新の persisted や新しいタスクの rateLimits を上書きしないようにする。
         for task in tasks {
             guard let limits = task.rateLimits, !limits.isEmpty else { continue }
             let agentKey = task.resolvedAccountKey
-            map[agentKey] = limits
+            if map[agentKey] == nil {
+                map[agentKey] = limits
+            }
         }
 
         // リセット時刻が過ぎていたら自動で回復（0%）計算
