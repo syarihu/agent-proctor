@@ -5,9 +5,95 @@ import Foundation
 /// Claude Code・Antigravity・Codex のどれからも呼ばれるので、キーの名前は
 /// どの流儀も受ける。
 public struct HookPayload {
-    private let box: [String: Any]
+    /// ツールの引数から「何をしているか」を取るときに見る鍵。**上から順**。
+    ///
+    /// **Antigravity の引数は PascalCase。** 小文字だけ並べていると何ひとつ
+    /// 当たらず、最後の toolSummary ("File edit" など) に落ちて、どのファイルを
+    /// 触ったのか分からない行になる。
+    ///
+    /// **`path` は最後に置く。** Claude Code の Grep / Glob では `path` が
+    /// 「探す場所」で、載せたいのは `pattern` のほう。先に置くと検索語ではなく
+    /// ディレクトリ名が出て、ファイル名のように見えてしまう。
+    ///
+    /// 組み立て直さないのは、ここがツール1回ごとに通る道だから
+    private static let detailKeys = [
+        "command", "CommandLine",
+        "file_path", "AbsolutePath", "TargetFile",
+        "url", "Url",
+        "pattern", "Pattern", "query", "Query",
+        "description", "Description", "path", "toolSummary",
+    ]
 
-    public init(_ box: [String: Any] = [:]) { self.box = box }
+    /// このうちファイルを指すもの
+    private static let pathKeys: Set<String> = [
+        "file_path", "AbsolutePath", "TargetFile", "path",
+    ]
+
+    /// 日付の読み取りは1つを使い回す。
+    /// `ISO8601DateFormatter` の生成はそれ自体が高く、ここは statusline から
+    /// 描画のたびに通る。使うのは読み取りだけなので、共有しても困らない
+    private static let iso8601 = ISO8601DateFormatter()
+
+    private let box: [String: Any]
+    private let antigravitySubagentInfo: AntigravityMetadataReader.SubagentInfo?
+
+    /// **ここでは何も読みに行かない。** 受け取った JSON を包むだけ。
+    ///
+    /// 親子の解決 (`resolvingAntigravitySubagent`) は台帳と transcript を読む
+    /// 仕事なので、いつ・どこで払うかを呼ぶ側が決められるように分けてある。
+    /// 生成のたびに黙ってディスクを触ると、`naming(agent:)` のような
+    /// 写しを作るだけの操作にまで I/O が付いて回る
+    public init(_ box: [String: Any] = [:]) {
+        self.box = box
+        self.antigravitySubagentInfo = nil
+    }
+
+    /// 解決済みの素性を引き継いで写しを作る。
+    private init(_ box: [String: Any],
+                 antigravitySubagentInfo: AntigravityMetadataReader.SubagentInfo?) {
+        self.box = box
+        self.antigravitySubagentInfo = antigravitySubagentInfo
+    }
+
+    /// Antigravity のサブエージェントかどうかを見極めた写しを返す。
+    ///
+    /// **ロックを取る前に呼ぶこと。** 親のログを読みに行くので、ロックの中で
+    /// やると台帳に触る全員を待たせる。
+    ///
+    /// **hooks から台帳を触る UseCase は、必ずここを通すこと。** 呼び忘れても
+    /// 型は何も言わないし動きもする (親子が結ばれず、子が独立した行として
+    /// 生えるだけ)。新しい入り口を足すときは忘れやすいので気を付ける。
+    /// いま通しているのは `RecordHookEvent.touch` / `.countSubagent` と
+    /// `RecordSessionStats.run` の3つ。
+    ///
+    /// 手順は2段。まず台帳を見て、既にどこかの子として載っていればそれを使う。
+    /// **一度結び付いた親子は離さない**ためで、親のログを遡る手だけに頼ると、
+    /// 親が喋り続けて生成の記録が読み取り窓から流れ出た瞬間に見失い、
+    /// 走っている最中の子が独立したセッションとして生え直してしまう。
+    /// 台帳に載っていなければ、そこで初めて親のログを読みに行く。
+    public func resolvingAntigravitySubagent(in ledger: LedgerFile) -> HookPayload {
+        guard agent == AgentKind.antigravity,
+              let childID = rawSessionID, !childID.isEmpty else { return self }
+
+        for task in ledger.tasks {
+            guard let parent = task.sessionId, parent != childID,
+                  let run = (task.subagentRuns ?? []).first(where: { $0.id == childID })
+            else { continue }
+            // 素性は最初に結んだときのものを引き継ぐ。生成の記録はもう読めない
+            return HookPayload(box, antigravitySubagentInfo: .init(
+                parentConversationID: parent, role: run.type, prompt: run.label))
+        }
+
+        let candidates = ledger.tasks.compactMap { task -> String? in
+            guard task.agent == AgentKind.antigravity, let sid = task.sessionId,
+                  sid != childID else { return nil }
+            return sid
+        }
+        guard !candidates.isEmpty else { return self }
+        return HookPayload(box, antigravitySubagentInfo:
+            AntigravityMetadataReader.resolveSubagentInfo(
+                conversationID: childID, activeParentIDs: candidates))
+    }
 
     /// 標準入力から読む。人が手で叩いたときは空になる。
     public static func fromStandardInput() -> HookPayload {
@@ -19,12 +105,20 @@ public struct HookPayload {
         return HookPayload(object)
     }
 
-    /// Claude の session_id と Antigravity の conversationId / conversation_id に対応する。
-    public var sessionID: String? {
+    private var rawSessionID: String? {
         for key in ["session_id", "conversationId", "conversation_id"] {
             if let value = box[key] as? String, !value.isEmpty { return value }
         }
         return nil
+    }
+
+    /// Claude の session_id と Antigravity の conversationId / conversation_id に対応する。
+    /// Antigravity のサブエージェントの場合は親の conversationId を返す。
+    public var sessionID: String? {
+        if let subInfo = antigravitySubagentInfo {
+            return subInfo.parentConversationID
+        }
+        return rawSessionID
     }
 
     /// 作業ディレクトリ。分からなければ今いる場所。
@@ -65,35 +159,54 @@ public struct HookPayload {
     /// 組み立てをここに置くのは、フックを書く側に写させないため。
     /// 同じ形の payload を投げるエージェントなら、繋ぐだけで同じ行が出る。
     public var toolActivity: String? {
-        guard let raw = box["tool_name"] as? String, !raw.isEmpty else { return nil }
+        let raw: String?
+        let input: [String: Any]
+        if let toolName = box["tool_name"] as? String, !toolName.isEmpty {
+            raw = toolName
+            input = box["tool_input"] as? [String: Any] ?? [:]
+        } else if let toolCall = box["toolCall"] as? [String: Any],
+                  let name = toolCall["name"] as? String, !name.isEmpty {
+            raw = name
+            input = toolCall["args"] as? [String: Any] ?? [:]
+        } else {
+            return nil
+        }
+        guard let raw else { return nil }
+
         // mcp__figma__get_screenshot のような長い名前は figma/get_screenshot に畳む
         var name = raw
         if name.hasPrefix("mcp__") { name.removeFirst("mcp__".count) }
         name = name.replacingOccurrences(of: "__", with: "/")
 
-        let input = box["tool_input"] as? [String: Any] ?? [:]
         var detail: String?
-        for key in ["command", "file_path", "url", "description"] {
+        for key in HookPayload.detailKeys {
             guard let value = HookPayload.plainText(input[key]) else { continue }
             // ファイルはパスを丸ごと出すと横に長い。名前だけで用は足りる
-            detail = key == "file_path" ? URL(fileURLWithPath: value).lastPathComponent : value
+            detail = HookPayload.pathKeys.contains(key)
+                ? URL(fileURLWithPath: value).lastPathComponent : value
             break
         }
         return HookPayload.condensed(detail.map { "\(name): \($0)" } ?? name)
     }
 
-    /// サブエージェントの個体識別子 (`agent_id`)。
+    /// サブエージェントの個体識別子 (`agent_id` または Antigravity の conversationId)。
     ///
     /// **子の中で発火したフックにだけ付く。** つまりこれが入っているイベントは
     /// 親の手元で起きたことではないので、親の activity を塗り替えてはいけない。
     /// SubagentStart / SubagentStop でも同じ値が来るので、始まりと終わりが結べる
     public var subagentID: String? {
-        (box["agent_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        if antigravitySubagentInfo != nil {
+            return rawSessionID
+        }
+        return (box["agent_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 
-    /// サブエージェントの種別 (`agent_type`)。"Explore" や独自エージェント名
+    /// サブエージェントの種別 (`agent_type`)。"Explore" や独自エージェント名、Antigravity の Role
     public var subagentType: String? {
-        (box["agent_type"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        if let subInfo = antigravitySubagentInfo {
+            return subInfo.role ?? subInfo.typeName
+        }
+        return (box["agent_type"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 
     /// いま起動されたサブエージェントの素性。
@@ -103,16 +216,23 @@ public struct HookPayload {
     /// ここを読めば「どの子に何をさせたか」を余計な突き合わせなしに結べる。
     /// 非同期で起動される (`async_launched`) ので、子が終わるのを待たずに届く。
     public var launchedSubagent: (id: String, type: String?, label: String?)? {
-        guard let response = box["tool_response"] as? [String: Any],
-              let id = response["agentId"] as? String, !id.isEmpty else { return nil }
-        let label = (response["description"] as? String).flatMap {
-            $0.isEmpty ? nil : HookPayload.condensed($0)
+        if let response = box["tool_response"] as? [String: Any],
+           let id = response["agentId"] as? String, !id.isEmpty {
+            let label = (response["description"] as? String).flatMap {
+                $0.isEmpty ? nil : HookPayload.condensed($0)
+            }
+            // 種別は SubagentStart でも届くが、そちらを繋いでいない場合の受け皿として
+            // ツールの引数からも拾っておく
+            let type = ((box["tool_input"] as? [String: Any])?["subagent_type"] as? String)
+                .flatMap { $0.isEmpty ? nil : $0 }
+            return (id, type, label)
         }
-        // 種別は SubagentStart でも届くが、そちらを繋いでいない場合の受け皿として
-        // ツールの引数からも拾っておく
-        let type = ((box["tool_input"] as? [String: Any])?["subagent_type"] as? String)
-            .flatMap { $0.isEmpty ? nil : $0 }
-        return (id, type, label)
+        // Antigravity のサブエージェントの場合、自身が起動された時の prompt をラベルとして載せる
+        if let subInfo = antigravitySubagentInfo, let id = rawSessionID {
+            let label = subInfo.prompt.flatMap { HookPayload.condensed($0) }
+            return (id, subInfo.role ?? subInfo.typeName, label)
+        }
+        return nil
     }
 
     /// ツールの引数から1つの文字列を取り出す。
@@ -175,7 +295,9 @@ public struct HookPayload {
         guard let name, !name.isEmpty else { return self }
         var merged = box
         merged["agent"] = name
-        return HookPayload(merged)
+        // 解決済みの素性は持ち越す。作り直すたびに読み直していては、
+        // 名乗りを足すだけの操作にディスクの読み出しが付いて回る
+        return HookPayload(merged, antigravitySubagentInfo: antigravitySubagentInfo)
     }
 
     /// アカウント名 ("work", "personal" など)。
@@ -339,10 +461,10 @@ public struct HookPayload {
                 resetsAt = epoch
             } else if let epochDouble = Double(raw) {
                 resetsAt = Int(epochDouble)
-            } else if let date = ISO8601DateFormatter().date(from: raw) {
+            } else if let date = HookPayload.iso8601.date(from: raw) {
                 resetsAt = Int(date.timeIntervalSince1970)
             }
-        } else if let raw = dict["reset_time"] as? String, let date = ISO8601DateFormatter().date(from: raw) {
+        } else if let raw = dict["reset_time"] as? String, let date = HookPayload.iso8601.date(from: raw) {
             resetsAt = Int(date.timeIntervalSince1970)
         } else if let resetIn = dict["reset_in_seconds"] as? Double {
             resetsAt = Int(Date().timeIntervalSince1970 + resetIn)

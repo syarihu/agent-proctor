@@ -94,24 +94,44 @@ public enum AntigravityMetadataReader {
 
     // MARK: - 3. Transcript Prompt Reader
 
+    /// 最初の `USER_INPUT` を探す。
+    ///
+    /// **頭から少しずつ読む。** 欲しいのは最初のプロンプト1つなのに、
+    /// transcript はセッションが進むと数MBまで育つ。丸ごと文字列にして
+    /// 全行に分けると、その1行のために台帳の更新のたびに数MBを触ることになる。
+    /// 足りなければ窓を倍にして読み直し、それでも見つからなければ諦める
+    /// (最初のプロンプトがそこまで後ろに居ることはない)。
     private static func readFirstPrompt(conversationID: String) -> String? {
         let transcriptPath = (cliHome as NSString)
             .appendingPathComponent("brain/\(conversationID)/.system_generated/logs/transcript.jsonl")
-        guard FileManager.default.fileExists(atPath: transcriptPath),
-              let content = try? String(contentsOfFile: transcriptPath, encoding: .utf8)
-        else { return nil }
+        guard let handle = FileHandle(forReadingAtPath: transcriptPath) else { return nil }
+        defer { try? handle.close() }
 
-        for line in content.components(separatedBy: .newlines) {
-            guard !line.isEmpty,
-                  let lineData = line.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                  let type = json["type"] as? String, type == "USER_INPUT",
-                  let raw = json["content"] as? String
-            else { continue }
+        var window = 16 * 1024
+        let ceiling = 256 * 1024
+        while true {
+            guard (try? handle.seek(toOffset: 0)) != nil,
+                  let data = try? handle.read(upToCount: window), !data.isEmpty
+            else { return nil }
+            let text = String(decoding: data, as: UTF8.self)
+            // 窓を使い切っているなら、最後の行は途中で切れている見込み。
+            // 半端な行を JSON として解こうとしても外れるだけなので捨てる
+            var lines = text.components(separatedBy: "\n")
+            let truncated = data.count == window
+            if truncated, !lines.isEmpty { lines.removeLast() }
 
-            return extractPromptSummary(from: raw)
+            for line in lines where !line.isEmpty {
+                guard let lineData = line.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                      let type = json["type"] as? String, type == "USER_INPUT",
+                      let raw = json["content"] as? String
+                else { continue }
+                return extractPromptSummary(from: raw)
+            }
+            // 読み切っていれば、この先にも無い
+            guard truncated, window < ceiling else { return nil }
+            window *= 2
         }
-        return nil
     }
 
     private static func extractPromptSummary(from raw: String) -> String? {
@@ -134,5 +154,186 @@ public enum AntigravityMetadataReader {
             return String(text.prefix(limit - 3)) + "..."
         }
         return text
+    }
+
+    // MARK: - 4. Subagent Parent Resolver
+
+    public struct SubagentInfo: Equatable {
+        public var parentConversationID: String
+        public var role: String?
+        public var typeName: String?
+        public var prompt: String?
+
+        public init(parentConversationID: String, role: String? = nil,
+                    typeName: String? = nil, prompt: String? = nil) {
+            self.parentConversationID = parentConversationID
+            self.role = role
+            self.typeName = typeName
+            self.prompt = prompt
+        }
+    }
+
+    /// Antigravity のサブエージェントである場合、親の conversationID と素性（Role/TypeName/Prompt）を解決する。
+    ///
+    /// Antigravity はサブエージェントごとに独立した conversationId を発行し、フックもその ID で届く。
+    /// 親の transcript.jsonl に記録された invoke_subagent の生成ログを辿ることで、
+    /// 親子関係を結び、独立タスクではなく親セッションの配下にぶら下げられるようにする。
+    ///
+    /// 親の候補は**呼ぶ側が渡す**。ここから台帳を読みに行かないのは、
+    /// 台帳の出入り口を1つに保つため (Repository どうしで呼び合わない)。
+    /// 渡すのは台帳に載っている Antigravity セッションの sessionId で、
+    /// 普段は1〜2件しかない。**agy を1枚しか開いていなければ、親自身の
+    /// イベントでは候補が0件になり I/O は起きない**。2枚以上開いていれば
+    /// 他方のログを 64KB 読んで空振りする分は掛かる。
+    ///
+    /// **見つからないことは普通にある。** 親が喋り続けると生成の記録が
+    /// 読み取り窓 (末尾64KB) から流れ出てしまう。一度結び付いた親子を
+    /// 離さないための覚えは呼ぶ側が持つこと (台帳の subagentRuns)。
+    ///
+    /// - Parameter activeParentIDs: 親になりうるセッションの conversationId。
+    public static func resolveSubagentInfo(conversationID: String,
+                                           activeParentIDs: [String]) -> SubagentInfo? {
+        guard !conversationID.isEmpty else { return nil }
+
+        let parentCandidates = activeParentIDs.filter { $0 != conversationID }
+        guard !parentCandidates.isEmpty else { return nil }
+
+        let brainDir = (cliHome as NSString).appendingPathComponent("brain")
+        for parentID in parentCandidates {
+            let transcriptPath = (brainDir as NSString)
+                .appendingPathComponent("\(parentID)/.system_generated/logs/transcript.jsonl")
+            guard let handle = FileHandle(forReadingAtPath: transcriptPath) else { continue }
+            defer { try? handle.close() }
+
+            guard let fileSize = try? handle.seekToEnd(), fileSize > 0 else { continue }
+            let readSize: UInt64 = 65536 // 末尾 64KB
+            let offset = fileSize > readSize ? fileSize - readSize : 0
+            // **末尾まで読ませない。** transcript は親が書いている最中で、読んでいる
+            // 間にも伸びる。readDataToEndOfFile だと窓の大きさを決めた意味が無くなる
+            // (CodexMetadataReader.lastTokenCount と同じ理由・同じ読み方)
+            guard (try? handle.seek(toOffset: offset)) != nil,
+                  let data = try? handle.read(upToCount: Int(fileSize - offset))
+            else { continue }
+            // **切り出した先頭がマルチバイト文字の途中になることがある。**
+            // String(data:encoding:) はそこで nil を返すので、親のログが
+            // 手元にあるのに読まずに捨ててしまう (日本語のログでは頻繁に起きる)。
+            // 壊れたバイトは置換文字にして読み進める
+            let chunk = String(decoding: data, as: UTF8.self)
+            guard chunk.contains(conversationID) else { continue }
+
+            if let info = parseSubagentInfo(from: chunk, childID: conversationID, parentID: parentID) {
+                return info
+            }
+        }
+        return nil
+    }
+
+    /// **文字列で当たりを付けてから解く。**
+    ///
+    /// 64KB には数百行が入っている。素直に全部 JSON にすると、欲しい1行の
+    /// ために毎回それだけ払うことになる。目印は地の文にそのまま出るので、
+    /// 先に絞り込めば解くのは1〜2行で済む。
+    private static func parseSubagentInfo(from chunk: String, childID: String, parentID: String) -> SubagentInfo? {
+        let lines = chunk.components(separatedBy: .newlines)
+
+        for index in lines.indices.reversed() {
+            guard lines[index].contains(childID),
+                  lines[index].contains("Created the following subagents"),
+                  let step = decodeStep(lines[index]),
+                  let contentStr = step["content"] as? String
+            else { continue }
+
+            // **文言だけで決めない。** 親が自分のログを grep や cat で覗くと、
+            // そのコマンド出力にも同じ文言と子の ID がそのまま乗る。
+            // それを生成の記録と取り違えると、遡って見つかる invoke_subagent が
+            // 別の呼び出しになり、他の子の素性を配ってしまう。
+            // 本物は文言の直後が必ず JSON の始まりなので、そこで見分ける
+            if let block = createdSubagentsBlock(in: contentStr), block.contains(childID) {
+                // 一度に何体も起こせるので、**この子が何番目に生まれたか**を数える。
+                // 頼んだ側の配列 (Subagents) には conversationId が入っておらず、
+                // 結び付ける手掛かりは並び順しか無い
+                let position = createdConversationIDs(in: block).firstIndex(of: childID)
+
+                // 素性 (Role/Prompt) は頼んだ側にしか無く、生成の記録より
+                // 必ず前に来る。だから見つけた行から手前へ遡る
+                for prevIndex in (0..<index).reversed() {
+                    guard lines[prevIndex].contains("invoke_subagent"),
+                          let prevStep = decodeStep(lines[prevIndex]),
+                          let toolCalls = prevStep["tool_calls"] as? [[String: Any]] else { continue }
+                    for call in toolCalls where call["name"] as? String == "invoke_subagent" {
+                        guard let args = call["args"] as? [String: Any] else { continue }
+                        // Subagents は JSON 文字列で来ることも配列で来ることもある
+                        var requested: [[String: Any]] = []
+                        if let raw = args["Subagents"] as? String,
+                           let data = raw.data(using: .utf8),
+                           let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                            requested = array
+                        } else if let array = args["Subagents"] as? [[String: Any]] {
+                            requested = array
+                        }
+                        // 並び順が読めなければ、1体しか頼んでいないときだけ当てにする。
+                        // 何体も居るのに先頭を配ると、2体目以降に1体目の素性が付く
+                        let entry: [String: Any]?
+                        if let position, position < requested.count {
+                            entry = requested[position]
+                        } else {
+                            entry = requested.count == 1 ? requested[0] : nil
+                        }
+                        return SubagentInfo(
+                            parentConversationID: parentID,
+                            role: entry?["Role"] as? String,
+                            typeName: entry?["TypeName"] as? String,
+                            prompt: entry?["Prompt"] as? String)
+                    }
+                }
+                return SubagentInfo(parentConversationID: parentID)
+            }
+        }
+        return nil
+    }
+
+    /// transcript の1行を解く。窓の先頭は行の途中から始まるので、外れて普通
+    private static func decodeStep(_ line: String) -> [String: Any]? {
+        guard let data = line.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    /// 生成の記録の**本体だけ**を切り出す。見つからなければ nil。
+    ///
+    /// 本物は文言の直後が JSON の始まりになっている。偽物の弾き方は呼ぶ側に書いた。
+    ///
+    /// 切り出すのは、続く `createdConversationIDs` に**文言より前を見せない**ため。
+    /// 前の方に別の `"conversationId"` があると、数えた位置が丸ごとずれる。
+    private static func createdSubagentsBlock(in content: String) -> Substring? {
+        guard let phrase = content.range(of: "Created the following subagents:") else {
+            return nil
+        }
+        let block = content[phrase.upperBound...]
+        let head = block.drop { $0.isWhitespace }
+        guard head.first == "{" || head.first == "[" else { return nil }
+        return block
+    }
+
+    /// 生成の記録に並んだ conversationId を**出てきた順に**拾う。
+    ///
+    /// 頼んだ側の Subagents 配列と順番が対応しているので、位置で結び付けるのに使う。
+    /// JSON の断片が地の文に埋まった形なので、鍵の名前を目印に拾う。
+    private static func createdConversationIDs(in content: Substring) -> [String] {
+        let marker = "\"conversationId\""
+        var ids: [String] = []
+        var rest = content
+        while let markerRange = rest.range(of: marker) {
+            rest = rest[markerRange.upperBound...]
+            // "conversationId" : "…" の値だけを取る。空白とコロンは読み飛ばす。
+            // **値が文字列でなければ諦める** (null など)。次に出てきた引用符を
+            // 拾ってしまうと、無関係な文字列を ID として並べることになる
+            let afterColon = rest.drop { $0.isWhitespace || $0 == ":" }
+            guard afterColon.first == "\"" else { continue }
+            let valueStart = afterColon.index(after: afterColon.startIndex)
+            guard let closing = afterColon[valueStart...].firstIndex(of: "\"") else { break }
+            ids.append(String(afterColon[valueStart..<closing]))
+            rest = afterColon[afterColon.index(after: closing)...]
+        }
+        return ids
     }
 }
