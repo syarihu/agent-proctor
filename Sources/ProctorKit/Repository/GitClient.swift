@@ -77,10 +77,15 @@ public enum GitClient {
         return (number(in: out, before: "insertion"), number(in: out, before: "deletion"))
     }
 
-    /// "3 files changed, 12 insertions(+), 4 deletions(-)" から数を取る
+    /// "3 files changed, 12 insertions(+), 4 deletions(-)" から数を取る。
+    ///
+    /// 正規表現を使わないのは、ここが worktree の数だけ・数え直しのたびに
+    /// 呼ばれるため。組み立てのほうが探す仕事より高くつく
     private static func number(in text: String, before keyword: String) -> Int {
-        guard let range = text.range(of: "\\d+ \(keyword)", options: .regularExpression)
-        else { return 0 }
-        return Int(text[range].split(separator: " ")[0]) ?? 0
+        for part in text.split(separator: ",") where part.contains(keyword) {
+            let digits = part.drop { !$0.isNumber }.prefix { $0.isNumber }
+            return Int(digits) ?? 0
+        }
+        return 0
     }
 }

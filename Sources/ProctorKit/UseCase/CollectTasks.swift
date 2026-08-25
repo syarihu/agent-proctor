@@ -61,9 +61,15 @@ public enum CollectTasks {
     public static func reapplied(_ tasks: [CollectedTask], records: [TaskRecord],
                                  now: Int = Int(Date().timeIntervalSince1970))
         -> [CollectedTask]? {
-        guard Set(tasks.map(\.id)) == Set(records.map(\.id)) else { return nil }
+        // 顔ぶれの照合は、**どのみち要る辞書に相乗りさせる**。
+        // ここは台帳が動くたび (= ツール1回ごと) に呼ばれるので、
+        // 判定のためだけに Set を2つ作ると、そのぶんの確保が積み上がる
+        guard tasks.count == records.count else { return nil }
         var previous: [String: CollectedTask] = [:]
+        previous.reserveCapacity(tasks.count)
         for task in tasks { previous[task.id] = task }
+        guard previous.count == records.count,
+              records.allSatisfy({ previous[$0.id] != nil }) else { return nil }
         return ordered(records).compactMap { record in
             guard let old = previous[record.id] else { return nil }
             return CollectedTask(

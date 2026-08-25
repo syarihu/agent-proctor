@@ -52,11 +52,24 @@ public enum RecordHookEvent {
     ///   台帳と食い違わないように、届いた状態そのままとは限らない値を返す。
     ///   記録しなかったとき (git の外など) は届いた状態をそのまま返す
     @discardableResult
-    public static func touch(status: String, payload: HookPayload) throws -> String {
-        let top = GitClient.toplevel(from: payload.workingDirectory)
+    public static func touch(status: String, payload raw: HookPayload) throws -> String {
+        let top = GitClient.toplevel(from: raw.workingDirectory)
         guard !top.isEmpty else { return status }  // git の外での実行は追いかけない
 
         let now = Int(Date().timeIntervalSince1970)
+
+        // 読むだけで済む仕事はここで全部片付ける (理由は LedgerStore.withLock)。
+        //
+        // 支度が要るかどうかを台帳を覗いて決めているが、**見立てを外しても害は無い。**
+        // 用意したものを使うかはロックの中で改めて確かめるので、二重には登録されない
+        let snapshot = LedgerStore.read()
+        let payload = raw.resolvingAntigravitySubagent(in: snapshot)
+        let facts = SessionFacts(payload)
+        let draft = findTask(in: snapshot, payload: payload) == nil
+            ? draftRegistration(status: status, payload: payload, facts: facts,
+                                top: top, now: now)
+            : nil
+
         return try LedgerStore.withLock { ledger in
             // このフックを送ってきたセッションだけは掃除から外す。生きている証拠が
             // いま届いているのに消すのはおかしいし、--resume で開き直したときに
@@ -65,15 +78,46 @@ public enum RecordHookEvent {
             let current = findTask(in: ledger, payload: payload).map { ledger.tasks[$0].id }
             sweepLedger(&ledger, now: now, keeping: current)
 
+            // 親に付いた子が、以前は独立した行として登録されていたなら引き取る。
+            //
+            // 子の最初のイベントの時点では親子を結べないことがある (生成の記録が
+            // まだ親のログに書かれていない)。そのとき子は自分の名前で登録され、
+            // あとから結ばれると**誰もその行を見に来なくなる**。
+            // Antigravity は pid を出さないので期限切れの掃除にも掛からず、
+            // 「実行中」のまま永久に居座ってしまう
+            if let subID = payload.subagentID, payload.sessionID != subID {
+                ledger.tasks.removeAll { $0.sessionId == subID }
+            }
+
             guard let index = findTask(in: ledger, payload: payload) else {
-                try register(&ledger, status: status, payload: payload, top: top, now: now)
+                // 支度が無いのは、ロックを取る前には居たのに今は居ない場合
+                // (入れ違いで `clear` が来た・アプリが片付けた)。
+                // その回は捨てる。次のフックで登録し直される
+                try enroll(&ledger, draft: draft, top: top, agentKey: payload.agentKey)
                 return status
             }
 
             if status == "clear" {
+                if let subID = payload.subagentID {
+                    removeSubagent(&ledger.tasks[index], id: subID, now: now)
+                    settleHold(&ledger.tasks[index], now: now)
+                    return status
+                }
                 // セッションが終わったら一覧から消す
                 ledger.tasks.remove(at: index)
                 return status
+            }
+
+            // 子から届いた出来事 (PostToolUse / Stop 等) の場合。
+            // 親自身の状態やタイトルを書き換えてはいけないので、子の手元だけを更新する
+            if let subID = payload.subagentID {
+                if status == TaskStatus.done || status == TaskStatus.failed {
+                    removeSubagent(&ledger.tasks[index], id: subID, now: now)
+                    settleHold(&ledger.tasks[index], now: now)
+                } else {
+                    applySubagents(&ledger.tasks[index], payload: payload, now: now)
+                }
+                return ledger.tasks[index].status
             }
 
             // **子がまだ走っているなら「終わった」とは書かない。**
@@ -135,28 +179,28 @@ public enum RecordHookEvent {
             if let agent = payload.agent, ledger.tasks[index].agent != agent {
                 ledger.tasks[index].agent = agent
             }
-            if let name = payload.sessionName, ledger.tasks[index].name != name {
+            if let name = facts.name, ledger.tasks[index].name != name {
                 ledger.tasks[index].name = name
             }
             // 人が付けた名前。空文字で渡されたら外す (キーが無いときは触らない)
-            if let tabTitle = payload.tabTitle {
+            if let tabTitle = facts.tabTitle {
                 let trimmed = tabTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                 let value = trimmed.isEmpty ? nil : trimmed
                 if ledger.tasks[index].title != value {
                     ledger.tasks[index].title = value
                 }
             }
-            if let model = payload.modelName, ledger.tasks[index].model != model {
+            if let model = facts.model, ledger.tasks[index].model != model {
                 ledger.tasks[index].model = model
             }
-            if let ctx = payload.contextPercent, ledger.tasks[index].contextPercent != ctx {
+            if let ctx = facts.contextPercent, ledger.tasks[index].contextPercent != ctx {
                 ledger.tasks[index].contextPercent = ctx
             }
             // レートリミットは普通 statusline (`_stats`) が運んでくる。
             // **Codex には statusline に相当する差し込み口が無い**ので、
             // そちらだけは hooks の経路でも受け取る。他のエージェントの payload には
             // 入っていないので、ここは素通りするだけで何も変わらない
-            if let limits = payload.rateLimits {
+            if let limits = facts.rateLimits {
                 if ledger.tasks[index].rateLimits != limits {
                     ledger.tasks[index].rateLimits = limits
                 }
@@ -204,7 +248,9 @@ public enum RecordHookEvent {
     /// 付いていないエージェントは今まで通り数だけを増減させる
     /// (PreToolUse(Task) で増やし、SubagentStop で減らす)。
     /// どちらの経路も、取りこぼしはターンの終わり (touch done) で戻る。
-    public static func countSubagent(delta: Int, payload: HookPayload) throws {
+    public static func countSubagent(delta: Int, payload raw: HookPayload) throws {
+        // 親子の解決は親のログを読むので、ロックを取る前に済ませる
+        let payload = raw.resolvingAntigravitySubagent(in: LedgerStore.read())
         try LedgerStore.withLock { ledger in
             guard let index = findTask(in: ledger, payload: payload) else { return }
             let now = Int(Date().timeIntervalSince1970)
@@ -365,25 +411,51 @@ public enum RecordHookEvent {
         return .keep
     }
 
-    /// 新しく登録するのは、これから動き出すときだけにする。
+    /// payload から取り出すのに**外の世界を触る**値をまとめて持つ。
     ///
+    /// どれも見た目はただのプロパティだが、名前も文脈量もエージェントの手元の
+    /// 記録を読みに行く (SQLite やログの走査)。**写しにしておくのは、
+    /// ロックの中でうっかり読ませないため。** 登録と更新の両方で同じ値が要るので、
+    /// 素直に書くとどちらかがロックの内側に残る
+    struct SessionFacts {
+        var name: String?
+        var tabTitle: String?
+        var model: String?
+        var contextPercent: Int?
+        var rateLimits: AgentRateLimits?
+
+        init(_ payload: HookPayload) {
+            name = payload.sessionName
+            tabTitle = payload.tabTitle
+            model = payload.modelName
+            contextPercent = payload.contextPercent
+            rateLimits = payload.rateLimits
+        }
+    }
+
+    /// 新しく登録する1件を組み立てる。**ロックの外で呼ぶこと** (git を2回起こす)。
+    ///
+    /// 新しく登録するのは、これから動き出すときだけにする。
     /// done や clear が単独で届くのは、終了処理が入れ違いになったときで
     /// (clear は同期・done は非同期なので追い越しうる)、ここで作ると
     /// 終わったはずのセッションが幽霊として一覧に戻ってしまう。
     ///
     /// セッションIDが取れないものも登録しない。次に来たときに照合できず、
     /// 呼ばれるたびに新しいタスクが積み上がる。
-    private static func register(_ ledger: inout LedgerFile, status: String,
-                                 payload: HookPayload, top: String, now: Int) throws {
+    ///
+    /// - Returns: 登録すべきものが無ければ nil。
+    ///   **ID はまだ空。** 他と重ならない名前は台帳を見ないと決められないので、
+    ///   採番は `enroll` がロックの中で行う
+    private static func draftRegistration(status: String, payload: HookPayload,
+                                          facts: SessionFacts,
+                                          top: String, now: Int) -> TaskRecord? {
         guard status == TaskStatus.running || status == TaskStatus.waiting,
-              let session = payload.sessionID else { return }
+              let session = payload.sessionID else { return nil }
 
         let branch = GitClient.currentBranch(top)
         let pid = EnvironmentSource.agentPID()
-        ledger.tasks.append(TaskRecord(
-            id: try TaskID.unique(
-                base: TaskID.slugify(URL(fileURLWithPath: top).lastPathComponent),
-                taken: ledger.tasks),
+        return TaskRecord(
+            id: "",
             repo: GitClient.mainWorktree(from: top) ?? top,
             branch: branch.isEmpty ? "-" : branch,
             worktree: top,
@@ -399,15 +471,28 @@ public enum RecordHookEvent {
             // 消したあとなど)。そのときも何をしているかは載せておく。
             // ただし子が叩いたツールは親の手元ではないので載せない
             activity: payload.subagentID == nil ? payload.toolActivity : nil,
-            title: payload.tabTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
-            name: payload.sessionName,
-            model: payload.modelName,
-            contextPercent: payload.contextPercent,
+            title: facts.tabTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+            name: facts.name,
+            model: facts.model,
+            contextPercent: facts.contextPercent,
             // statusline を持たないエージェント (Codex) はここでしか渡す機会がない。
             // 持っているほうは payload に入っていないので nil のまま通る
-            rateLimits: payload.rateLimits))
-        if let limits = payload.rateLimits {
-            ledger.agentRateLimits[payload.agentKey] = limits
+            rateLimits: facts.rateLimits)
+    }
+
+    /// 組み立てておいた1件を台帳に載せる。**ここだけがロックの中。**
+    ///
+    /// やるのは採番と追加だけ。外から材料を持ち込む形にしてあるのは、
+    /// ロックを握っている時間を数ミリ秒に抑えるため。
+    private static func enroll(_ ledger: inout LedgerFile, draft: TaskRecord?,
+                               top: String, agentKey: String) throws {
+        guard var record = draft else { return }
+        record.id = try TaskID.unique(
+            base: TaskID.slugify(URL(fileURLWithPath: top).lastPathComponent),
+            taken: ledger.tasks)
+        ledger.tasks.append(record)
+        if let limits = record.rateLimits {
+            ledger.agentRateLimits[agentKey] = limits
         }
     }
 

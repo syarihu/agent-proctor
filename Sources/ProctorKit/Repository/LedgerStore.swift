@@ -32,13 +32,6 @@ public enum LedgerStore {
         return encoder
     }()
 
-    /// 変化したかどうかの判定にだけ使う正規形。キーの順を固定して比べる
-    private static let canonicalEncoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return encoder
-    }()
-
     public static func read() -> LedgerFile {
         guard let data = try? Data(contentsOf: Paths.stateFile) else {
             return LedgerFile()
@@ -89,15 +82,30 @@ public enum LedgerStore {
             throw ProctorError(Localized.text("error.ledger.lock_open_failed", Paths.lockFile.path))
         }
         defer { close(fd) }
+
+        // 待つのはカーネルに任せる。順番待ちに並べば空いた瞬間に起こしてもらえる。
+        //
+        // **諦める作りにしてはいけない。** 締め切りを付けて投げる形にすると、
+        // 混んだときに書き込みがそのまま失われる (hooks は出力を捨てているので
+        // 誰も気づけない)。実測ではフックを20本同時に撃つと8本が落ちた。
+        // セッションの登録や SubagentStop が落ちると、終わったものが一覧に居座る。
+        //
+        // 待ち時間を短く保つ責任は**ロックを取る側**にある。git の起動や
+        // タイトルの解決のような重い支度は、ここへ来る前に済ませること
         guard flock(fd, LOCK_EX) == 0 else {
             throw ProctorError(Localized.text("error.ledger.lock_failed", Paths.lockFile.path))
         }
 
         var ledger = read()
-        let before = try? canonicalEncoder.encode(ledger)
+        // **値で比べる。直列化して見比べない。** 字面での比較はここを
+        // 台帳2つぶんのエンコードで塞ぐ。いちばん短く保ちたい区間なのに、
+        // いちばん重いことをすることになる。
+        //
+        // 値の比較で代わりになるのは、`Double` を持つ型が1つも無いから
+        // (NaN のように「等しくないのに同じ字面になる」値が出ない)
+        let before = ledger
         let result = try body(&ledger)
-        let after = try? canonicalEncoder.encode(ledger)
-        if before != after {
+        if before != ledger {
             try write(ledger)
         }
         return result
