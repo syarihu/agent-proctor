@@ -37,6 +37,8 @@ final class TaskStore: ObservableObject {
     private var pollTimer: Timer?
     private var lastModified: Date?
     private var lastRecount = Date.distantPast
+    /// いま数え直しが走っているか。重ねて起こさないための札
+    private var recounting = false
     /// サイドバーが見えていない間は git を起動しない。
     /// 誰も見ていない一覧のためにノートの電池を使いたくない
     private var collecting = false
@@ -138,12 +140,27 @@ final class TaskStore: ObservableObject {
         // **絞る条件は recount() の itermOnly: true と揃えること。** 片方だけ変えると
         // applyLedgerValues() の照合 (顔ぶれが同じか) が常に外れ、台帳が動くたびに
         // worktree の数だけ git が起きる。エラーにはならないので気づけない
-        records = ledger.tasks.filter(\.isItermManaged)
-        agentRateLimits = ledger.agentRateLimits
-        summary = TaskStatus.counts(records)
+        // **変わっていないものは入れ直さない。** @Published は同じ値でも
+        // 代入するだけで objectWillChange が飛び、SwiftUI が一覧をまるごと
+        // 組み直す。台帳はツールが動くたびに触られるが、ここで見ている値まで
+        // 毎回変わるわけではない (activity だけ動いた、など)
+        let latest = ledger.tasks.filter(\.isItermManaged)
+        if records != latest { records = latest }
+        if agentRateLimits != ledger.agentRateLimits {
+            agentRateLimits = ledger.agentRateLimits
+        }
+        // タプルの配列は Equatable にならないので、要素ごとに見る
+        let counts = TaskStatus.counts(latest)
+        if !summary.elementsEqual(counts, by: { $0 == $1 }) { summary = counts }
     }
 
     private func recount() {
+        // **数え直しが走っている間は積まない。** 台帳はツール1回ごとに動くので、
+        // 前の数え直しが終わる前に次の番が来る。素直に積むと worktree の数だけ
+        // 起きる git が何組も重なって、いちばん動いている最中にいちばん重くなる。
+        // 見送っても、間隔のほうの数え直しが次に拾う
+        guard !recounting else { return }
+        recounting = true
         lastRecount = Date()
         // git の起動を待つ間 UI を止めない。数え終わったらメインに戻して差し替える
         Task.detached(priority: .utility) {
@@ -151,7 +168,10 @@ final class TaskStore: ObservableObject {
             // 生き続けるプロセスなので、git が起きるのはリポジトリごとに一度きり
             let collected = CollectTasks.run(allRepos: true, itermOnly: true,
                                              withOrigin: true)
-            await MainActor.run { self.tasks = collected }
+            await MainActor.run {
+                self.recounting = false
+                self.tasks = collected
+            }
         }
     }
 }

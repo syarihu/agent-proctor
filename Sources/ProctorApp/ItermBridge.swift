@@ -42,7 +42,7 @@ enum ItermBridge {
             return out
         end tell
         """
-        guard let text = execute(source, interactive: false) else { return nil }
+        guard let text = execute(source, interactive: false, reusable: true) else { return nil }
         let ids = text.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
@@ -64,7 +64,7 @@ enum ItermBridge {
             return id of current session of current tab of current window
         end tell
         """
-        guard let text = execute(source, interactive: false) else { return nil }
+        guard let text = execute(source, interactive: false, reusable: true) else { return nil }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -154,7 +154,7 @@ enum ItermBridge {
             end tell
         end tell
         """
-        guard let text = execute(source, interactive: false) else { return nil }
+        guard let text = execute(source, interactive: false, reusable: true) else { return nil }
         let parts = text.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
         guard parts.count == 3 else { return nil }
         // AppleScript の RGB は 0..65535
@@ -181,15 +181,35 @@ enum ItermBridge {
             .replacingOccurrences(of: "\"", with: "\\\"")
     }
 
+    /// 組み立て済みの AppleScript。**文面が変わらないものだけ覚える。**
+    ///
+    /// 見張りは1秒ごとに同じスクリプトを流すので、毎回作り直すとそのたびに
+    /// 構文解析とコンパイルが走る。
+    ///
+    /// **窓の位置やセッションIDを埋め込むものは覚えない。** 呼ぶたびに文面が
+    /// 変わるので、鍵にすると際限なく溜まる
+    private static var compiled: [String: NSAppleScript] = [:]
+
     /// - Parameter interactive: 人が押した操作かどうか。
     ///   背景色の取得や生存確認のような裏方の呼び出しでは、許可が無くても
     ///   黙って諦める。何もしていないのにダイアログが出てくるのは邪魔なだけで、
     ///   許可が要ることは「押したのに動かない」ときに伝えれば足りる
-    private static func execute(_ source: String, interactive: Bool = true) -> String? {
+    /// - Parameter reusable: 文面が呼び出しによらず一定か。
+    ///   一定なものだけコンパイル結果を使い回す
+    private static func execute(_ source: String, interactive: Bool = true,
+                                reusable: Bool = false) -> String? {
         // iTerm2 が起きていないときに叩くと AppleScript が起動させてしまう。
         // サイドバーは iTerm2 に付き従うものなので、いないときは何もしない
         guard isItermRunning else { return nil }
-        guard let script = NSAppleScript(source: source) else { return nil }
+
+        let script: NSAppleScript
+        if reusable, let cached = compiled[source] {
+            script = cached
+        } else {
+            guard let made = NSAppleScript(source: source) else { return nil }
+            if reusable { compiled[source] = made }
+            script = made
+        }
 
         var error: NSDictionary?
         let result = script.executeAndReturnError(&error)

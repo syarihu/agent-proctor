@@ -20,7 +20,14 @@ struct TaskListView: View {
     private var base: CGFloat { appearance.fontSize }
 
     var body: some View {
-        ZStack {
+        // **まとめ直しは body 1回につき1度だけ。** 計算プロパティのままだと
+        // ForEach と animation の value の両方から読まれ、同じ組み直しが
+        // 2度3度走る。台帳はツールが動くたびに変わるので、そのたびに掛かる
+        let byOrg = appearance.resolvedGrouping == .organization
+        let orgs = byOrg ? orgGroups : []
+        let repos = byOrg ? [] : repoGroups
+        let limits = rateLimitSummaries
+        return ZStack {
             // 背景のアンビエントグロー（確認待ちや実行中の状態に応じたやわらかな環境光）
             ambientGlow
 
@@ -35,8 +42,8 @@ struct TaskListView: View {
                             .padding(.vertical, base * 0.6)
                     } else {
                         VStack(alignment: .leading, spacing: 0) {
-                            if appearance.resolvedGrouping == .organization {
-                                ForEach(orgGroups) { org in
+                            if byOrg {
+                                ForEach(orgs) { org in
                                     OrgHeader(
                                         group: org,
                                         base: base,
@@ -52,18 +59,19 @@ struct TaskListView: View {
                                     }
                                 }
                             } else {
-                                ForEach(repoGroups) { repo in
+                                ForEach(repos) { repo in
                                     repoSection(repo, indent: 0)
                                 }
                             }
                         }
-                        .animation(.spring(response: 0.35, dampingFraction: 0.78), value: taskOrderKey)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.78),
+                                   value: orderKey(orgs: orgs, repos: repos))
                     }
                 }
                 .padding(base * 0.3)
 
-                if !rateLimitSummaries.isEmpty {
-                    RateLimitFooter(summaries: rateLimitSummaries, base: base)
+                if !limits.isEmpty {
+                    RateLimitFooter(summaries: limits, base: base)
                 }
             }
         }
@@ -122,15 +130,15 @@ struct TaskListView: View {
     /// **いま実際に描いている並びから作る。** 片方のまとめ方だけを見て作ると、
     /// 見出しの順が入れ替わっても鍵が変わらないことがあり、その回だけ行が
     /// 瞬間移動する
-    private var taskOrderKey: String {
+    private func orderKey(orgs: [OrgGroup], repos: [RepoGroup]) -> String {
         func key(_ repos: [RepoGroup]) -> String {
             repos.map { "\($0.id):" + $0.tasks.map(\.id).joined(separator: ",") }
                 .joined(separator: "|")
         }
         if appearance.resolvedGrouping == .organization {
-            return "org|" + orgGroups.map { "\($0.id)>" + key($0.repos) }.joined(separator: "//")
+            return "org|" + orgs.map { "\($0.id)>" + key($0.repos) }.joined(separator: "//")
         }
-        return "repo|" + key(repoGroups)
+        return "repo|" + key(repos)
     }
 
     private var repoGroups: [RepoGroup] { TaskGrouping.byRepository(store.tasks) }
@@ -933,14 +941,27 @@ private struct RateLimitWindowView: View {
         guard Double(epoch) - now > 0 else { return nil }
 
         let resetDate = Date(timeIntervalSince1970: Double(epoch))
-        let calendar = Calendar.current
-        let formatter = DateFormatter()
-
-        if calendar.isDateInToday(resetDate) {
-            formatter.dateFormat = "HH:mm"
-        } else {
-            formatter.dateFormat = "M/d HH:mm"
-        }
+        let formatter = Calendar.current.isDateInToday(resetDate)
+            ? ResetTimeFormat.timeOnly
+            : ResetTimeFormat.dateAndTime
         return formatter.string(from: resetDate)
     }
+}
+
+/// レートリミットの明ける時刻に使う書式。
+///
+/// `DateFormatter` は作るのが高く、ここは一覧の描画のたびに行の数だけ通る。
+/// 使うのは文字列に直すことだけなので、持ち回して困らない。
+private enum ResetTimeFormat {
+    static let timeOnly: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    static let dateAndTime: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d HH:mm"
+        return formatter
+    }()
 }

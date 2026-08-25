@@ -21,6 +21,7 @@ final class FocusWatcher {
     private let interval: TimeInterval = 1.0
     private var timer: Timer?
     private var current: String?
+    private let writer = LedgerWriter()
 
     /// - Parameters:
     ///   - onFocus: 見ているタブが変わったときに呼ばれる
@@ -29,6 +30,14 @@ final class FocusWatcher {
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                // **裏に回っている間は何も聞かない。** 問い合わせは Apple Event の
+                // 往復で、相手が忙しいとこちらのメインスレッドごと待たされる。
+                // タブが切り替わるのは前面のときだけなので、聞くだけ無駄になる。
+                //
+                // 印を付けるほうも同じ扱いでよい。裏で終わった分まで「見た」ことに
+                // すると、気づかないうちに既読になってしまう
+                guard ItermBridge.isItermFrontmost else { return }
+
                 // 聞けなかったとき (nil) は前の値を保つ。iTerm2 が一瞬答えなかった
                 // だけで印が飛ぶと、行がちらついて落ち着かない
                 if let session = ItermBridge.focusedSession() {
@@ -38,12 +47,10 @@ final class FocusWatcher {
                         onFocus(resolved)
                     }
                 }
-                // 印を付けるのは前面のときだけ。裏に回っている間に終わった分まで
-                // 「見た」ことにすると、気づかないうちに既読になってしまう
-                guard ItermBridge.isItermFrontmost else { return }
-                if (try? MarkSessionSeen.run(itermSession: self.current)) == true {
-                    onSeen()
-                }
+                // 台帳を書くのはメインスレッドから外す (理由は LedgerWriter)
+                let session = self.current
+                self.writer.submit({ (try? MarkSessionSeen.run(itermSession: session)) == true },
+                                   changed: onSeen)
             }
         }
     }
