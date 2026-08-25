@@ -22,7 +22,7 @@ altogether, because the row would lead nowhere. The `proctor` CLI is not tied to
 a terminal and lists those sessions all the same.
 
 <p align="center">
-  <img src="docs/images/sidebar-and-terminal.png" alt="The sidebar beside iTerm2, listing four sessions of one repository" width="880">
+  <img src="docs/images/sidebar-and-terminal.png" alt="The sidebar beside iTerm2, listing three sessions across two repositories under the organization that owns them" width="880">
 </p>
 
 ```
@@ -95,14 +95,15 @@ exist and what symbol and name to call them by.
 ProctorKit/
   Model/       Data and vocabulary. No I/O
                TaskRecord, DiffCounts, CollectedTask, SubagentRun, TaskStatus,
-               TaskID, RateLimits, AgentKind
+               TaskID, RateLimits, AgentKind, RepoOrigin
   Repository/  The only door to the outside: the ledger, git and the environment
-               LedgerStore, GitClient, ProcessRunner, EnvironmentSource,
-               ProcessLiveness, Paths, AppVersion,
+               LedgerStore, GitClient, GitHubClient, AvatarCache, ProcessRunner,
+               EnvironmentSource, ProcessLiveness, Paths, AppVersion,
                AntigravityMetadataReader, CodexMetadataReader
   UseCase/     One per thing you want to do. Every decision lives here
                CollectTasks, RecordHookEvent, RecordSessionStats,
-               MarkSessionSeen, ReapClosedSessions, ForgetTask, HookPayload
+               MarkSessionSeen, ReapClosedSessions, ForgetTask, HookPayload,
+               ResolveRepoOrigin, OrganizationGrouping
   Localized    The words shown to people. Outside the three layers because
                every one of them needs words, and looking one up decides nothing
 
@@ -113,6 +114,7 @@ ProctorApp/    App (view). SwiftUI and AppKit. TaskStore wraps the repository
 | File | Role |
 | --- | --- |
 | `~/.local/state/proctor/state.json` | The ledger. One across all repositories. Created on first use |
+| `~/.local/state/proctor/avatars/` | Organization avatars, one file per owner. Safe to delete; they are fetched again |
 
 ### Language
 
@@ -222,7 +224,7 @@ Open *Settings…* and turn on *Open at login*, and it will start on its own fro
 then on.
 
 <p align="center">
-  <img src="docs/images/settings.png" alt="The settings window: sidebar text size, width, opacity, background, the make-room toggle, open at login, whether controlling iTerm2 is allowed, and the version" width="460">
+  <img src="docs/images/settings.png" alt="The settings window: sidebar text size, width, opacity, background, how rows are grouped, the make-room toggle, open at login, whether controlling iTerm2 is allowed, and the version" width="460">
 </p>
 
 ## Usage
@@ -246,10 +248,27 @@ still alive, and otherwise opens a new tab resuming the conversation. Hovering a
 row reveals a close button that drops it from the list — the worktree is left
 alone, and a session that is still running comes back on its next hook.
 
-Rows sit under the repository they belong to, and clicking that heading folds the
-repository away. The fold is remembered across restarts. A folded heading carries
-the tally of what is inside it (`⏳1 ▶2`), so a session waiting on you still shows
-while its group is closed.
+Rows sit under the repository they belong to, and those repositories sit under
+the account or organization that owns them, each heading carrying its avatar.
+Clicking a heading folds it away — the two levels fold independently, and the
+folds are remembered across restarts. A folded heading carries the tally of what
+is inside it (`⏳1 ▶2`), so a session waiting on you still shows while its group
+is closed.
+
+The owner comes from the git remote rather than from where the repository sits on
+disk, so it does not matter how you lay out your clones. Avatars are fetched
+through the GitHub CLI and kept in `~/.local/state/proctor/avatars`.
+Repositories whose owner cannot be read — no remote, or one that is not a URL —
+collect under *No organization*.
+
+**Without `gh` installed and signed in, the sidebar groups by repository alone**,
+the way it did before organizations existed: headings with no avatars would say
+nothing that the repository names do not. The switch in *Settings… → Sidebar →
+Group rows by* is greyed out until `gh auth login` has been done, and turns
+itself on when you come back to the settings window afterwards. With `gh` in
+place, that switch is also where you go back to grouping by repository on
+purpose. Only the presence of credentials is checked, never whether GitHub can
+be reached, so being offline does not change how the sidebar is laid out.
 
 The menu bar carries the same tally, and its menu lists every session with the
 same marks. Picking one goes to that tab, exactly as clicking a row does.

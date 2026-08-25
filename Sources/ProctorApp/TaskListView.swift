@@ -10,7 +10,8 @@ import ProctorKit
 struct TaskListView: View {
     @ObservedObject var store: TaskStore
     @ObservedObject var appearance: Appearance
-    @ObservedObject var folding: RepoFolding
+    @ObservedObject var folding: GroupFolding
+    @ObservedObject var avatars: OrgAvatarStore
     var onOpen: (CollectedTask) -> Void
     var onClose: (CollectedTask) -> Void
 
@@ -34,24 +35,25 @@ struct TaskListView: View {
                             .padding(.vertical, base * 0.6)
                     } else {
                         VStack(alignment: .leading, spacing: 0) {
-                            ForEach(groups, id: \.repo) { group in
-                                // 1つしかないときも出す。畳む取っ手はここにしかないし、
-                                // どのリポジトリを見ているのかは1つでも知りたい
-                                RepoHeader(
-                                    name: group.name,
-                                    repo: group.repo,
-                                    base: base,
-                                    collapsed: folding.isCollapsed(group.repo),
-                                    tally: TaskStatus.counts(
-                                        displayStatuses: group.tasks.map(\.displayStatus)),
-                                    onToggle: { toggle(group.repo) })
-                                if !folding.isCollapsed(group.repo) {
-                                    ForEach(group.tasks) { task in
-                                        TaskRow(task: task, base: base,
-                                                isCurrent: isCurrent(task),
-                                                onOpen: onOpen, onClose: onClose)
-                                            .padding(.leading, base)
+                            if appearance.resolvedGrouping == .organization {
+                                ForEach(orgGroups) { org in
+                                    OrgHeader(
+                                        group: org,
+                                        base: base,
+                                        avatars: avatars,
+                                        collapsed: folding.isCollapsed(org.id),
+                                        tally: TaskStatus.counts(
+                                            displayStatuses: org.tasks.map(\.displayStatus)),
+                                        onToggle: { toggle(org.id) })
+                                    if !folding.isCollapsed(org.id) {
+                                        ForEach(org.repos) { repo in
+                                            repoSection(repo, indent: base * 0.7)
+                                        }
                                     }
+                                }
+                            } else {
+                                ForEach(repoGroups) { repo in
+                                    repoSection(repo, indent: 0)
                                 }
                             }
                         }
@@ -72,6 +74,35 @@ struct TaskListView: View {
         store.rateLimitSummaries
     }
 
+    /// リポジトリの見出しと、その下の行。**まとめ方が1段でも2段でも同じものを使う。**
+    /// 段ごとに書き分けると、折りたたみも内訳も2通り面倒を見ることになる。
+    ///
+    /// - Parameter indent: 左に空ける分。Organization の下にぶら下がるときだけ入る。
+    ///   ぶら下がっているときは上の余白も詰める。**組織どうしの間より、
+    ///   組織とその中身の間のほうが空いていると、どちらの子なのか分からなくなる**
+    @ViewBuilder
+    private func repoSection(_ group: RepoGroup, indent: CGFloat) -> some View {
+        // 1つしかないときも出す。畳む取っ手はここにしかないし、
+        // どのリポジトリを見ているのかは1つでも知りたい
+        RepoHeader(
+            name: group.name,
+            repo: group.id,
+            base: base,
+            topSpacing: indent > 0 ? base * 0.15 : base * 0.3,
+            collapsed: folding.isCollapsed(group.id),
+            tally: TaskStatus.counts(displayStatuses: group.tasks.map(\.displayStatus)),
+            onToggle: { toggle(group.id) })
+            .padding(.leading, indent)
+        if !folding.isCollapsed(group.id) {
+            ForEach(group.tasks) { task in
+                TaskRow(task: task, base: base,
+                        isCurrent: isCurrent(task),
+                        onOpen: onOpen, onClose: onClose)
+                    .padding(.leading, base + indent)
+            }
+        }
+    }
+
     /// いま iTerm2 で開いているタブかどうか。
     /// 台帳を持たないセッション (itermSession が無い) を巻き込まないよう、
     /// 空同士が一致してしまう組み合わせは弾く
@@ -82,38 +113,31 @@ struct TaskListView: View {
 
     /// 折りたたみの開け閉め。畳むと行が消えるので、動かして見せないと
     /// 何が起きたのか分からない (押した場所の下が急に詰まる)
-    private func toggle(_ repo: String) {
-        withAnimation(.easeOut(duration: 0.18)) { folding.toggle(repo) }
+    private func toggle(_ group: String) {
+        withAnimation(.easeOut(duration: 0.18)) { folding.toggle(group) }
     }
 
+    /// 並びが変わったことを animation に伝える鍵。
+    ///
+    /// **いま実際に描いている並びから作る。** 片方のまとめ方だけを見て作ると、
+    /// 見出しの順が入れ替わっても鍵が変わらないことがあり、その回だけ行が
+    /// 瞬間移動する
     private var taskOrderKey: String {
-        groups.map { "\($0.repo):" + $0.tasks.map(\.id).joined(separator: ",") }.joined(separator: "|")
-    }
-
-    private struct Group {
-        var repo: String
-        var name: String
-        var tasks: [CollectedTask]
-    }
-
-    /// プロジェクトごとにまとめる。動きがあったものを上に置く。
-    /// 名前順だと、今まさに動いているプロジェクトが下に埋もれて気づけない
-    private var groups: [Group] {
-        var order: [String] = []
-        var box: [String: Group] = [:]
-        for task in store.tasks {
-            if box[task.repo] == nil {
-                order.append(task.repo)
-                box[task.repo] = Group(repo: task.repo, name: task.repoName, tasks: [])
-            }
-            box[task.repo]?.tasks.append(task)
+        func key(_ repos: [RepoGroup]) -> String {
+            repos.map { "\($0.id):" + $0.tasks.map(\.id).joined(separator: ",") }
+                .joined(separator: "|")
         }
-        return order.compactMap { box[$0] }
-            .sorted { recency($0) < recency($1) }
+        if appearance.resolvedGrouping == .organization {
+            return "org|" + orgGroups.map { "\($0.id)>" + key($0.repos) }.joined(separator: "//")
+        }
+        return "repo|" + key(repoGroups)
     }
 
-    private func recency(_ group: Group) -> Int {
-        group.tasks.map(\.idleSeconds).min() ?? .max
+    private var repoGroups: [RepoGroup] { TaskGrouping.byRepository(store.tasks) }
+
+    private var orgGroups: [OrgGroup] {
+        TaskGrouping.byOrganization(
+            store.tasks, unknownTitle: Localized.text("app.group.no_organization"))
     }
 
     /// 確認待ち（オレンジ）や実行中（ブルー）のタスクがあるとき、
@@ -132,6 +156,115 @@ struct TaskListView: View {
     }
 }
 
+/// Organization ごとの見出し。押すとその下のリポジトリごと畳む。
+///
+/// リポジトリの見出し (`RepoHeader`) より一段強く出す。**同じ見え方にすると、
+/// どちらが親でどちらが子か分からなくなる。** 差を付けているのは3つ ——
+/// アイコンが付くこと、文字が濃いこと、上の余白が広いこと。
+/// 大きさで差を付けていないのは、主役であるセッション名より大きい見出しを
+/// 2段重ねると、読む順が上から順に入れ替わってしまうため。
+private struct OrgHeader: View {
+    let group: OrgGroup
+    let base: CGFloat
+    @ObservedObject var avatars: OrgAvatarStore
+    let collapsed: Bool
+    /// 中にいるセッション全部の内訳。畳んでいるときだけ出す
+    let tally: [(status: String, count: Int)]
+    var onToggle: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: base * 0.3) {
+            Image(systemName: "chevron.right")
+                .font(.system(size: base * 0.7, weight: .semibold))
+                .foregroundStyle(Palette.dim)
+                .rotationEffect(.degrees(collapsed ? 0 : 90))
+                .frame(width: base * 0.8)
+
+            OrgAvatar(owner: group.owner, host: group.host, title: group.title,
+                      size: base * 1.05, avatars: avatars)
+
+            Text(group.title)
+                .font(.system(size: base * 0.9, weight: .semibold))
+                .foregroundStyle(Palette.fg)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: base * 0.3)
+
+            if collapsed {
+                HStack(spacing: base * 0.35) {
+                    ForEach(tally, id: \.status) { entry in
+                        Text("\(TaskStatus.mark(entry.status))\(entry.count)")
+                            .foregroundStyle(Palette.status(entry.status))
+                    }
+                }
+                .font(.system(size: base * 0.8).monospacedDigit())
+                .layoutPriority(1)
+            }
+        }
+        .padding(.horizontal, base * 0.4)
+        .padding(.vertical, base * 0.3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: base * 0.3)
+                .fill(hovering ? Palette.hover : Color.clear))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture(perform: onToggle)
+        .padding(.top, base * 0.5)
+    }
+}
+
+/// Organization のアイコン。
+///
+/// 取れていないあいだ、そして取れなかった相手には頭文字を描く。**枠ごと
+/// 消さないのは、あとから絵が入ったときに見出しの文字が横へずれるため。**
+/// 場所は先に取っておいて、中身だけ差し替える。
+private struct OrgAvatar: View {
+    /// GitHub の login 名。持ち主が分からないまとまりでは nil
+    let owner: String?
+    let host: String?
+    /// 頭文字を描くもと。持ち主が分からないときの見出しにも頭文字は要る
+    let title: String
+    let size: CGFloat
+    @ObservedObject var avatars: OrgAvatarStore
+
+    var body: some View {
+        Group {
+            if let owner, let image = avatars.images[owner] {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                monogram
+            }
+        }
+        .frame(width: size, height: size)
+        // 真円ではなく角丸にしているのは GitHub の見せ方に合わせるため。
+        // 組織のアイコンは四角い図案が多く、丸で抜くと角が落ちる
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+        // 取りに行くのは描くときではなくここ。body の中で store を触ると、
+        // 描いている最中に状態が変わることになる
+        .task(id: owner) {
+            guard let owner, let host else { return }
+            await avatars.load(owner: owner, host: host)
+        }
+    }
+
+    private var monogram: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+                .fill(Palette.hover)
+            Text(title.first.map { String($0).uppercased() } ?? "?")
+                .font(.system(size: size * 0.6, weight: .semibold))
+                .foregroundStyle(Palette.dim)
+        }
+    }
+}
+
 /// プロジェクトごとの見出し。押すとその下を畳む。
 ///
 /// 畳んでいる間は中身の状態を数で出す。**畳んだせいで確認待ちに気づけない、
@@ -146,6 +279,8 @@ private struct RepoHeader: View {
     /// リポジトリのパス。ツールチップに出すのと、鍵として渡すのに使う
     let repo: String
     let base: CGFloat
+    /// 前のまとまりとの間に空ける分。Organization の下では詰める
+    let topSpacing: CGFloat
     let collapsed: Bool
     /// 畳んでいるときに出す内訳。確認済みも含めて渡してもらう
     let tally: [(status: String, count: Int)]
@@ -196,7 +331,7 @@ private struct RepoHeader: View {
         .help(repo)
         // グループを区切る余白。下地とタップ範囲の外に出しておく。
         // 内側に入れると、上だけ広く光って押せる範囲も上下でずれる
-        .padding(.top, base * 0.3)
+        .padding(.top, topSpacing)
     }
 }
 

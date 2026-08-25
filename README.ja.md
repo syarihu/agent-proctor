@@ -21,7 +21,7 @@ git worktree で働くコーディングエージェントたち（iTerm2 のタ
 CLI (`proctor`) のほうは端末を選ばず、そういうセッションも同じように並べる。
 
 <p align="center">
-  <img src="docs/images/sidebar-and-terminal.png" alt="iTerm2 の横に並んだサイドバー。1つのリポジトリの4セッションが状態ごとに並んでいる" width="880">
+  <img src="docs/images/sidebar-and-terminal.png" alt="iTerm2 の横に並んだサイドバー。持ち主の見出しの下に2つのリポジトリが並び、その中に3セッションが状態ごとに並んでいる" width="880">
 </p>
 
 ```
@@ -88,14 +88,15 @@ Kit が知っているのは「どんな状態があり、どんな記号と名�
 ProctorKit/
   Model/       データと語彙。I/O を持たない
                TaskRecord, DiffCounts, CollectedTask, SubagentRun, TaskStatus,
-               TaskID, RateLimits, AgentKind
+               TaskID, RateLimits, AgentKind, RepoOrigin
   Repository/  外の世界との出入り口。ここだけが台帳・git・環境を触る
-               LedgerStore, GitClient, ProcessRunner, EnvironmentSource,
-               ProcessLiveness, Paths, AppVersion,
+               LedgerStore, GitClient, GitHubClient, AvatarCache, ProcessRunner,
+               EnvironmentSource, ProcessLiveness, Paths, AppVersion,
                AntigravityMetadataReader, CodexMetadataReader
   UseCase/     やりたいこと1つに1つ。判断はすべてここが持つ
                CollectTasks, RecordHookEvent, RecordSessionStats,
-               MarkSessionSeen, ReapClosedSessions, ForgetTask, HookPayload
+               MarkSessionSeen, ReapClosedSessions, ForgetTask, HookPayload,
+               ResolveRepoOrigin, OrganizationGrouping
   Localized    人に見せる言葉。どの層からも要るもので、引くだけで何も決めないので
                3層のどれにも入れていない
 
@@ -106,6 +107,7 @@ ProctorApp/    アプリ (View)。SwiftUI と AppKit。TaskStore が Repository 
 | ファイル | 役割 |
 | --- | --- |
 | `~/.local/state/proctor/state.json` | 台帳。リポジトリを横断して1つ。実行時に自動で作られる |
+| `~/.local/state/proctor/avatars/` | Organization のアイコン。持ち主ごとに1ファイル。消してよい（次に取り直す） |
 
 ### 表示する言語
 
@@ -206,7 +208,7 @@ scripts/sign-app.sh "/Applications/Agent Proctor.app"
 「設定…」で「ログイン時に起動」を入れておくと、次からは自動で立ち上がる。
 
 <p align="center">
-  <img src="docs/images/settings.png" alt="設定ウィンドウ。文字の大きさ・幅・不透明度・下地・iTerm2 の幅を詰める設定、ログイン時に起動、iTerm2 の操作を許可しているか、バージョン" width="460">
+  <img src="docs/images/settings.png" alt="設定ウィンドウ。文字の大きさ・幅・不透明度・下地・行のまとめ方・iTerm2 の幅を詰める設定、ログイン時に起動、iTerm2 の操作を許可しているか、バージョン" width="460">
 </p>
 
 ## 使い方
@@ -229,9 +231,22 @@ proctor --version       # 版を表示する
 出て、押すと一覧から外れる。worktree には触らないし、まだ動いているセッションなら
 次のフックで戻ってくる。
 
-行はリポジトリごとにまとまっていて、その見出しを押すと畳める。畳んだことは
-次に開き直しても覚えている。畳んでいる間は見出しに中身の内訳（`⏳1 ▶2`）が出るので、
-閉じたままでも確認待ちには気づける。
+行はリポジトリごとにまとまっていて、そのリポジトリは持ち主（ユーザーまたは組織）
+ごとにまとまっている。見出しにはそのアカウントのアイコンが付く。見出しを押すと畳める。
+上下の段は別々に畳めて、畳んだことは次に開き直しても覚えている。畳んでいる間は
+見出しに中身の内訳（`⏳1 ▶2`）が出るので、閉じたままでも確認待ちには気づける。
+
+持ち主はディスク上の置き場所ではなく git の remote から読むので、clone の並べ方は
+問わない。アイコンは GitHub CLI 経由で取得して `~/.local/state/proctor/avatars` に置く。
+remote が無いなど持ち主を読めないリポジトリは「Organization なし」にまとまる。
+
+**`gh` が入っていない・ログインしていないときは、リポジトリごとのまとまりだけになる。**
+Organization を持ち込む前と同じ見せ方で、アイコンの出ない見出しは
+リポジトリ名以上のことを何も言わないため。「設定… → サイドバー → 行のまとめ方」の
+切り替えは `gh auth login` を済ませるまで押せない状態になっていて、済ませたあとに
+設定ウィンドウへ戻ってくると押せるようになる。`gh` がある状態で、あえて
+リポジトリごとに戻したいときも同じ場所から選ぶ。見ているのは資格情報があるかどうかだけで、
+GitHub に繋がるかは確かめないので、オフラインでもまとめ方は変わらない。
 
 メニューバーにも同じ内訳が出ていて、メニューを開くと同じ記号でセッションが並ぶ。
 選べば行をクリックしたときと同じようにそのタブへ行く。

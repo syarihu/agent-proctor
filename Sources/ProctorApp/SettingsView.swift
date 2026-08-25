@@ -91,6 +91,31 @@ struct SettingsView: View {
                             .disabled(!appearance.useCustomBackgroundColor && appearance.customColorHex == Appearance.defaultCustomHex)
                     }
                 }
+                LabeledContent(Localized.text("app.settings.grouping")) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Picker("", selection: $appearance.groupingMode) {
+                            Text(Localized.text("app.settings.grouping.repository"))
+                                .tag(GroupingMode.repository)
+                            Text(Localized.text("app.settings.grouping.organization"))
+                                .tag(GroupingMode.organization)
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 240)
+                        // gh に頼っているのは持ち主のアイコンだけだが、
+                        // それが出ないなら選ぶ意味が薄いので丸ごと止める
+                        .disabled(!appearance.canGroupByOrganization)
+
+                        // 選べない理由は、選べない場所のすぐ隣に置く。
+                        // 節の下 (footer) にまとめると、どの項目の話か分からない
+                        if !appearance.canGroupByOrganization {
+                            Text(Localized.text("app.settings.grouping.needs_gh"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
                 Toggle(Localized.text("app.settings.make_room"),
                        isOn: $appearance.makeRoomForSidebar)
             } header: {
@@ -142,6 +167,8 @@ struct SettingsView: View {
         .onAppear {
             launchAtLogin = LoginItem.isEnabled
             automation = AutomationPermission.state()
+            // gh にログインし直したあと、開き直せば選べるようになってほしい
+            appearance.refreshOrganizationAvailability()
         }
         // この画面が一番出す動作は「システム設定を開く」で、それは設定ウィンドウを
         // 閉じない。onAppear だけだと、向こうで許可して戻ってきても表示が
@@ -155,6 +182,11 @@ struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(
             for: NSApplication.didBecomeActiveNotification)) { _ in
             automation = AutomationPermission.state()
+            // gh も同じ理由でここに要る。「gh auth login を済ませると選べる」と
+            // 案内しておきながら、端末で済ませて戻ってきても止まったままだと、
+            // 案内どおりにやったのに効かなかったように見える。
+            // Kit 側は「使えない」を60秒しか持ち越さないので、ここで聞き直せば拾える
+            appearance.refreshOrganizationAvailability()
         }
     }
 

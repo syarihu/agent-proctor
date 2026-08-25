@@ -147,7 +147,10 @@ final class TaskStore: ObservableObject {
         lastRecount = Date()
         // git の起動を待つ間 UI を止めない。数え終わったらメインに戻して差し替える
         Task.detached(priority: .utility) {
-            let collected = CollectTasks.run(allRepos: true, itermOnly: true)
+            // 持ち主まで引くのはここだけ。Organization でまとめる見出しに要る。
+            // 生き続けるプロセスなので、git が起きるのはリポジトリごとに一度きり
+            let collected = CollectTasks.run(allRepos: true, itermOnly: true,
+                                             withOrigin: true)
             await MainActor.run { self.tasks = collected }
         }
     }

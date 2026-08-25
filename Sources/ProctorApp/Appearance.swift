@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 import CoreGraphics
 import Combine
+import ProctorKit
 
 /// 見た目の設定。
 ///
@@ -65,6 +66,56 @@ final class Appearance: ObservableObject {
     /// 切ってあると、全画面のときサイドバーは画面の端で止まって端末に重なる。
     @Published var makeRoomForSidebar: Bool {
         didSet { UserDefaults.standard.set(makeRoomForSidebar, forKey: Self.makeRoomKey) }
+    }
+
+    // MARK: - 一覧のまとめ方
+
+    /// 何も選んでいないときのまとめ方。
+    ///
+    /// **Organization を既定にできるのは、gh が無い環境が勝手に
+    /// リポジトリごとへ落ちるから** (`resolvedGrouping`)。落ちる先が
+    /// これまでの見せ方なので、既定を寄せても誰の一覧も壊れない
+    static let defaultGrouping: GroupingMode = .organization
+
+    /// リポジトリごとか、Organization ごとか。**選んだものをそのまま持つ。**
+    ///
+    /// gh が使えるかどうかで書き換えないのは、一時的に使えないだけ
+    /// (ログインが切れた・ネットワークが無い) のときに、選んだ覚えのない
+    /// 設定に戻ってしまうため。使えるかどうかは出すときに見る (`resolvedGrouping`)
+    @Published var groupingMode: GroupingMode {
+        didSet { UserDefaults.standard.set(groupingMode.rawValue, forKey: Self.groupingKey) }
+    }
+
+    /// Organization でまとめられる状態か。gh に聞くので、
+    /// 描くたびには確かめない (答えは Kit 側が覚えている)。
+    ///
+    /// **前回の答えを覚えておいて、そこから始める。** gh に聞くのはプロセスを
+    /// 起こす仕事なので答えが返るまで一拍あり、その間だけリポジトリごとに
+    /// 描いてしまう。既定が Organization だと、起動のたびに一覧が組み変わって
+    /// 見える。gh を入れたり消したりは滅多に無いので、前回の答えで描き始めて
+    /// 違っていたときだけ直すほうが落ち着く
+    @Published var canGroupByOrganization: Bool {
+        didSet {
+            UserDefaults.standard.set(canGroupByOrganization, forKey: Self.canGroupByOrgKey)
+        }
+    }
+
+    /// 実際に使うまとめ方。**gh が使えないならリポジトリごとに戻す。**
+    /// 持ち主の名前だけの見出しになると、なぜアイコンが出ないのかが画面から
+    /// 分からないので、そうなるくらいなら元の見せ方のままにしておく
+    var resolvedGrouping: GroupingMode {
+        groupingMode == .organization && canGroupByOrganization ? .organization : .repository
+    }
+
+    /// gh が使えるかを見に行く。設定画面を開いたときとアプリの起動時に呼ぶ。
+    /// プロセスを起こすので、メインスレッドは待たせない
+    func refreshOrganizationAvailability() {
+        Task {
+            let available = await Task.detached(priority: .utility) {
+                OrganizationGrouping.isAvailable()
+            }.value
+            if canGroupByOrganization != available { canGroupByOrganization = available }
+        }
     }
 
     // MARK: - 不透明度 (透明度)
@@ -140,6 +191,8 @@ final class Appearance: ObservableObject {
     private static let useCustomColorKey = "proctor_use_custom_color"
     private static let customColorKey = "proctor_custom_color_hex"
     private static let makeRoomKey = "proctor_make_room"
+    private static let groupingKey = "proctor_grouping"
+    private static let canGroupByOrgKey = "proctor_can_group_by_org"
 
     init() {
         fontSize = Self.load(Self.sizeKey, in: Self.sizeRange, default: Self.defaultSize)
@@ -154,6 +207,15 @@ final class Appearance: ObservableObject {
         // 既定はオン。bool(forKey:) は未設定でも false を返すので、
         // 「保存されていない」と「切ってある」を object の有無で分ける
         makeRoomForSidebar = UserDefaults.standard.object(forKey: Self.makeRoomKey) as? Bool ?? true
+
+        // まだ選んでいないときと、知らない値が入っていたときは既定に落とす
+        groupingMode = GroupingMode(
+            rawValue: UserDefaults.standard.string(forKey: Self.groupingKey) ?? "")
+            ?? Self.defaultGrouping
+        // 一度も聞いていなければ false から始める。gh を入れていない人に
+        // Organization の見出しを一瞬見せるより、出ないところから始めるほうがよい
+        canGroupByOrganization = UserDefaults.standard.bool(forKey: Self.canGroupByOrgKey)
+        refreshOrganizationAvailability()
     }
 
     func resetFontSize() { fontSize = Self.defaultSize }

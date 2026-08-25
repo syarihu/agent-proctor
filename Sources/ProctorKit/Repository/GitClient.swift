@@ -45,6 +45,22 @@ public enum GitClient {
         ask(repo, "rev-parse", "--abbrev-ref", "HEAD")
     }
 
+    // MARK: - remote
+
+    /// 取ってくる先の URL。1つも無ければ nil。
+    ///
+    /// origin を先に見て、無ければ最初に見つかった remote を使う。
+    /// origin 決め打ちにしないのは、fork を upstream 側の名前で持っている置き方や、
+    /// remote 名を付け替えている置き方があるため。
+    public static func remoteURL(_ repo: String) -> String? {
+        let (ok, origin) = capture(repo, "remote", "get-url", "origin")
+        if ok, !origin.isEmpty { return origin }
+        let (listed, names) = capture(repo, "remote")
+        guard listed, let first = names.split(separator: "\n").first else { return nil }
+        let (found, url) = capture(repo, "remote", "get-url", String(first))
+        return found && !url.isEmpty ? url : nil
+    }
+
     // MARK: - 差分
 
     /// まだ git に追加されていないファイル。

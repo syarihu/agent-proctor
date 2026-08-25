@@ -59,6 +59,9 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     /// 表示側でパスから切り出さずに済むよう名前にしておく。
     /// プロジェクトごとにまとめるときの見出しになる
     public var repoName: String
+    /// リポジトリの持ち主 (remote URL から読んだもの)。
+    /// Organization ごとにまとめるときの見出しになる。remote が無ければ nil
+    public var origin: RepoOrigin?
     public var exists: Bool
     public var diff: DiffCounts
     public var ageSeconds: Int
@@ -125,7 +128,8 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         return base
     }
 
-    public init(record: TaskRecord, repoName: String, exists: Bool, status: String,
+    public init(record: TaskRecord, repoName: String, origin: RepoOrigin?,
+                exists: Bool, status: String,
                 diff: DiffCounts, ageSeconds: Int, idleSeconds: Int, now: Int) {
         id = record.id
         repo = record.repo
@@ -157,6 +161,7 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         rateLimits = record.rateLimits
         account = record.account
         self.repoName = repoName
+        self.origin = origin
         self.exists = exists
         self.diff = diff
         self.ageSeconds = ageSeconds

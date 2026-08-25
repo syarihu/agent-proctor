@@ -19,6 +19,13 @@ public enum Paths {
     public static var lockFile: URL { stateDir.appendingPathComponent("state.lock") }
     public static var logsDir: URL { stateDir.appendingPathComponent("logs") }
 
+    /// 取ってきた Organization のアイコンの置き場。
+    ///
+    /// キャッシュ用のディレクトリ (~/Library/Caches) ではなく台帳の隣に置くのは、
+    /// proctor が残すものを1か所にまとめておくため。まるごと消しても、
+    /// 次に一覧を開いたときに取り直すだけで済む
+    public static var avatarsDir: URL { stateDir.appendingPathComponent("avatars") }
+
     /// 壊れた台帳の退避先。次の書き込みで消えてしまう前に原因を追えるようにする
     public static var brokenStateFile: URL {
         stateDir.appendingPathComponent("state.json.broken")

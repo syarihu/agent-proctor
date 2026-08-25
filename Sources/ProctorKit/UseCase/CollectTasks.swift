@@ -12,8 +12,16 @@ public enum CollectTasks {
     ///   - itermOnly: iTerm2 のタブとして開き直せるものだけに絞る。
     ///     既定は false。台帳に載っているものをそのまま見せるのが CLI の役目で、
     ///     絞るかどうかは「押したら開けるか」を気にする側 (アプリ) の都合
+    ///   - withOrigin: リポジトリの持ち主 (remote) まで調べる。
+    ///     **既定は false。要る人だけが払う。** 持ち主を引くには
+    ///     リポジトリごとに git をもう1回起こす必要があり、remote が
+    ///     `origin` でなければ2回、1つも無ければやはり2回になる。
+    ///     答えはプロセスの中に覚えるので、生き続けるアプリでは最初の1回で済むが、
+    ///     **一回きりで終わる CLI では毎回が「最初の1回」**になる。
+    ///     `proctor ls` の表は持ち主を出さないので、既定では引かない
     public static func run(repo: String? = nil, allRepos: Bool = false,
-                           itermOnly: Bool = false) -> [CollectedTask] {
+                           itermOnly: Bool = false,
+                           withOrigin: Bool = false) -> [CollectedTask] {
         var records = LedgerStore.tasks()
         if !allRepos, let repo {
             records = records.filter { $0.repo == repo }
@@ -28,6 +36,7 @@ public enum CollectTasks {
             return CollectedTask(
                 record: record,
                 repoName: URL(fileURLWithPath: record.repo).lastPathComponent,
+                origin: withOrigin ? ResolveRepoOrigin.run(repo: record.repo) : nil,
                 exists: exists,
                 // 動いていた場所を手で消された場合。台帳には残っているので消失として見せる
                 status: exists ? record.status : TaskStatus.missing,
@@ -46,6 +55,9 @@ public enum CollectTasks {
     ///
     /// 顔ぶれ (ID) が変わっていたら前回の値を当てられないので nil を返す。
     /// 呼ぶ側はそのとき数え直す。
+    ///
+    /// 持ち主 (`origin`) は前回の値をそのまま持ち越すだけで、ここでは引かない。
+    /// **`withOrigin: false` で集めた一覧を渡すと、持ち主は無いまま伝わり続ける。**
     public static func reapplied(_ tasks: [CollectedTask], records: [TaskRecord],
                                  now: Int = Int(Date().timeIntervalSince1970))
         -> [CollectedTask]? {
@@ -57,6 +69,7 @@ public enum CollectTasks {
             return CollectedTask(
                 record: record,
                 repoName: old.repoName,
+                origin: old.origin,
                 exists: old.exists,
                 status: old.exists ? record.status : TaskStatus.missing,
                 diff: old.diff,
