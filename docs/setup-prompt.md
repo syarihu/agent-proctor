@@ -79,9 +79,11 @@ by default, so you do not need to add any piping yourself.
   can only be counted, not listed. If you keep the old `PreToolUse` wiring as
   well nothing breaks — proctor trusts the listed subagents over the count — but
   it buys you nothing either.
-- **Why `SessionEnd` must be synchronous**: if you background it, it can be
-  killed along with Claude itself before it finishes writing. The other events
-  may be backgrounded with a trailing `&`, but leave `SessionEnd` synchronous.
+- **Why `SessionEnd`, `SubagentStart`, and `SubagentStop` must be synchronous**:
+  if you background them, they can be killed along with the process before they
+  finish writing (and a missed `SubagentStop` leaves the subagent lingering in
+  the list). Other events may be backgrounded with a trailing `&`, but keep
+  these lifecycle events synchronous.
 
 ### statusLine
 
