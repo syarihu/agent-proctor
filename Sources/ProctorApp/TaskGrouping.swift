@@ -19,6 +19,10 @@ struct RepoGroup: Identifiable {
     /// 見出しに出す名前 (パスの末尾)
     var name: String
     var tasks: [CollectedTask]
+    /// セッションが乗っていない worktree。畳んだ1行にまとめて出す。
+    /// セッションと同じ扱いにはしない。あちらは今動いているもの、
+    /// こちらは残っているだけの場所で、急いで見るべきものが違う
+    var worktrees: [CollectedWorktree] = []
 }
 
 /// Organization 1つ分のまとまり。中にリポジトリがぶら下がる。
@@ -45,7 +49,13 @@ struct OrgGroup: Identifiable {
 /// 中は動かないという、目で追えない並びになる。
 enum TaskGrouping {
     /// リポジトリごとにまとめる (これまでの見せ方)
-    static func byRepository(_ tasks: [CollectedTask]) -> [RepoGroup] {
+    ///
+    /// - Parameter worktrees: セッションが乗っていない worktree。
+    ///   これが第2の入り口になる。タスクからだけ組み立てると、
+    ///   セッションが1つも無いリポジトリは見出しごと生まれず、
+    ///   いちばん放置されている作業場が出てこない
+    static func byRepository(_ tasks: [CollectedTask],
+                             worktrees: [CollectedRepoWorktrees] = []) -> [RepoGroup] {
         var order: [String] = []
         var box: [String: RepoGroup] = [:]
         for task in tasks {
@@ -55,7 +65,28 @@ enum TaskGrouping {
             }
             box[task.repo]?.tasks.append(task)
         }
+        attach(worktrees, order: &order, box: &box)
         return stable(order.compactMap { box[$0] }) { recency($0.tasks) }
+    }
+
+    /// 残っている worktree を、対応するリポジトリのまとまりに足す。
+    /// まとまりがまだ無ければ (セッションが1つも無いリポジトリ) ここで作る。
+    ///
+    /// **何も残っていないリポジトリの見出しは作らない。** 中身の無い見出しが
+    /// 並ぶと、一覧の意味が「今どうなっているか」から「どこを触ったか」に
+    /// すり替わってしまう
+    private static func attach(_ worktrees: [CollectedRepoWorktrees],
+                               order: inout [String],
+                               box: inout [String: RepoGroup]) {
+        for group in worktrees {
+            let idle = group.idle
+            if box[group.repo] == nil {
+                guard !idle.isEmpty else { continue }
+                order.append(group.repo)
+                box[group.repo] = RepoGroup(id: group.repo, name: group.repoName, tasks: [])
+            }
+            box[group.repo]?.worktrees = idle
+        }
     }
 
     /// Organization ごとにまとめ、その下にリポジトリをぶら下げる。
@@ -66,11 +97,21 @@ enum TaskGrouping {
     ///
     /// - Parameter unknownTitle: 持ち主が読めないまとまりの見出し
     static func byOrganization(_ tasks: [CollectedTask],
+                               worktrees: [CollectedRepoWorktrees] = [],
                                unknownTitle: String) -> [OrgGroup] {
         var order: [String] = []
         var box: [String: OrgGroup] = [:]
-        for task in tasks {
-            let origin = task.origin
+        // リポジトリ単位のまとまりは1か所で作る。持ち主で束ね直すのはそのあと。
+        // 2通りに書くと、worktree が片方にしか出ないという食い違いが生まれる
+        let repos = byRepository(tasks, worktrees: worktrees)
+        // 持ち主はタスク側にも worktree 側にも付いている。セッションが1つも
+        // 無いリポジトリではタスクから引けないので、worktree のほうから拾う
+        var origins: [String: RepoOrigin] = [:]
+        for task in tasks { origins[task.repo] = task.origin ?? origins[task.repo] }
+        for group in worktrees { origins[group.repo] = origins[group.repo] ?? group.origin }
+
+        for repo in repos {
+            let origin = origins[repo.id]
             let id = origin.map { "org:\($0.groupKey)" } ?? unknownKey
             if box[id] == nil {
                 order.append(id)
@@ -90,12 +131,7 @@ enum TaskGrouping {
                                    host: origin?.host,
                                    repos: [])
             }
-            if let index = box[id]?.repos.firstIndex(where: { $0.id == task.repo }) {
-                box[id]?.repos[index].tasks.append(task)
-            } else {
-                box[id]?.repos.append(
-                    RepoGroup(id: task.repo, name: task.repoName, tasks: [task]))
-            }
+            box[id]?.repos.append(repo)
         }
         let groups = order.compactMap { box[$0] }.map { org -> OrgGroup in
             var sorted = org

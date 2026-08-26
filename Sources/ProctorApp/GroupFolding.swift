@@ -20,17 +20,37 @@ import Combine
 final class GroupFolding: ObservableObject {
     /// 畳んである見出しの鍵
     @Published private(set) var collapsed: Set<String>
+    /// 既定で畳んでおくものの、開いてある鍵。
+    ///
+    /// collapsed と逆向きに持っているのは、worktree の一覧が既定で畳んであるから
+    /// (手を挙げているセッションの下に、放置された作業場を全部並べたくない)。
+    /// 同じ集合に混ぜると「記録が無い = 開く」の約束と衝突する
+    @Published private(set) var expanded: Set<String>
 
     /// 鍵の名前はリポジトリしか畳めなかった頃のまま。**変えると、それまで
     /// 畳んでいたものが次の起動で一斉に開く。** 名前の座りの悪さより、
     /// 手で畳んだ状態が消えないことを取る
     private static let key = "proctor_collapsed_repos"
+    private static let expandedKey = "proctor_expanded_groups"
 
     init() {
         collapsed = Set(UserDefaults.standard.stringArray(forKey: Self.key) ?? [])
+        expanded = Set(UserDefaults.standard.stringArray(forKey: Self.expandedKey) ?? [])
     }
 
     func isCollapsed(_ group: String) -> Bool { collapsed.contains(group) }
+
+    /// 既定で畳んであるものが開かれているか
+    func isExpanded(_ group: String) -> Bool { expanded.contains(group) }
+
+    func toggleExpanded(_ group: String) {
+        if expanded.contains(group) {
+            expanded.remove(group)
+        } else {
+            expanded.insert(group)
+        }
+        UserDefaults.standard.set(expanded.sorted(), forKey: Self.expandedKey)
+    }
 
     func toggle(_ group: String) {
         if collapsed.contains(group) {

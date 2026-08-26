@@ -49,23 +49,35 @@ enum ItermBridge {
         return Set(ids)
     }
 
-    /// いま見ているタブ (最前面のウィンドウの現在のセッション) の guid。
+    /// いま見ているタブ (最前面のウィンドウの現在のセッション) の guid と、その現在地。
     ///
-    /// ウィンドウが1つも無いときは空文字を返す。窓が無い状態で
+    /// ウィンドウが1つも無いときは空の guid を返す。窓が無い状態で
     /// `current window` を辿ると AppleScript がエラーになり、
     /// 1秒ごとに標準エラーへ吐き続けることになる。
     ///
     /// 聞けなかったとき (iTerm2 が居ない・許可が無い) は nil。
     /// 「どこも見ていない」と区別できないと、印を消してよいか決められない。
-    static func focusedSession() -> String? {
+    ///
+    /// 現在地を同じ往復で取ってくる。1秒ごとに聞くものなので、
+    /// Apple Event の往復を2つに増やしたくない。path は shell integration が
+    /// 無くても iTerm2 が追っている
+    static func focusedTab() -> (session: String, directory: String)? {
         let source = """
         tell application "iTerm2"
             if (count of windows) is 0 then return ""
-            return id of current session of current tab of current window
+            set s to current session of current tab of current window
+            set p to ""
+            try
+                tell s to set p to (get variable named "path")
+            end try
+            return (id of s) & (character id 0) & p & (character id 0)
         end tell
         """
-        guard let text = execute(source, interactive: false, reusable: true) else { return nil }
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let text = execute(source, interactive: false, reusable: true),
+              let tabs = parseTabs(text) else { return nil }
+        // 窓が無いときは空文字が返る。「聞けなかった」とは別物なので、
+        // 空のまま (guid も現在地も無し) として返す
+        return tabs.first ?? (session: "", directory: "")
     }
 
     /// 一番手前のウィンドウの枠を置き直す。
@@ -141,6 +153,132 @@ enum ItermBridge {
         return true
     }
 
+    /// その場所を開いているタブの guid。無ければ nil。
+    ///
+    /// 台帳に載るのはエージェントのセッションだけなので、cd しただけのタブは
+    /// proctor から見えない。iTerm2 は shell integration が無くてもタブの現在地を
+    /// 追っているので、そちらに聞く。
+    ///
+    /// その worktree の中に降りているタブも同じ場所とみなす (src/ で作業していた、など)。
+    /// 逆向き (親にいるタブ) は当たらないので、worktree を本体の中に置いていても
+    /// 本体のタブを掴むことはない。ぴったり同じ場所に居るタブがあれば、そちらを優先する。
+    static func sessionID(inDirectory path: String) -> String? {
+        guard let tabs = openTabs(interactive: true) else { return nil }
+
+        let target = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        var inside: String?
+        for tab in tabs {
+            guard !tab.directory.isEmpty else { continue }  // 居場所が読めないタブ
+            if tab.directory == target { return tab.session }
+            if inside == nil, tab.directory.hasPrefix(target + "/") { inside = tab.session }
+        }
+        return inside
+    }
+
+    /// いま開いている全タブの (guid, 現在地)。聞けなければ nil。
+    ///
+    /// 空配列と区別する。一時的に答えが返らなかっただけで
+    /// 「どこにもタブが無い」と受け取ると、一覧から行がごっそり消える。
+    ///
+    /// **現在地が読めないタブも guid だけは返す。** ssh 越しなど、iTerm2 が
+    /// そのタブの居場所を答えられないことがある。そこで組ごと捨てると、
+    /// 台帳と guid で突き合わせる道 (TaskStore.visible) まで塞がる。
+    ///
+    /// 区切りは NUL。パスに絶対に現れない唯一の文字なので、名前にタブや改行を
+    /// 含む worktree でも割れない (git の `--porcelain -z` と同じ考え方)。
+    ///
+    /// 区切りに `tab` と書かないこと。`tell application "iTerm2"` の中では
+    /// `tab` はタブのクラスを指すので、区切りのつもりが文字列 "tab" になる。
+    ///
+    /// - Parameter interactive: 人が押した操作の一部か。裏方の呼び出しでは
+    ///   許可が無くても黙って諦める (execute の説明を参照)
+    static func openTabs(interactive: Bool) -> [(session: String, directory: String)]? {
+        let source = """
+        tell application "iTerm2"
+            set out to ""
+            repeat with w in windows
+                repeat with t in tabs of w
+                    repeat with s in sessions of t
+                        set p to ""
+                        try
+                            tell s to set p to (get variable named "path")
+                        end try
+                        set out to out & (id of s) & (character id 0) & p & (character id 0)
+                    end repeat
+                end repeat
+            end repeat
+            return out
+        end tell
+        """
+        guard let text = execute(source, interactive: interactive, reusable: true) else {
+            return nil
+        }
+        return parseTabs(text)
+    }
+
+    /// (guid, 現在地) の並びを読む。読めない形なら nil。
+    ///
+    /// **形が違うものを空配列にしない。** 空配列は「タブが1つも無い」という答えで、
+    /// 絞り込む側はそれを信じて全部を隠す。答えが壊れていたのなら、
+    /// 聞けなかったとき (nil) と同じ扱いにして絞り込みを見送らせる。
+    ///
+    /// パスは削らない。末尾の空白も名前の一部なので、整形すると別の場所を指す。
+    private static func parseTabs(_ text: String) -> [(session: String, directory: String)]? {
+        // 窓が1つも無ければ空文字。これは「タブが無い」という確かな答え
+        if text.isEmpty { return [] }
+        guard text.contains("\0") else { return nil }
+
+        var fields = text.components(separatedBy: "\0")
+        // 各組の末尾にも区切りを打っているので、最後に空の余りが1つ出る
+        if fields.last?.isEmpty == true { fields.removeLast() }
+        guard fields.count % 2 == 0 else { return nil }
+
+        var tabs: [(session: String, directory: String)] = []
+        for index in stride(from: 0, to: fields.count, by: 2) {
+            let session = fields[index]
+            guard !session.isEmpty else { continue }
+            let directory = fields[index + 1]
+            // 表記違い (/tmp と /private/tmp) を吸収してから配る。
+            // 受け取る側が毎回解決し直さずに済む。読めなかったタブは空のまま通す
+            tabs.append((session: session,
+                         directory: directory.isEmpty ? "" :
+                            URL(fileURLWithPath: directory).resolvingSymlinksInPath().path))
+        }
+        return tabs
+    }
+
+    /// 新しいタブを開いて、その場所へ移動する。
+    ///
+    /// `command` でプログラムを渡さないのは、素のシェルが欲しいから。
+    /// あれは指定したものをセッションの本体として起こすので、終われば
+    /// タブごと消える。ここで開きたいのは「これから何か始める場所」なので、
+    /// 普段どおりのシェルを立ち上げてから cd を打ち込む。
+    @discardableResult
+    static func openTab(inDirectory path: String) -> Bool {
+        let command = "cd \(shellQuoted(path))"
+        let source = """
+        tell application "iTerm2"
+            if (count of windows) is 0 then
+                set t to (create window with default profile)
+                tell current session of current tab of t
+                    write text "\(escape(command))"
+                end tell
+            else
+                tell current window
+                    set t to (create tab with default profile)
+                    tell current session of t
+                        write text "\(escape(command))"
+                    end tell
+                end tell
+            end if
+            return "ok"
+        end tell
+        """
+        guard execute(source)?.hasPrefix("ok") == true else { return false }
+        activateIterm()
+        return true
+    }
+
     /// いま使われているプロファイルの背景色。サイドバーの下地を端末に馴染ませる。
     /// 取れなければ nil を返し、呼び出し側はシステムの色に任せる。
     static func backgroundColor() -> NSColor? {
@@ -173,6 +311,14 @@ enum ItermBridge {
     }
 
     // MARK: -
+
+    /// シェルに1語として渡せる形にする。
+    ///
+    /// **手で引用符を足さない。** worktree の名前に `'` が入っていても壊れないよう、
+    /// 単引用符の中では閉じて・エスケープして・開き直す作法に従う
+    private static func shellQuoted(_ text: String) -> String {
+        "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
 
     /// AppleScript の文字列リテラルに入れられる形にする。
     /// タスクIDは英数字と "-" に丸められているが、通り道は塞いでおく

@@ -42,6 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.open(taskID: task.id)
             }, onClose: { [weak self] task in
                 self?.store.forget(id: task.id)
+            }, onOpenWorktree: { [weak self] worktree in
+                self?.open(worktree: worktree)
             }))
         sidebar.onVisibilityChange = { [weak self] visible in
             // 見えていない間は git を起動しない
@@ -59,6 +61,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         reaper = Reaper { [weak self] in self?.store.refreshNow() }
         focus = FocusWatcher(
             onFocus: { [weak self] session in self?.store.setFocused(session) },
+            // エージェントが動いていない場所も一覧に混ぜたいので、現在地も預ける
+            onDirectory: { [weak self] path in self?.store.setCurrentDirectory(path) },
             // 書いたのは自分なので、台帳の更新時刻を待たずに映す
             onSeen: { [weak self] in self?.store.refreshNow() })
 
@@ -96,6 +100,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.informativeText = Localized.text("app.alert.open_failed.body")
             alert.alertStyle = .warning
             alert.runModal()
+        }
+    }
+
+    /// セッションの乗っていない worktree を開く。
+    ///
+    /// まず、その場所を開いているタブを探す (理由は ItermBridge.sessionID)。
+    /// 見つからなければ、そこへ移動した新しいタブを開く。
+    ///
+    /// **エージェントは起こさない** — 続きの会話が無い場所なので、
+    /// 何を始めるかは開いた人が決める
+    private func open(worktree: CollectedWorktree) {
+        if let session = ItermBridge.sessionID(inDirectory: worktree.path),
+           ItermBridge.focus(sessionID: session) {
+            return
+        }
+        guard ItermBridge.openTab(inDirectory: worktree.path) else {
+            let alert = NSAlert()
+            alert.messageText = Localized.text("app.alert.open_failed.title", worktree.name)
+            alert.informativeText = Localized.text("app.alert.open_failed.body")
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
         }
     }
 

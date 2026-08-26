@@ -21,12 +21,17 @@ final class FocusWatcher {
     private let interval: TimeInterval = 1.0
     private var timer: Timer?
     private var current: String?
+    private var currentDirectory: String?
     private let writer = LedgerWriter()
 
     /// - Parameters:
     ///   - onFocus: 見ているタブが変わったときに呼ばれる
+    ///   - onDirectory: 見ているタブの現在地が変わったときに呼ばれる。
+    ///     **エージェントが動いていない場所も知りたい**ので、台帳とは別に追う
     ///   - onSeen: 台帳に確認済みを書いたときに呼ばれる
-    init(onFocus: @escaping (String?) -> Void, onSeen: @escaping () -> Void) {
+    init(onFocus: @escaping (String?) -> Void,
+         onDirectory: @escaping (String?) -> Void,
+         onSeen: @escaping () -> Void) {
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -40,11 +45,18 @@ final class FocusWatcher {
 
                 // 聞けなかったとき (nil) は前の値を保つ。iTerm2 が一瞬答えなかった
                 // だけで印が飛ぶと、行がちらついて落ち着かない
-                if let session = ItermBridge.focusedSession() {
-                    let resolved = session.isEmpty ? nil : session
+                if let tab = ItermBridge.focusedTab() {
+                    let resolved = tab.session.isEmpty ? nil : tab.session
                     if resolved != self.current {
                         self.current = resolved
                         onFocus(resolved)
+                    }
+                    // 現在地が読めないタブ (ssh 越しなど) では前の値を保つ。
+                    // 「どこにも居ない」と受け取ると、そのリポジトリの worktree が
+                    // 一覧から落ちてしまう
+                    if !tab.directory.isEmpty, tab.directory != self.currentDirectory {
+                        self.currentDirectory = tab.directory
+                        onDirectory(tab.directory)
                     }
                 }
                 // 台帳を書くのはメインスレッドから外す (理由は LedgerWriter)

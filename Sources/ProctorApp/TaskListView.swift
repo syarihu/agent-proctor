@@ -14,6 +14,9 @@ struct TaskListView: View {
     @ObservedObject var avatars: OrgAvatarStore
     var onOpen: (CollectedTask) -> Void
     var onClose: (CollectedTask) -> Void
+    /// セッションの乗っていない worktree を押したとき。
+    /// 戻る先のタブが無いので、そこへ移動した新しいタブを開く
+    var onOpenWorktree: (CollectedWorktree) -> Void
 
     /// 文字の大きさはここだけで決める。余白も記号もこれに追従する。
     /// メニューバーから変えられる (Appearance)
@@ -33,7 +36,9 @@ struct TaskListView: View {
 
             VStack(spacing: 0) {
                 ScrollView {
-                    if store.tasks.isEmpty {
+                    // **worktree だけが残っている状態を「何も無い」と言わない。**
+                    // セッションが全部終わったあとこそ、残った作業場を見たい
+                    if store.tasks.isEmpty && (byOrg ? orgs.isEmpty : repos.isEmpty) {
                         Text(Localized.text("common.no_agents"))
                             .font(.system(size: base * 0.9))
                             .foregroundStyle(Palette.dim)
@@ -108,6 +113,23 @@ struct TaskListView: View {
                         onOpen: onOpen, onClose: onClose)
                     .padding(.leading, base + indent)
             }
+            if !group.worktrees.isEmpty {
+                // 鍵に "wt:" を付けるのは、リポジトリ本体の鍵 (絶対パス) と
+                // 同じ文字列にならないようにするため
+                let key = "wt:" + group.id
+                let open = folding.isExpanded(key)
+                WorktreeSummaryRow(
+                    worktrees: group.worktrees, base: base,
+                    expanded: open,
+                    onToggle: { toggleExpanded(key) })
+                    .padding(.leading, base * 0.6 + indent)
+                if open {
+                    ForEach(group.worktrees) { worktree in
+                        WorktreeRow(worktree: worktree, base: base, onOpen: onOpenWorktree)
+                            .padding(.leading, base + indent)
+                    }
+                }
+            }
         }
     }
 
@@ -123,6 +145,11 @@ struct TaskListView: View {
     /// 何が起きたのか分からない (押した場所の下が急に詰まる)
     private func toggle(_ group: String) {
         withAnimation(.easeOut(duration: 0.18)) { folding.toggle(group) }
+    }
+
+    /// 既定で畳んであるもの (worktree の一覧) の開け閉め
+    private func toggleExpanded(_ group: String) {
+        withAnimation(.easeOut(duration: 0.18)) { folding.toggleExpanded(group) }
     }
 
     /// 並びが変わったことを animation に伝える鍵。
@@ -141,11 +168,14 @@ struct TaskListView: View {
         return "repo|" + key(repos)
     }
 
-    private var repoGroups: [RepoGroup] { TaskGrouping.byRepository(store.tasks) }
+    private var repoGroups: [RepoGroup] {
+        TaskGrouping.byRepository(store.tasks, worktrees: store.worktrees)
+    }
 
     private var orgGroups: [OrgGroup] {
         TaskGrouping.byOrganization(
-            store.tasks, unknownTitle: Localized.text("app.group.no_organization"))
+            store.tasks, worktrees: store.worktrees,
+            unknownTitle: Localized.text("app.group.no_organization"))
     }
 
     /// 確認待ち（オレンジ）や実行中（ブルー）のタスクがあるとき、
@@ -340,6 +370,127 @@ private struct RepoHeader: View {
         // グループを区切る余白。下地とタップ範囲の外に出しておく。
         // 内側に入れると、上だけ広く光って押せる範囲も上下でずれる
         .padding(.top, topSpacing)
+    }
+}
+
+/// 「他に N worktree」の1行。押すと下に一覧が開く。
+///
+/// セッションの行と見た目を分けている。**同じ強さで出すと、動いているものと
+/// 残っているだけのものが並んで見えて、どちらに手を付けるべきか分からなくなる。**
+private struct WorktreeSummaryRow: View {
+    let worktrees: [CollectedWorktree]
+    let base: CGFloat
+    let expanded: Bool
+    var onToggle: () -> Void
+
+    @State private var hovering = false
+
+    private var removable: Int { worktrees.filter(\.isRemovable).count }
+
+    var body: some View {
+        HStack(spacing: base * 0.3) {
+            Image(systemName: "chevron.right")
+                .font(.system(size: base * 0.6, weight: .semibold))
+                .foregroundStyle(Palette.dim)
+                .rotationEffect(.degrees(expanded ? 90 : 0))
+                .frame(width: base * 0.7)
+
+            Text(Localized.text("app.worktrees.summary", worktrees.count))
+                .font(.system(size: base * 0.75))
+                .foregroundStyle(Palette.dim)
+                .lineLimit(1)
+
+            // 片付けられるものがあるときだけ数を添える。**0 を出さない。**
+            // 何も片付けられない日に「0」が並ぶと、見る意味の無い行になる
+            if removable > 0 {
+                Text(Localized.text("app.worktrees.removable", removable))
+                    .font(.system(size: base * 0.75))
+                    .foregroundStyle(Palette.done)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, base * 0.4)
+        .padding(.vertical, base * 0.2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: base * 0.3)
+                .fill(hovering ? Palette.hover : Color.clear))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture(perform: onToggle)
+    }
+}
+
+/// セッションが乗っていない worktree の1行。押すとその場所が開く
+private struct WorktreeRow: View {
+    let worktree: CollectedWorktree
+    let base: CGFloat
+    var onOpen: (CollectedWorktree) -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: base * 0.4) {
+            // セッションの印 (状態) とは別の記号にする。
+            // 状態を持たない場所なので、状態の色を借りると誤解になる
+            Text("⌁")
+                .font(.system(size: base * 0.8))
+                .foregroundStyle(Palette.dim)
+                .frame(width: base * 1.0, alignment: .center)
+
+            VStack(alignment: .leading, spacing: base * 0.1) {
+                Text(worktree.name)
+                    .font(.system(size: base * 0.85))
+                    .foregroundStyle(Palette.dim)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                HStack(spacing: base * 0.35) {
+                    Text(Localized.text("app.row.branch_age",
+                                        worktree.branch ?? "-",
+                                        shortAge(worktree.idleSeconds)))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    if worktree.isLocked {
+                        Text(Localized.text("app.worktree.locked"))
+                    } else if worktree.isRemovable {
+                        Text(Localized.text("app.worktree.removable"))
+                            .foregroundStyle(Palette.done)
+                    } else if worktree.merged {
+                        Text(Localized.text("app.worktree.merged"))
+                    }
+
+                    if !worktree.diff.isEmpty {
+                        if worktree.diff.added > 0 {
+                            Text("+\(worktree.diff.added)").foregroundStyle(Palette.added)
+                        }
+                        if worktree.diff.removed > 0 {
+                            Text("-\(worktree.diff.removed)").foregroundStyle(Palette.removed)
+                        }
+                        if worktree.diff.untracked > 0 {
+                            Text("?\(worktree.diff.untracked)").foregroundStyle(Palette.untracked)
+                        }
+                    }
+                }
+                .font(.system(size: base * 0.7).monospacedDigit())
+                .foregroundStyle(Palette.dim)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, base * 0.4)
+        .padding(.vertical, base * 0.2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: base * 0.3)
+                .fill(hovering ? Palette.hover : Color.clear))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture { onOpen(worktree) }
+        .help(Localized.text("app.worktree.open_help", worktree.path))
     }
 }
 
