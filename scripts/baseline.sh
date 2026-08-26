@@ -331,6 +331,12 @@ PY
     say "skill worktree (冒頭だけ)"
     "$BIN" skill worktree | head -6
 
+    # setup-all は本文を持たず、エージェントごとの手引きを繋いで出す。
+    # 見出しの数で、繋ぐ相手が欠けていないことを見る (文面は変わっても崩れない)
+    say "skill setup-all (見出しの数)"
+    echo "見出し: $("$BIN" skill setup-all | grep -c '^# ')"
+    "$BIN" skill setup-claude | head -3
+
     say "skill (無い名前)"
     "$BIN" skill nope; echo "exit=$?"
 

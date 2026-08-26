@@ -374,8 +374,8 @@ proctor skill worktree    # print one, for an agent to follow
 **The text lives in proctor rather than in your agent's configuration**, so
 updating proctor updates it everywhere at once. What goes into the agent is a
 single line telling it to run the command and follow what comes back, and
-[the setup prompt](docs/setup-prompt.md) puts that line in the right place for
-the agent you use. With no setup at all, typing `! proctor skill worktree` in
+the wiring guide for your agent (`proctor skill setup-claude` and friends) puts
+that line in the right place. With no setup at all, typing `! proctor skill worktree` in
 Claude Code drops the guide straight into the conversation.
 
 ## Wiring up your agent
@@ -386,9 +386,19 @@ is your agent hooks (Claude Code, Antigravity or Codex).
 
 How to wire it up depends on your setup (if you already use hooks or a statusLine,
 they have to be merged rather than replaced), so instead of a procedure this is
-written as **instructions to hand to an AI**.
+written as **instructions for an AI to follow** — and proctor prints them:
 
-→ paste [docs/setup-prompt.md](docs/setup-prompt.md) into Claude Code, Antigravity or Codex
+```bash
+proctor skill setup-claude    # or setup-agy, setup-codex, setup-other
+proctor skill setup-all       # every guide at once
+```
+
+→ in Claude Code, `! proctor skill setup-claude` does it with nothing to install
+first; anywhere else, run the command and hand its output to the agent.
+
+They live at
+[`Sources/ProctorKit/Resources/en.lproj/`](Sources/ProctorKit/Resources/en.lproj/)
+if you would rather read one before installing anything.
 
 Hooks call these three. They are not meant to be typed by a person, so they are
 not listed in the help. All of them read the hook JSON from stdin.

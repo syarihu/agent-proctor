@@ -348,7 +348,8 @@ proctor skill worktree    # 1つ出す（エージェントが読んで従う）
 **本文をエージェントの設定に置かず proctor が持っている**ので、proctor を新しくすれば
 手引きも一斉に新しくなる。エージェント側に置くのは「このコマンドを実行して、
 出てきたものに従う」の一行だけで、それをどこに置くかは
-[セットアッププロンプト](docs/setup-prompt.ja.md)が面倒を見る。何も設定しなくても、
+使っているエージェントの繋ぎ方の手引き（`proctor skill setup-claude` など）が
+面倒を見る。何も設定しなくても、
 Claude Code なら会話に `! proctor skill worktree` と打てばその場で本文が入る。
 
 ## エージェントとの連携
@@ -357,9 +358,18 @@ Claude Code なら会話に `! proctor skill worktree` と打てばその場で�
 状態を書き込むのはエージェント（Claude Code・Antigravity・Codex）の hooks のほう。
 
 繋ぎ方は環境によって変わる（すでに hooks や statusLine を使っていれば混ぜる必要がある）ので、
-手順書ではなく **AI に渡す指示**にしてある。
+手順書ではなく **AI に読ませて実行させる指示**にしてある。それを配るのも proctor 自身。
 
-→ [docs/setup-prompt.ja.md](docs/setup-prompt.ja.md) を Claude Code・Antigravity・Codex のどれかに貼る
+```bash
+proctor skill setup-claude    # setup-agy・setup-codex・setup-other も同じ
+proctor skill setup-all       # 繋ぎ方をまとめて出す
+```
+
+→ Claude Code なら会話に `! proctor skill setup-claude` と打つだけ。
+他のエージェントなら、コマンドの出力をそのまま渡す。
+
+入れる前に中身を読みたいときは
+[`Sources/ProctorKit/Resources/ja.lproj/`](Sources/ProctorKit/Resources/ja.lproj/) にある。
 
 hooks から呼ばれるのは次の3つ。人が打つものではないのでヘルプには出していない。
 どれも stdin にフックの JSON を受ける。

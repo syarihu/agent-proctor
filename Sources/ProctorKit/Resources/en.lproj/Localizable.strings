@@ -66,6 +66,16 @@
 /* 同梱の手引き。proctor skill ls に出る */
 "skill.worktree.title" = "Creating and cleaning up git worktrees";
 "skill.worktree.summary" = "how worktrees are named, created and swept up here";
+"skill.setup-claude.title" = "Wiring proctor up to Claude Code";
+"skill.setup-claude.summary" = "hooks, statusLine and the worktree entry point for Claude Code";
+"skill.setup-agy.title" = "Wiring proctor up to Antigravity";
+"skill.setup-agy.summary" = "hooks and statusLine for Antigravity (agy)";
+"skill.setup-codex.title" = "Wiring proctor up to Codex";
+"skill.setup-codex.summary" = "hooks for Codex, and what proctor cannot see there";
+"skill.setup-other.title" = "Wiring proctor up to any other agent";
+"skill.setup-other.summary" = "what a hook has to send for an agent proctor has no guide for";
+"skill.setup-all.title" = "Wiring proctor up to your agent";
+"skill.setup-all.summary" = "every wiring guide at once";
 
 /* メニューバー。押したら何が起きるかを書く (macOS の流儀) */
 "app.menu.show_sidebar" = "Show Sidebar";

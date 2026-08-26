@@ -66,6 +66,16 @@
 /* 同梱の手引き。proctor skill ls に出る */
 "skill.worktree.title" = "git worktree を作る・片付ける";
 "skill.worktree.summary" = "worktree の名前・作り方・片付け方";
+"skill.setup-claude.title" = "Claude Code と proctor を繋ぐ";
+"skill.setup-claude.summary" = "Claude Code の hooks・statusLine・worktree の入口";
+"skill.setup-agy.title" = "Antigravity と proctor を繋ぐ";
+"skill.setup-agy.summary" = "Antigravity (agy) の hooks と statusLine";
+"skill.setup-codex.title" = "Codex と proctor を繋ぐ";
+"skill.setup-codex.summary" = "Codex の hooks と、そこでは見えないもの";
+"skill.setup-other.title" = "その他のエージェントと proctor を繋ぐ";
+"skill.setup-other.summary" = "手引きの無いエージェントで、hook が何を送ればよいか";
+"skill.setup-all.title" = "エージェントと proctor を繋ぐ";
+"skill.setup-all.summary" = "繋ぎ方の手引きをまとめて出す";
 
 /* メニューバー。押したら何が起きるかを書く (macOS の流儀) */
 "app.menu.show_sidebar" = "サイドバーを表示";
