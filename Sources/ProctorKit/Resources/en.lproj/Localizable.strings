@@ -105,6 +105,13 @@
 /* 一覧の見出し。Organization でまとめたとき、持ち主を読めなかったリポジトリの行き先 */
 "app.group.no_organization" = "No organization";
 
+/* サイドバー最上部の新着。見出しの言葉は status.waiting (確認待ち) と
+   被らせない。完了や失敗の行もここに並ぶため。%d は溢れた件数 */
+"app.inbox.title" = "Needs you";
+"app.inbox.more" = "%d more";
+"app.inbox.clear_all" = "Clear all of these (anything waiting stops waiting)";
+"app.inbox.clear_one" = "Clear this one (if it is waiting, it stops waiting)";
+
 /* 一覧の行。%1$@ はブランチ名、%2$@ は経過時間 (5m など) */
 "app.row.branch_age" = "%1$@ · idle %2$@";
 "app.row.close_help" = "Remove from the list (the worktree is left alone)";

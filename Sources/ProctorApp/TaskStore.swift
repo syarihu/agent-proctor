@@ -184,6 +184,19 @@ final class TaskStore: ObservableObject {
         refreshNow()
     }
 
+    /// 要確認から片付ける。サイドバーのチェックから呼ばれる。
+    ///
+    /// 押した瞬間に映るよう、git を起こさない経路 (`reapplied`) で先に差し替える。
+    /// **判断は写さない。** 何がどう変わるかは台帳を読み直した結果から来るので、
+    /// ここに「確認待ちは待機へ」のような写しを置かない
+    func clearAttention(ids: [String]) {
+        guard (try? ClearAttention.run(ids: ids)) == true else { return }
+        reloadRecords()
+        if let quick = CollectTasks.reapplied(tasks, records: records) { tasks = quick }
+        // 差分と worktree は次の数え直しで揃える
+        if collecting { recount() }
+    }
+
     /// 台帳が外から変わったかもしれないときに呼ぶ (自分で書き換えた直後など)。
     func refreshNow() {
         reloadRecords()

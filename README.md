@@ -75,6 +75,48 @@ rather than disappearing, so you can still trace what happened. Starting again
 clears the mark — the next ending is a different result and deserves a look.
 A failure stays a failure after you have seen it; looking is not fixing.
 
+Everything you have not looked at yet is also gathered into a **`Needs you`
+strip pinned at the top of the sidebar**, one line each: the status mark, the
+session name, the repository it is in and how long it has been sitting there.
+Clicking a line goes to that tab, exactly like the row below. Three things end
+up here — a session stopped for your approval, a finished one you have not looked
+at, and one that fell over and you have not looked at either. The last two are
+the same line the ledger draws when it marks a tab as seen, so those leave the
+strip the moment you visit their tab. A session waiting for your approval leaves
+when you answer it and it starts moving again — looking is not answering — or
+about a minute after you cancel the prompt, since cancelling fires no hook at all
+and the idle notification is the only word that ever arrives.
+
+None of that needs a click, but you can also say *enough* yourself: a `✓` at the
+right end of the strip's heading clears everything in it, and hovering a line
+turns its age into a `✓` that clears just that one. **Clearing changes the state,
+not only the notice** — an unread result is marked as seen, and a session that
+was waiting stops waiting, so the row below stops saying it needs you (it goes
+back to running if subagents are still working under it, and to idle if nothing
+is). It is a
+different mark from the `✕` on the list rows, which drops the record from the
+ledger altogether.
+
+A row that is waiting also carries **what it is waiting for** — `Bash: rm -rf
+build`, the command sitting in the permission prompt — in the strip and in the
+list below. That takes one more hook, `PermissionRequest`, which fires the moment
+permission is asked and carries the tool call with it (`proctor skill
+setup-claude` has the wiring). `Notification` on its own knows only that
+*something* was asked, and hears about it only once the prompt has waited about
+six seconds.
+
+Inside the strip the lines are grouped the same way the list below is — under a
+small caption naming the organization (with its avatar) or the repository — so
+you can see *whose* work is waiting without reading every line. The captions do
+not fold: everything in the strip is something you have not dealt with, and a
+handle that hides it would defeat the point.
+
+The strip sits outside the scrolling list so it never scrolls away, and it shows
+at most five lines with an `N more` count under them: left to grow, new arrivals would
+push what is actually running off the screen. The sessions are still listed
+below under their repository — the strip is a table of contents, not a second
+list, which is why it carries no context bar, diff or subagent rows.
+
 The tab you currently have open gets a thin bar on the left and a faint
 background, which also cancels the dimming so the place you are looking at never
 sinks into the list.

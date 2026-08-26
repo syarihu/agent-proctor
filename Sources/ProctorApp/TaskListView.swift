@@ -17,6 +17,8 @@ struct TaskListView: View {
     /// セッションの乗っていない worktree を押したとき。
     /// 戻る先のタブが無いので、そこへ移動した新しいタブを開く
     var onOpenWorktree: (CollectedWorktree) -> Void
+    /// 要確認から片付けるとき。渡した分だけ台帳の状態まで動く
+    var onClearAttention: ([CollectedTask]) -> Void
 
     /// 文字の大きさはここだけで決める。余白も記号もこれに追従する。
     /// メニューバーから変えられる (Appearance)
@@ -30,11 +32,27 @@ struct TaskListView: View {
         let orgs = byOrg ? orgGroups : []
         let repos = byOrg ? [] : repoGroups
         let limits = rateLimitSummaries
+        // ここも body 1回につき1度だけ。**まとめ方 (org / repo) の外側で数える** —
+        // 手が挙がっているものは、どうまとめていようと最上部に出したい
+        let pending = CollectTasks.awaitingReview(store.tasks)
         return ZStack {
             // 背景のアンビエントグロー（確認待ちや実行中の状態に応じたやわらかな環境光）
             ambientGlow
 
             VStack(spacing: 0) {
+                if !pending.isEmpty {
+                    // 出入りそのものにも動きを付ける。**中の animation は
+                    // 生まれたあとの入れ替えにしか効かない**ので、1件目が現れる回と
+                    // 最後の1件が消える回だけ、パッと出てパッと消えることになる
+                    AttentionInbox(
+                        tasks: pending, base: base, avatars: avatars,
+                        // まとめ方は下の一覧に合わせる。**ここだけ別の束ね方をすると、
+                        // 上で見た並びが下で消えて、同じものを2通りに探すことになる**
+                        mode: byOrg ? .organization : .repository,
+                        unknownTitle: Localized.text("app.group.no_organization"),
+                        onOpen: onOpen, onClear: onClearAttention)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
                 ScrollView {
                     // **worktree だけが残っている状態を「何も無い」と言わない。**
                     // セッションが全部終わったあとこそ、残った作業場を見たい
@@ -79,6 +97,8 @@ struct TaskListView: View {
                     RateLimitFooter(summaries: limits, base: base)
                 }
             }
+            .animation(.spring(response: 0.32, dampingFraction: 0.82),
+                       value: pending.isEmpty)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -568,6 +588,18 @@ private struct TaskRow: View {
                 .font(.system(size: base * 0.8))
                 .foregroundStyle(Palette.dim)
 
+                // 何の承認を待っているか。確認待ちのあいだだけ出る (currentRequest)。
+                // **活動の行とは別に持つ。** どちらも「ツール名: 中身」の形だが、
+                // こちらはまだ実行されていないもので、色でその違いを出す
+                if let request = task.currentRequest {
+                    Text(request)
+                        .font(.system(size: base * 0.75).monospaced())
+                        .foregroundStyle(Palette.waiting)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
                 // いま触っているツール。動いているあいだだけ出る (currentActivity)。
                 // ツールのたびに差し替わるので、文字にはアニメーションを付けない
                 // (1手ごとに動くと目が休まらない)
@@ -962,6 +994,270 @@ enum Palette {
         if percent >= 80 { return removed }
         if percent >= 50 { return Color(red: 1.0, green: 0.718, blue: 0.302) } // #ffb74d
         return dim
+    }
+}
+
+/// サイドバー最上部の新着。**まだ人が見ていないものだけ**を1行ずつ並べる。
+///
+/// 同じセッションは下の一覧にも出ているが、あちらはリポジトリごとに散っていて、
+/// 見出しを畳んでいれば数字にしかならない。まとめ方 (リポジトリ / Organization) に
+/// 関わらず、手が挙がっているものを必ず一番上に置くための場所。
+///
+/// **一覧と一緒に流さないよう ScrollView の外に置く** (下のレートリミットと対の作り)。
+/// 畳む取っ手は付けていない。見れば消えるもの (タブを開けば確認済みになる) なので、
+/// 畳めるようにすると「まだ手を付けていないものを隠す取っ手」になってしまう。
+private struct AttentionInbox: View {
+    /// 出す順は決まったもの (CollectTasks.awaitingReview)。ここでは並べ替えない
+    let tasks: [CollectedTask]
+    let base: CGFloat
+    @ObservedObject var avatars: OrgAvatarStore
+    /// 誰でまとめるか。下の一覧と同じものを渡してもらう
+    let mode: GroupingMode
+    /// 持ち主が読めないまとまりの見出し
+    let unknownTitle: String
+    var onOpen: (CollectedTask) -> Void
+    var onClear: ([CollectedTask]) -> Void
+
+    /// 並べる上限。**ここが伸び続けると下の一覧が押し出される。**
+    /// 新着だけでサイドバーが埋まると、今どこで何が動いているかが見えなくなる
+    private static let limit = 5
+
+    var body: some View {
+        let shown = Array(tasks.prefix(Self.limit))
+        let rest = tasks.count - shown.count
+        // **切ってからまとめる。** 先にまとめて上限を掛けると、まとまりの数と
+        // 出ている行の数が合わなくなり、「他N件」がどこの分なのか言えなくなる
+        let groups = TaskGrouping.pending(shown, by: mode, unknownTitle: unknownTitle)
+        return VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: base * 0.1) {
+                header
+                ForEach(groups) { group in
+                    InboxGroupCaption(group: group, base: base, avatars: avatars)
+                    ForEach(group.tasks) { task in
+                        // 持ち主でまとめているときは、リポジトリ名を行にも出す
+                        // (どの org かは見出しが言うが、その中のどれかは言わない)。
+                        // リポジトリでまとめているときは見出しがそれなので、
+                        // 行にも出すと同じ言葉が2行続く
+                        InboxRow(task: task, base: base,
+                                 showsRepo: mode == .organization,
+                                 onOpen: onOpen, onClear: { onClear([$0]) })
+                    }
+                }
+                // 溢れた分は数だけ伝える。**黙って切ると、上限に当たっていることに
+                // 気づけない** (5件で止まっている一覧を「5件しかない」と読んでしまう)
+                if rest > 0 {
+                    Text(Localized.text("app.inbox.more", rest))
+                        .font(.system(size: base * 0.7))
+                        .foregroundStyle(Palette.dim)
+                        .padding(.horizontal, base * 0.4)
+                }
+            }
+            // 左の余白は下の一覧 (ScrollView) と同じだけ空ける。ここだけ詰まっていると、
+            // 一覧の左端と揃わずに半端に飛び出して見える。
+            // 上はパネルの縁とのあいだ。ここが詰まっていると窓に貼り付いて見える
+            .padding(.horizontal, base * 0.3)
+            .padding(.top, base * 0.8)
+
+            // 区切りだけは端から端まで引く (下のレートリミットと同じ)。
+            // 中身と一緒に内側へ寄せると、線が途中で切れて見える
+            Rectangle()
+                .fill(Color.gray.opacity(0.2))
+                .frame(height: 1)
+                .padding(.top, base * 0.45)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // 増減が目に入るようにする。**新着は「いま増えた」ことまでが情報**なので、
+        // 静かに差し替わると、増えたことに気づけない
+        .animation(.spring(response: 0.35, dampingFraction: 0.8),
+                   value: tasks.map(\.id).joined(separator: ","))
+    }
+
+    /// 見出しと件数。件数の下地は**いちばん急いでいるものの色**にする
+    /// (並びは優先度順なので先頭がそれ)。中身が完了だけなのに橙が付くと、
+    /// 見る前から待たされていると読めてしまう
+    private var header: some View {
+        HStack(spacing: base * 0.3) {
+            Text(Localized.text("app.inbox.title"))
+                .font(.system(size: base * 0.7, weight: .semibold))
+                .foregroundStyle(Palette.dim)
+            Text("\(tasks.count)")
+                .font(.system(size: base * 0.65, weight: .bold).monospacedDigit())
+                .foregroundStyle(Palette.fg)
+                .padding(.horizontal, base * 0.3)
+                .padding(.vertical, base * 0.05)
+                .background(
+                    Capsule().fill(
+                        Palette.status(tasks.first?.displayStatus ?? TaskStatus.waiting)
+                            .opacity(0.35)))
+            Spacer(minLength: 0)
+            // **溢れた分も含めて全部渡す。** 出ていた5行だけが消えて、
+            // 隠れていた分が繰り上がってくるのでは「全部消した」ことにならない
+            ClearButton(base: base, size: base * 0.9,
+                        help: Localized.text("app.inbox.clear_all"),
+                        action: { onClear(tasks) })
+        }
+        .padding(.horizontal, base * 0.4)
+    }
+}
+
+/// 片付けるボタン。見出し (全部) と行 (1件) で同じ形にしてある。
+///
+/// **一覧の ✕ とは別の記号にする。** あちらは台帳から記録ごと外すもので、
+/// こちらは知らせるのをやめるだけ。同じ ✕ にすると、押し間違えたときに
+/// 戻せないほうを引いてしまう。
+///
+/// ほうき (🧹) も試したが戻した。SF Symbols にほうきは無いので絵文字になり、
+/// **絵文字は自前の色を持っているぶん濃さで強弱を付けられない**。
+/// 薄くすれば読めず、濃くすれば主役の行より目立つ
+private struct ClearButton: View {
+    let base: CGFloat
+    let size: CGFloat
+    let help: String
+    var action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Image(systemName: "checkmark.circle")
+            .font(.system(size: size))
+            .foregroundStyle(hovering ? Palette.done : Palette.dim)
+            // 記号そのものは小さいので、当たり判定だけ広げて押しやすくする
+            .padding(base * 0.2)
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            // 行の「開く」と同じ onTapGesture で受ける。**内側のタップが優先される**
+            // ので、押しても行は開かない (一覧の ✕ と同じ形。実機で確かめてある)
+            .onTapGesture(perform: action)
+            .help(help)
+    }
+}
+
+/// 新着のまとまりの見出し。**控えめに出す。**
+///
+/// 出すのは「どこが待っているか」まで。畳む取っ手も内訳の数も付けない
+/// (畳めるようにすると、まだ手を付けていないものを隠す取っ手になる)。
+/// 下の一覧の `OrgHeader` より一段弱くしているのは、ここの主役が
+/// 待たせている行そのものだから。見出しが強いと、数行しか無いのに
+/// 一覧が2つあるように見える。
+private struct InboxGroupCaption: View {
+    let group: PendingGroup
+    let base: CGFloat
+    @ObservedObject var avatars: OrgAvatarStore
+
+    var body: some View {
+        HStack(spacing: base * 0.25) {
+            // 持ち主が分かるならアイコン。**枠は出しっぱなしにしない** ——
+            // リポジトリでまとめているときは絵の当てが無いので、
+            // 頭文字の四角だけが並ぶことになる
+            if group.owner != nil || group.host != nil {
+                OrgAvatar(owner: group.owner, host: group.host, title: group.title,
+                          size: base * 0.8, avatars: avatars)
+            }
+            Text(group.title)
+                .font(.system(size: base * 0.65, weight: .semibold))
+                .foregroundStyle(Palette.dim)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, base * 0.4)
+        .padding(.top, base * 0.3)
+    }
+}
+
+/// 新着の1行。**1行に収める。**
+///
+/// ここは「何が待っているか」の目次で、コンテキストや差分といった中身は
+/// 下の一覧に出ている。同じものを2か所で同じ厚みに描くと、
+/// 一覧が二重に見えて、どちらを読めばよいのか分からなくなる。
+private struct InboxRow: View {
+    let task: CollectedTask
+    let base: CGFloat
+    /// 見出しがリポジトリ名を言っていないときだけ、行にも出す
+    let showsRepo: Bool
+    var onOpen: (CollectedTask) -> Void
+    var onClear: (CollectedTask) -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: base * 0.35) {
+            mark.frame(width: base * 1.1, alignment: .center)
+            VStack(alignment: .leading, spacing: base * 0.1) {
+                HStack(spacing: base * 0.35) {
+                    Text(task.displayName)
+                        .font(.system(size: base * 0.85, weight: .medium))
+                        .foregroundStyle(Palette.status(task.displayStatus))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    // どのリポジトリの話かは、セッション名だけでは分からないことがある。
+                    // 名前より先に削られないよう優先度を上げておく
+                    if showsRepo {
+                        Text(task.repoName)
+                            .font(.system(size: base * 0.7))
+                            .foregroundStyle(Palette.dim)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .layoutPriority(1)
+                    }
+                    Spacer(minLength: base * 0.2)
+                    // 経過と片付けるボタンは同じ場所を分け合う。**枠の幅は固定**で、
+                    // 中身だけ入れ替える。並べて置くと狭い一覧で名前を削ることになり、
+                    // 幅を中身に任せるとホバーのたびに行が伸び縮みする
+                    ZStack(alignment: .trailing) {
+                        if hovering {
+                            ClearButton(base: base, size: base * 0.8,
+                                        help: Localized.text("app.inbox.clear_one"),
+                                        action: { onClear(task) })
+                        } else {
+                            Text(shortAge(task.idleSeconds))
+                                .font(.system(size: base * 0.7).monospacedDigit())
+                                .foregroundStyle(Palette.dim)
+                        }
+                    }
+                    .frame(width: base * 1.6, alignment: .trailing)
+                    .layoutPriority(1)
+                }
+                // 何の承認を待っているか。**ここだけは2行目を許す。**
+                // 手が挙がっていることは記号で分かるが、何を訊かれているかは
+                // 言葉でしか分からず、それが無いとどのみちタブへ行くことになる。
+                // 真ん中を省くのは、頭 (ツール名) と末尾 (対象) の両方を残したいため
+                if let request = task.currentRequest {
+                    Text(request)
+                        .font(.system(size: base * 0.7).monospaced())
+                        .foregroundStyle(Palette.waiting.opacity(0.9))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .padding(.horizontal, base * 0.4)
+        .padding(.vertical, base * 0.25)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: base * 0.3)
+                .fill(hovering ? Palette.hover : Color.clear))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture { onOpen(task) }
+        .help(task.worktree)
+        // 上から差し込まれるように出す。新着が「増えた」ことを動きで伝える
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    /// 印は一覧の行と揃える。**同じ状態を上と下で違う記号にしない**
+    @ViewBuilder
+    private var mark: some View {
+        switch task.displayStatus {
+        case TaskStatus.waiting:
+            Text(TaskStatus.mark(task.displayStatus))
+                .font(.system(size: base * 0.85)).pulsing()
+        case TaskStatus.done:
+            AnimatedCheckmark(size: base * 0.85, color: Palette.done)
+        default:
+            Text(TaskStatus.mark(task.displayStatus)).font(.system(size: base * 0.85))
+        }
     }
 }
 

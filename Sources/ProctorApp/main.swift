@@ -44,6 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.store.forget(id: task.id)
             }, onOpenWorktree: { [weak self] worktree in
                 self?.open(worktree: worktree)
+            }, onClearAttention: { [weak self] tasks in
+                self?.store.clearAttention(ids: tasks.map(\.id))
             }))
         sidebar.onVisibilityChange = { [weak self] visible in
             // 見えていない間は git を起動しない
