@@ -165,7 +165,10 @@ public enum CollectTasks {
     ///
     /// タスク一覧と台帳のグローバルキャッシュの両方から最新値を集め、
     /// セッションが 0 件のときでも前回のレートリミットを常時表示できるようにする。
-    /// また、リセット予定時刻（resetsAt）を過ぎている場合は使用率 0%（回復済み）として計算する。
+    /// ただし、リセット予定時刻 (resetsAt) を過ぎた枠は**出さない** — 明けたあとの
+    /// 実際の使用率はエージェントが次に報告するまで分からないので、
+    /// 0% と言い切るのも古い値を出し続けるのも嘘になる。両方の枠が過ぎていれば
+    /// そのエージェントの行ごと消え、次の報告で戻る。
     public static func summarizedRateLimits(_ tasks: [CollectedTask],
                                            persisted: [String: AgentRateLimits] = LedgerStore.agentRateLimits(),
                                            now: Int = Int(Date().timeIntervalSince1970)) -> [AgentQuotaSummary] {
@@ -181,18 +184,11 @@ public enum CollectTasks {
             }
         }
 
-        // リセット時刻が過ぎていたら自動で回復（0%）計算
+        // リセット時刻を過ぎた枠は落とす
         var adjustedMap: [String: AgentRateLimits] = [:]
         for (agentKey, limits) in map {
-            var adjustedFive = limits.fiveHour
-            if let five = adjustedFive, let reset = five.resetsAt, reset <= now {
-                adjustedFive = RateLimitWindow(usedPercent: 0, resetsAt: nil)
-            }
-            var adjustedWeek = limits.sevenDay
-            if let week = adjustedWeek, let reset = week.resetsAt, reset <= now {
-                adjustedWeek = RateLimitWindow(usedPercent: 0, resetsAt: nil)
-            }
-            let adjusted = AgentRateLimits(fiveHour: adjustedFive, sevenDay: adjustedWeek)
+            let adjusted = AgentRateLimits(fiveHour: live(limits.fiveHour, now: now),
+                                           sevenDay: live(limits.sevenDay, now: now))
             if !adjusted.isEmpty {
                 adjustedMap[agentKey] = adjusted
             }
@@ -223,5 +219,13 @@ public enum CollectTasks {
             let (baseAgent, account) = parseKey(key)
             return AgentQuotaSummary(key: key, agent: baseAgent, account: account, rateLimits: limits)
         }
+    }
+
+    /// まだ有効な枠だけを返す。リセット時刻を過ぎたものは nil (= 出さない)。
+    /// resetsAt が無いものは明ける時刻が分からないだけなので、そのまま残す。
+    private static func live(_ window: RateLimitWindow?, now: Int) -> RateLimitWindow? {
+        guard let window else { return nil }
+        if let reset = window.resetsAt, reset <= now { return nil }
+        return window
     }
 }
