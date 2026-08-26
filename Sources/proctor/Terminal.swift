@@ -41,6 +41,26 @@ enum Terminal {
         return parts.joined(separator: " ")
     }
 
+    /// worktree の状態を (表示用のラベル, ANSI の色) にする。
+    ///
+    /// セッションが乗っているかどうかを最優先で出す。使われている作業場を
+    /// 「取り込み済み」と並べて見せると、消してよさそうに読めてしまう。
+    static func worktreeState(_ worktree: CollectedWorktree) -> (label: String, color: String) {
+        if !worktree.sessions.isEmpty {
+            // **「実行中」とは言わない。** 終わったセッションもタブが開いている限り
+            // 台帳に残るので、ここに数えるのは「その場所を誰かが開いている」まで。
+            // 状態そのものは ls のほうで見るもので、ここで欲しいのは
+            // 「手を出してよい場所か」の判断材料
+            return (Localized.text("cli.worktree.state.sessions", worktree.sessions.count), "36")
+        }
+        if worktree.isMain { return (Localized.text("cli.worktree.state.main"), "0") }
+        if worktree.isPrunable { return (Localized.text("cli.worktree.state.missing"), "31") }
+        if worktree.isLocked { return (Localized.text("cli.worktree.state.locked"), "33") }
+        if worktree.isRemovable { return (Localized.text("cli.worktree.state.removable"), "32") }
+        if worktree.merged { return (Localized.text("cli.worktree.state.merged"), "33") }
+        return (Localized.text("cli.worktree.state.idle"), "2")
+    }
+
     static func age(_ epoch: Int) -> String {
         elapsed(max(0, Int(Date().timeIntervalSince1970) - epoch))
     }

@@ -28,7 +28,7 @@ export PROCTOR_STATE_DIR="$LAB/state"
 scrub() {
     sed -E \
         -e "s#$LAB#<LAB>#g" \
-        -e 's/"(ageSeconds|idleSeconds|createdAt|updatedAt|pid|pidStartedAt|startedAt|lastSeenAt|elapsedSeconds)" : [0-9]+/"\1" : <N>/g' \
+        -e 's/"(ageSeconds|idleSeconds|createdAt|updatedAt|pid|pidStartedAt|startedAt|lastSeenAt|elapsedSeconds|lastCommitAt)" : [0-9]+/"\1" : <N>/g' \
         -e 's/[0-9]+[smhd]$/<AGE>/'
 }
 
@@ -55,6 +55,13 @@ payload() {
     git add README.md; git commit -qm init
     git checkout -qb feature
 
+    # resume したセッションは、最初のプロンプトを送るまで何も飛んでこない。
+    # SessionStart (idle) が無いと、その間ずっと worktree が「誰もいない」に見える
+    say "_touch idle (何もしていないセッションが登録される)"
+    payload s0 "$LAB/work" | "$BIN" _touch idle
+    "$BIN" ls --all
+    payload s0 "$LAB/work" | "$BIN" _touch clear
+
     say "_touch running (セッションが登録される)"
     payload s1 "$LAB/work" | "$BIN" _touch running
     "$BIN" ls --all --json
@@ -73,6 +80,12 @@ payload() {
     echo new > untracked.txt
     "$BIN" ls --all
     "$BIN" ls --all --json | grep -E '"(added|removed|untracked)"'
+
+    # SessionStart は圧縮 (compact) や /clear でも飛ぶ。
+    # 素直に受けると、働いている最中のセッションが待機中に落ちる
+    say "動いているセッションは idle で塗り替えられない"
+    payload s1 "$LAB/work" | "$BIN" _touch idle
+    "$BIN" ls --all --json | grep '"status"'
 
     say "_touch notification (アイドル通知: 何も出さない)"
     payload s1 "$LAB/work" ',"message":"Claude is waiting for your input"' | "$BIN" _touch notification
@@ -277,6 +290,49 @@ PY
 
     say "attach (無いID)"
     "$BIN" attach nope; echo "exit=$?"
+
+    # --- ここから worktree の一覧。セッションではなく場所を数える経路
+    # 使い捨てリポジトリの外側に置く。中に作ると本体の未追跡ファイルとして
+    # 差分に数えられ、何を見ている節なのか分からなくなる
+    git -C "$LAB/work" worktree add -q -b merged-work "$LAB/worktrees/merged" main
+    git -C "$LAB/work" worktree add -q -b spike "$LAB/worktrees/spike" main
+    (cd "$LAB/worktrees/spike" \
+        && echo spike > spike.txt && git add spike.txt && git commit -qm spike \
+        && echo more >> spike.txt)
+
+    say "worktree ls (セッションのある場所と、無い場所が並ぶ)"
+    payload s7 "$LAB/worktrees/spike" | "$BIN" _touch running
+    "$BIN" worktree ls --all
+    "$BIN" worktree ls --all --json
+
+    # ここが worktree の一覧を足した理由。セッションの一覧からは消えるのに
+    # 場所は残るので、残ったものを見る道が要る
+    say "セッションが終わっても worktree は残る (ls からは消える)"
+    payload s7 "$LAB/worktrees/spike" | "$BIN" _touch clear
+    "$BIN" ls --all
+    "$BIN" worktree ls --all
+
+    # 消してよいかの判断は、ここを踏み外すと**控えの無い仕事を捨てる**ことになる。
+    # 鍵の掛かったものと実体を失ったものが候補から外れることを見ておく
+    say "鍵を掛けた worktree と、実体を失った worktree"
+    git -C "$LAB/work" worktree lock "$LAB/worktrees/merged"
+    rm -rf "$LAB/worktrees/spike"
+    "$BIN" worktree ls --all
+    "$BIN" worktree ls --all --json | grep -E '"(name|isLocked|isPrunable|isRemovable)"'
+    git -C "$LAB/work" worktree unlock "$LAB/worktrees/merged"
+
+    say "worktree ls (知らないサブコマンド)"
+    "$BIN" worktree nope; echo "exit=$?"
+
+    say "skill ls"
+    "$BIN" skill ls
+    "$BIN" skill ls --json
+
+    say "skill worktree (冒頭だけ)"
+    "$BIN" skill worktree | head -6
+
+    say "skill (無い名前)"
+    "$BIN" skill nope; echo "exit=$?"
 
     say "ls (最後)"
     "$BIN" ls --all

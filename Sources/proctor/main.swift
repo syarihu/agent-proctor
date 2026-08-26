@@ -36,6 +36,8 @@ do {
     let code: Int32
     switch command {
     case "ls": code = try cmdLs(parsed)
+    case "worktree": code = try cmdWorktree(parsed)
+    case "skill": code = try cmdSkill(parsed)
     case "attach": code = try cmdAttach(parsed)
     case "rm": code = try cmdRm(parsed)
     case "sidebar": code = try cmdSidebar(parsed)
