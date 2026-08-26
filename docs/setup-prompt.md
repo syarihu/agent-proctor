@@ -46,6 +46,7 @@ is ever removed.
 
 | Event | Matcher | Command | Meaning |
 | --- | --- | --- | --- |
+| `SessionStart` | none | `proctor _touch idle` | a session opened here (also on `--resume`) |
 | `UserPromptSubmit` | none | `proctor _touch running` | started working |
 | `PostToolUse` | `*` | `proctor _touch running` | back to running |
 | `Notification` | none | `proctor _touch notification` | possibly waiting for me |
@@ -57,6 +58,13 @@ is ever removed.
 
 Each of these needs the hook JSON passed through on stdin. Claude Code does this
 by default, so you do not need to add any piping yourself.
+
+`SessionStart` is what puts a resumed session on the list before it has done
+anything. Without it, nothing is recorded until the first prompt, and until then
+the worktree it is sitting in looks like nobody is there. It fires on compaction
+and `/clear` as well, so proctor uses `idle` **only to register a session it has
+never seen** — an `idle` for a session already on the list changes nothing, and a
+running session cannot be knocked back by it.
 
 ### Why each one is there (do not drop them)
 
@@ -214,6 +222,7 @@ both by appending to the array.
 
 | Event | Command | Meaning |
 | --- | --- | --- |
+| `SessionStart` | `proctor _touch idle` | a session opened here (also on resume) |
 | `UserPromptSubmit` | `proctor _touch running` | started working |
 | `PostToolUse` | `proctor _touch running` | back to running |
 | `PermissionRequest` | `proctor _touch waiting` | waiting for my answer |
@@ -293,6 +302,43 @@ you had to coexist with existing configuration.
 - **The process cannot be watched.** Claude Code hands `CLAUDE_PID` to its hooks,
   which is how proctor notices the moment a session is gone. Codex does not, so a
   Codex row is cleaned up by expiry (or `proctor rm`) rather than immediately.
+
+## Letting your agent handle worktrees
+
+proctor ships the procedure for creating and cleaning up worktrees, and prints it
+on demand (`proctor skill worktree`). What your agent needs is a single line
+telling it to go and read that. Paste this to have it set up:
+
+---
+
+```
+I use agent-proctor (https://github.com/syarihu/agent-proctor). It ships a guide
+for creating and cleaning up git worktrees, and I want you to follow that guide
+whenever worktrees come up.
+
+Give yourself an entry point so it happens without me asking:
+
+- Claude Code — create `~/.claude/skills/proctor-worktree/SKILL.md`. Its
+  description says it is for creating, listing or cleaning up git worktrees, and
+  its body says, in full: run `proctor skill worktree` and follow what it prints.
+- Codex, Antigravity, anything else — put the same one-line instruction in the
+  instructions file you already read at startup (`~/.codex/AGENTS.md` and so on).
+
+Write the proctor command as an absolute path such as `$HOME/bin/proctor`, for
+the same reason as the hooks.
+
+**Do not copy the text of the guide into that file.** proctor prints it, so a
+copy is a copy that goes stale the next time proctor is updated. The whole point
+is that the entry point never has to change.
+
+Tell me what you created and where.
+```
+
+---
+
+You do not have to set this up at all. In Claude Code, typing
+`! proctor skill worktree` in the conversation runs it right there and drops the
+guide into the context — the same text, without an entry point.
 
 ## Other agents
 

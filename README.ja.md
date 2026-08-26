@@ -87,14 +87,14 @@ Kit が知っているのは「どんな状態があり、どんな記号と名�
 ```
 ProctorKit/
   Model/       データと語彙。I/O を持たない
-               TaskRecord, DiffCounts, CollectedTask, SubagentRun, TaskStatus,
-               TaskID, RateLimits, AgentKind, RepoOrigin
+               TaskRecord, DiffCounts, CollectedTask, CollectedWorktree,
+               SubagentRun, TaskStatus, TaskID, RateLimits, AgentKind, RepoOrigin
   Repository/  外の世界との出入り口。ここだけが台帳・git・環境を触る
                LedgerStore, GitClient, GitHubClient, AvatarCache, ProcessRunner,
-               EnvironmentSource, ProcessLiveness, Paths, AppVersion,
+               EnvironmentSource, ProcessLiveness, Paths, AppVersion, SkillLibrary,
                AntigravityMetadataReader, CodexMetadataReader
   UseCase/     やりたいこと1つに1つ。判断はすべてここが持つ
-               CollectTasks, RecordHookEvent, RecordSessionStats,
+               CollectTasks, CollectWorktrees, RecordHookEvent, RecordSessionStats,
                MarkSessionSeen, ReapClosedSessions, ForgetTask, HookPayload,
                ResolveRepoOrigin, OrganizationGrouping
   Localized    人に見せる言葉。どの層からも要るもので、引くだけで何も決めないので
@@ -144,6 +144,16 @@ UI はシステムの言語に従う。macOS が日本語なら日本語、そ�
   git を起動しない)。数え直しのほうは自分の間隔で回し、加えて状態が変わったときに
   走らせる (差分が正確であってほしいのはそこだから)。活動はツールのたびに変わるので、
   ここで数え直すと1手ごとに worktree の数だけ git が起きてしまう
+- **台帳はセッションだけでなく、見たリポジトリも覚える。ただし粗く。**
+  worktree を探しに行くのはそこだけにしてある（セッションが全部終わったリポジトリは、
+  ほかに手掛かりが残らない）。覚えた時刻を書き直すのは1日に1度まで。
+  台帳の更新時刻はサイドバーが変化を知る合図なので、hook のたびに値が動くと
+  **ツール1回ごとにサイドバーを起こす**ことになり、「変わらなければ書かない」で
+  防いでいるものを自分で壊すことになる
+- **worktree の数え直しは、差分の数え直しよりさらに長い自前の周期で回す。**
+  1件につき git を数回起こす（差分・取り込み済みか・最後のコミット）のに、
+  worktree が増えたり消えたりするのは分単位の出来事。差分と同じ速さで回すと、
+  何も変わっていない一覧のために git が鳴り続ける
 - **サブエージェントの行を消せるのは、その子の `SubagentStop` だけ。**
   子は親のターンより長く生きるので、ターンの終わりでは掃除できない。
   終わりを取りこぼした場合の受け皿は6時間の打ち切り。ただし**動くのは
@@ -215,15 +225,18 @@ scripts/sign-app.sh "/Applications/Agent Proctor.app"
 
 ```bash
 proctor ls              # 一覧（--all で全リポジトリ、--json で機械向け）
+proctor worktree ls     # worktree の一覧。動いていないものも出る（--all、--json）
+proctor skill [名前]    # エージェントに読ませる手引きを出す（名前なしで一覧）
 proctor attach <ID>     # そのセッションのエージェント (claude / agy / codex) を開く（続きから）
 proctor rm <ID>         # 台帳から1件外す（worktree には触らない）
 proctor sidebar         # サイドバー（アプリ）を起動する
 proctor --version       # 版を表示する
 ```
 
-これで全部。**agent-proctor は worktree を作らないし消さない**——用意と後片付けは
-エージェントを動かす側（作者の環境ではスラッシュコマンド）の仕事で、
-こちらは台帳と `git diff` を読むだけ、書くのは台帳だけにしてある。
+これで全部。**アプリも CLI も worktree を作らないし消さない。** 読むのは台帳と
+`git worktree list` と `git diff` だけで、書くのは台帳だけ。代わりに proctor が
+持っているのは**手順のほう**で、`proctor skill worktree` が「どう作り、終わったものを
+どう片付けるか」の手引きを吐く。そこに並ぶ git コマンドを打つのはエージェント。
 
 セッションは hooks が知らせてくれた時点で勝手に並ぶので、手で登録するものは無い。
 サイドバーの行をクリックすると、そのタブが生きていればフォーカスし、
@@ -262,6 +275,82 @@ GitHub に繋がるかは確かめないので、オフラインでもまとめ�
 pid が分からないもの（Claude Code 以外）は今までどおり、最後に変わってから
 24時間で期限切れになる。待たずに片付けたいときは `proctor rm` を使う。
 
+## worktree
+
+セッションは去るが、worktree は残る。最後のセッションが終わると行は一覧から消え、
+ディスクには誰も見ていないディレクトリだけが残る。これが積み上がると、
+何が仕掛かりで何が終わったのか分からなくなる。
+
+```bash
+proctor worktree ls            # いまのリポジトリ
+proctor worktree ls --all      # proctor が見たことのある全リポジトリ
+proctor worktree ls --json     # 同じ内容をエージェント向けに
+```
+
+```
+agent-proctor
+WORKTREE  BRANCH       STATE                     DIFF   IDLE
+work      feature      使用中 (2)                +1 ?1  3m
+spike     spike        誰もいない                +1     2d
+merged    merged-work  終わっている・消してよい         6d
+```
+
+1件ごとに、そこで動いているセッション・未コミットの変更・ブランチが取り込み済みか・
+最後のコミットからどれだけ経ったかが並ぶ。JSON の `isRemovable` は「誰も使っておらず、
+未コミットの変更が無く、取り込み済みで、鍵も掛かっていない」ときだけ true になる。
+
+**見に行くのは、proctor が一度でもセッションを見たリポジトリだけ。** その場所は
+台帳が覚えている——セッションのほうは終われば消えるし、**今週は誰も触っていない
+リポジトリこそ、忘れられた worktree が溜まっている場所**だから。ディスク全体を
+漁ることはしない。覚えているのは新しい順に50件までなので、`--all` が指すのは
+「かつて存在した全部」ではなくその50件。いま自分がいるリポジトリは、
+覚えているかどうかに関わらず必ず見る。
+
+**取り込み済みかどうかは歴史の繋がりで判断するので、squash merge は数えられない。**
+GitHub で squash された PR は繋がりを残さないので `merged` は false のまま。
+手元だけで証明できるのはここまでで、その先は後述の手引きが
+「諦める前に GitHub に聞け」とエージェントに指示している。
+
+サイドバーに出すのは**タブを開いているリポジトリの分だけ**——proctor が
+一度もセッションを見たことのないリポジトリでも、そこにタブがあるなら出す。
+台帳はそれより多くを覚えているが、今日触っていないリポジトリの見出しを並べても、
+待たせているセッションを下へ押しやるだけだから。全部さらうのは
+`proctor worktree ls --all` の仕事。
+
+「そのリポジトリにタブがある」とみなすのは、**タブの現在地がその worktree の中にある**か、
+**そのタブで動いているセッションがそこのものである**とき。iTerm2 が答えるのは
+シェルの現在地なので、ホームで起こしたエージェントのタブは「ホーム」と答える。
+現在地だけで判じると、いちばん働いているリポジトリほど消えてしまう。
+
+そもそも iTerm2 に聞けないとき（起動していない・オートメーションを許可していない）は、
+**絞り込みそのものを見送る**。答えの無い問いを「タブが1つも無い」と受け取って
+一覧を空にしても、何も分からないから。
+
+残った worktree はリポジトリの下に**畳んだ1行**として出る
+（*セッションがない worktree: 3 · 1 片付けられる*）。放置されたディレクトリの山で、
+**待たせているセッションを埋めてはいけない**からだ。開くと1件ずつ行になり、
+押すとその場所に着く——既にそこを開いているタブがあればそのタブへ、無ければ
+そこへ移動した新しいタブが開く。**ただ `cd` しただけのタブは台帳からは見えない**
+（台帳が知っているのはエージェントのセッションだけ）ので、押すたびにタブが増えないよう、
+iTerm2 に「どのタブが今どこにいるか」を聞いてから開く。エージェントは起こさない——
+そこで何を始めるかは押した人が決める。
+
+## エージェントに渡す手引き
+
+worktree を作るのも、終わったものを片付けるのもエージェントの仕事。
+その手順は proctor が同梱している。
+
+```bash
+proctor skill ls          # どんな手引きがあるか
+proctor skill worktree    # 1つ出す（エージェントが読んで従う）
+```
+
+**本文をエージェントの設定に置かず proctor が持っている**ので、proctor を新しくすれば
+手引きも一斉に新しくなる。エージェント側に置くのは「このコマンドを実行して、
+出てきたものに従う」の一行だけで、それをどこに置くかは
+[セットアッププロンプト](docs/setup-prompt.ja.md)が面倒を見る。何も設定しなくても、
+Claude Code なら会話に `! proctor skill worktree` と打てばその場で本文が入る。
+
 ## エージェントとの連携
 
 **入れただけでは一覧は空のまま。** agent-proctor は台帳を読んで表示するだけの受け身の道具で、
@@ -277,7 +366,7 @@ hooks から呼ばれるのは次の3つ。人が打つものではないので�
 
 | コマンド | 呼ぶ側 | 中身 |
 | --- | --- | --- |
-| `proctor _touch <状態>` | hooks | running / waiting / done / failed / clear / notification |
+| `proctor _touch <状態>` | hooks | idle / running / waiting / done / failed / clear / notification |
 | `proctor _subagent start\|stop` | hooks | サブエージェントの出入り (1体ずつ、または数) |
 | `proctor _stats` | statusline | セッション名・モデル・コンテキスト使用率 |
 
@@ -289,6 +378,12 @@ Codex 自身が残している記録から proctor が読み取る。
 端末のタブに付けたタイトルなどを hooks が payload に `tab_title` として乗せれば、
 エージェントが会話から起こした名前より先に出る (空文字を渡すと外れる。キーを渡さなければそのまま)。
 「この作業はこれ」と人が決めた名前のほうが当てになるので、そちらを立てている。
+
+`idle` だけ毛色が違う。**セッションがそこで開いたが、まだ何もしていない**という意味で、
+`--resume` したときに `SessionStart` が知らせてくるのがこれ。使うのは
+**まだ知らないセッションを登録するときだけ**。既に一覧に居るセッションに届いても何も変えない
+——同じフックは会話の圧縮や `/clear` でも飛ぶので、働いている最中のセッションが
+これで待機中に落ちてはいけないから。
 
 `_touch` は**記録した状態を stdout に返す**。呼び出し側が「結局どうなったか」を
 使えるようにするため（タブの色を変えるなど）。

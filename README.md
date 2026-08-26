@@ -94,14 +94,14 @@ exist and what symbol and name to call them by.
 ```
 ProctorKit/
   Model/       Data and vocabulary. No I/O
-               TaskRecord, DiffCounts, CollectedTask, SubagentRun, TaskStatus,
-               TaskID, RateLimits, AgentKind, RepoOrigin
+               TaskRecord, DiffCounts, CollectedTask, CollectedWorktree,
+               SubagentRun, TaskStatus, TaskID, RateLimits, AgentKind, RepoOrigin
   Repository/  The only door to the outside: the ledger, git and the environment
                LedgerStore, GitClient, GitHubClient, AvatarCache, ProcessRunner,
-               EnvironmentSource, ProcessLiveness, Paths, AppVersion,
+               EnvironmentSource, ProcessLiveness, Paths, AppVersion, SkillLibrary,
                AntigravityMetadataReader, CodexMetadataReader
   UseCase/     One per thing you want to do. Every decision lives here
-               CollectTasks, RecordHookEvent, RecordSessionStats,
+               CollectTasks, CollectWorktrees, RecordHookEvent, RecordSessionStats,
                MarkSessionSeen, ReapClosedSessions, ForgetTask, HookPayload,
                ResolveRepoOrigin, OrganizationGrouping
   Localized    The words shown to people. Outside the three layers because
@@ -155,6 +155,17 @@ in the other language. `scripts/build-app.sh` copies both `.lproj` into
   because that is the moment the numbers are worth being exact. The activity
   line changes on every tool call, so recounting there would spawn git once per
   tool, per worktree
+- **The ledger remembers which repositories it has seen, and does so coarsely.**
+  Worktrees are only ever looked for in those, since a repository whose sessions
+  have all ended keeps its row nowhere else. The time on that memory is rewritten
+  at most once a day: the ledger's modification time is the signal the sidebar
+  watches, so a value that moved on every hook would wake it on every tool call —
+  the very thing the no-change-no-write rule exists to prevent
+- **Worktrees are counted on an interval of their own, slower than the diff
+  recount.** Reading one costs a handful of git invocations (the diff, the merge
+  check, the last commit), and worktrees appear and disappear on the scale of
+  minutes — counting them as often as the diff numbers would leave git running
+  constantly for a list that had not changed
 - **A subagent row is only ever removed by its own `SubagentStop`.** The end of
   the parent's turn cannot clean them up, because children outlive it. A stop
   that never arrives is caught by a six-hour cutoff — but that cutoff only runs
@@ -231,16 +242,19 @@ then on.
 
 ```bash
 proctor ls              # list (--all for every repository, --json for machines)
+proctor worktree ls     # list the worktrees, running or not (--all, --json)
+proctor skill [name]    # print a guide for your agent to follow (no name lists them)
 proctor attach <id>     # open the agent (claude / agy / codex) for that session, resuming the conversation
 proctor rm <id>         # drop one row from the ledger (the worktree is left alone)
 proctor sidebar         # launch the sidebar app
 proctor --version       # print the version
 ```
 
-That is the whole surface. **agent-proctor never creates or removes a worktree**
-— setting one up and cleaning it up afterwards belongs to whatever drives your
-agents (a slash command or skill, in the author's case). It reads nothing but
-the ledger and `git diff`, and writes nothing but the ledger.
+That is the whole surface. **The app and the CLI never create or remove a
+worktree.** They read the ledger, `git worktree list` and `git diff`, and write
+nothing but the ledger. What proctor does carry is the procedure: `proctor skill
+worktree` prints the guide your agent follows to make one and to sweep the
+finished ones away, and every git command in it is run by the agent.
 
 Sessions appear on their own as soon as your hooks report them; there is nothing
 to register by hand. Clicking a row in the sidebar focuses that tab if it is
@@ -285,6 +299,85 @@ works whatever terminal you use. Sessions whose pid is unknown (anything other
 than Claude Code) fall back to the old rule: they expire 24 hours after their
 last change, and `proctor rm` is there if you would rather not wait.
 
+## Worktrees
+
+Sessions come and go; worktrees stay. When the last session in one ends, its row
+leaves the list and what remains on disk is a directory nobody is looking at any
+more. Enough of those and you have lost track of what is still in flight.
+
+```bash
+proctor worktree ls            # this repository
+proctor worktree ls --all      # every repository proctor has seen
+proctor worktree ls --json     # the same facts, for an agent to read
+```
+
+```
+agent-proctor
+WORKTREE  BRANCH       STATE                 DIFF   IDLE
+work      feature      in use (2)            +1 ?1  3m
+spike     spike        nobody here           +1     2d
+merged    merged-work  done, safe to remove         6d
+```
+
+Each one comes with the sessions running in it, its uncommitted changes, whether
+its branch has been merged, and how long it has been since its last commit.
+`isRemovable` in the JSON is true when nothing is running there, nothing is
+uncommitted, the branch is merged and it is not locked.
+
+**Only repositories proctor has already seen a session in are visited.** The
+ledger remembers those paths, because the sessions themselves leave — and the
+repository nobody has touched this week is exactly where the forgotten worktrees
+are. Nothing goes looking around your disk. That memory holds the 50 most
+recently seen, so `--all` means those rather than every repository that ever
+existed; the repository you are standing in is always looked at, remembered or
+not.
+
+**Merging is proved by ancestry, so a squash merge does not count.** A pull
+request squashed on GitHub leaves no ancestry behind and `merged` stays false.
+That is as far as anything local can prove; the guide below has the agent ask
+GitHub before giving up on a branch.
+
+In the sidebar this list is kept to **repositories you have a tab open in** —
+including one proctor has never seen a session in, as long as your tab is in it.
+The ledger remembers more than that, and a heading for a repository you are not
+working in today would only push down the session that is waiting for you;
+sweeping everything is what `proctor worktree ls --all` is for.
+
+A tab counts as being in a repository when its current directory is inside one of
+its worktrees, **or when the session running in that tab belongs to it**. iTerm2
+reports the shell's directory, so a tab where the agent was started from your home
+directory says *home* — going by the directory alone would hide the repository you
+are working in hardest. And when iTerm2 cannot be asked at all — it is not
+running, or automation has not been allowed — **the filter is lifted rather than
+applied to an empty answer**, because a list that empties itself over a question
+nobody answered tells you nothing.
+
+The leftover worktrees sit under their repository as one folded
+line — *worktrees with no session: 3 · 1 can go* — because a pile of abandoned directories
+must never bury the session that is waiting for you. Open it and each gets a row;
+click a row and you land in that directory — the tab already sitting there if
+there is one, and a new tab moved into it otherwise. **A tab that is merely
+`cd`-ed somewhere is invisible to the ledger**, which only knows agent sessions,
+so proctor asks iTerm2 where each of its tabs is rather than piling up a new tab
+on every click. Nothing is started for you: what to do there is yours to decide.
+
+## Guides for your agent
+
+Creating a worktree and sweeping it up afterwards is the agent's job. The
+procedure for it ships with proctor:
+
+```bash
+proctor skill ls          # which guides there are
+proctor skill worktree    # print one, for an agent to follow
+```
+
+**The text lives in proctor rather than in your agent's configuration**, so
+updating proctor updates it everywhere at once. What goes into the agent is a
+single line telling it to run the command and follow what comes back, and
+[the setup prompt](docs/setup-prompt.md) puts that line in the right place for
+the agent you use. With no setup at all, typing `! proctor skill worktree` in
+Claude Code drops the guide straight into the conversation.
+
 ## Wiring up your agent
 
 **Installing it is not enough — the list stays empty.** agent-proctor is a passive tool
@@ -302,7 +395,7 @@ not listed in the help. All of them read the hook JSON from stdin.
 
 | Command | Caller | Purpose |
 | --- | --- | --- |
-| `proctor _touch <status>` | hooks | running / waiting / done / failed / clear / notification |
+| `proctor _touch <status>` | hooks | idle / running / waiting / done / failed / clear / notification |
 | `proctor _subagent start\|stop` | hooks | subagents (one row each, or a count) |
 | `proctor _stats` | statusline | session name, model, context usage |
 
@@ -316,6 +409,12 @@ terminal tab, say — into the payload as `tab_title`, and it wins over whatever
 agent derived from the conversation (an empty string drops it; leaving the key out
 keeps what is there). What someone decided this piece of work is called tends to
 beat a summary of the chat.
+
+`idle` is the odd one out: it means *a session opened here and has not done
+anything yet*, which is what `SessionStart` reports on a `--resume`. It only ever
+**registers a session proctor has never seen**. Sending it for a session already
+on the list changes nothing, because that same hook also fires on compaction and
+`/clear`, and a session that is working must not be knocked back to idle by it.
 
 `_touch` **prints the status it recorded to stdout** so the caller can use what
 actually happened (to set a tab color, for example).

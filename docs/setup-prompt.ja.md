@@ -41,6 +41,7 @@ proctor のコマンドは `$HOME/bin/proctor` のように絶対パスで書い
 
 | イベント | matcher | コマンド | 意味 |
 | --- | --- | --- | --- |
+| `SessionStart` | なし | `proctor _touch idle` | ここでセッションが開いた（`--resume` でも飛ぶ） |
 | `UserPromptSubmit` | なし | `proctor _touch running` | 動き出した |
 | `PostToolUse` | `*` | `proctor _touch running` | 実行中に戻す |
 | `Notification` | なし | `proctor _touch notification` | 確認待ちかもしれない |
@@ -52,6 +53,13 @@ proctor のコマンドは `$HOME/bin/proctor` のように絶対パスで書い
 
 いずれも stdin にフックの JSON がそのまま渡る必要があります。
 Claude Code は既定でそうするので、パイプなどを自分で足す必要はありません。
+
+`SessionStart` は、**再開したセッションを、まだ何もしていないうちから一覧に載せる**ための
+ものです。これが無いと最初のプロンプトを送るまで何も記録されず、そのあいだ、
+そのセッションがいる worktree は「誰もいない」ように見えます。
+このフックは会話の圧縮や `/clear` でも飛ぶので、proctor は `idle` を
+**まだ知らないセッションを登録するときにしか使いません**。既に一覧に居るセッションに
+`idle` が届いても何も変わらないので、動いているセッションが待機中に落ちることはありません。
 
 ### それぞれの理由 (省くと壊れるので消さないでください)
 
@@ -202,6 +210,7 @@ agent-proctor (https://github.com/syarihu/agent-proctor) と連携するよう�
 
 | イベント | コマンド | 意味 |
 | --- | --- | --- |
+| `SessionStart` | `proctor _touch idle` | ここでセッションが開いた（再開でも飛ぶ） |
 | `UserPromptSubmit` | `proctor _touch running` | 動き出した |
 | `PostToolUse` | `proctor _touch running` | 実行中に戻す |
 | `PermissionRequest` | `proctor _touch waiting` | こちらの返事待ち |
@@ -279,6 +288,42 @@ Codex を新しく起動してください。新しいフックを信頼する�
 - **プロセスを見張れない。** Claude Code は `CLAUDE_PID` をフックに渡してくれるので
   proctor はセッションが消えた瞬間に気付けるが、Codex は渡してこない。
   Codex の行は即座にではなく、期限切れ（または `proctor rm`）で片付く。
+
+## worktree の世話をエージェントに任せる
+
+worktree を作る手順も、終わったものを片付ける手順も proctor が同梱していて、
+`proctor skill worktree` で吐き出せる。エージェント側に要るのは
+「それを読みに行け」の一行だけ。次を貼れば用意してくれる。
+
+---
+
+```
+agent-proctor (https://github.com/syarihu/agent-proctor) を使っています。
+worktree を作る・片付けるための手引きが同梱されているので、worktree の話が出たら
+その手引きに従ってほしいです。
+
+こちらから言わなくてもそうなるように、入口を作ってください。
+
+- Claude Code … `~/.claude/skills/proctor-worktree/SKILL.md` を作る。
+  description は「git worktree を作る・一覧する・片付けるとき」に当たる内容にし、
+  本文は「`proctor skill worktree` を実行して、出力に従う」だけにする
+- Codex / Antigravity / その他 … 起動時に読んでいる指示ファイル
+  （`~/.codex/AGENTS.md` など）に同じ一行を足す
+
+proctor のコマンドは hooks と同じ理由で `$HOME/bin/proctor` のような絶対パスで書いて
+ください。
+
+**手引きの本文をそのファイルに写さないでください。** 本文は proctor が出すものなので、
+写すと proctor を更新した次の日から古い写しに従うことになります。入口を書き換えずに
+済ませるのが目的です。
+
+何をどこに作ったか教えてください。
+```
+
+---
+
+そもそも設定しなくてもよい。Claude Code なら会話に
+`! proctor skill worktree` と打てばその場で実行され、同じ本文が文脈に入る。
 
 ## 他のエージェントとの連携
 
