@@ -34,6 +34,9 @@ agent-proctor (https://github.com/syarihu/agent-proctor) と連携するよう�
 
 1. `~/.gemini/config/hooks.json`（または `.agents/hooks.json`）に以下のフックを用意してください。
    Antigravity のフックは stdout に JSON を期待するため、`proctor _touch` には `--json` フラグを付けてください。
+   proctor は絶対パスで書いてください——`command -v proctor` で調べて、その値を使います
+   （表は `$HOME/bin/proctor` を前提にしています）。フックの実行環境では
+   その場所が PATH に乗らないことがあります。
 
 | イベント | matcher | コマンド | 意味 |
 | --- | --- | --- | --- |

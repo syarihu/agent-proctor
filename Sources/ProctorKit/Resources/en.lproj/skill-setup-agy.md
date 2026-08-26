@@ -35,6 +35,9 @@ agent-proctor is not installed — stop there and tell me.
 
 1. Add lifecycle hooks to `~/.gemini/config/hooks.json` (or `.agents/hooks.json`).
    Antigravity hooks expect JSON on stdout, so pass the `--json` flag to `proctor _touch`.
+   Write proctor as an absolute path — run `command -v proctor` and use what it
+   says; the table assumes `$HOME/bin/proctor`. The hook environment does not
+   always have that directory on PATH.
 
 | Event | Matcher | Command | Meaning |
 | --- | --- | --- | --- |

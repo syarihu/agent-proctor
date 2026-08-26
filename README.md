@@ -226,6 +226,17 @@ scripts/sign-app.sh "/Applications/Agent Proctor.app"
 
 `VERSION` holds the version string, and it is the only place it is written.
 
+**Installing over a running copy does not replace the one that is running.**
+Quit Agent Proctor and open it again afterwards. The CLI needs nothing: every
+invocation reads the bundle it is linked to, which is also where the guides
+`proctor skill` prints come from — updating proctor updates them, and an agent
+pointed at the command rather than at a copy of the text follows along.
+
+`~/bin/proctor` is a symlink into the bundle, so the copy that link points at is
+the one your hooks call and the one whose guides you read. Keep a single install:
+with two of them around, whichever comes first on PATH answers, and the other one
+answers with older text.
+
 On first launch macOS asks for permission to control iTerm2 — allow it.
 **It only ever asks once.** If you refuse, it will not ask again: open
 *Settings…* from the menu bar, and the *Permission* section will take you to the

@@ -30,11 +30,12 @@ Add the following hooks and statusLine to `~/.claude/settings.json`.
 **Do not remove any existing configuration.** If another hook is already
 registered for the same event, keep both by appending to the array.
 
-Write the proctor command as an absolute path such as `$HOME/bin/proctor`.
-The hook execution environment does not always have ~/bin on PATH, and relying on
-PATH makes this silently fail here only. Also guard the call with
-`[ -x "$HOME/bin/proctor" ] &&` so that Claude Code does not error out if proctor
-is ever removed.
+Write the proctor command as an absolute path — run `command -v proctor` to find
+where it actually is and use that; the table below assumes `$HOME/bin/proctor`.
+The hook execution environment does not always have that directory on PATH, and
+relying on PATH makes this silently fail here only. Also guard the call with
+`[ -x "<path>" ] &&` so that Claude Code does not error out if proctor is ever
+removed.
 
 | Event | Matcher | Command | Meaning |
 | --- | --- | --- | --- |
