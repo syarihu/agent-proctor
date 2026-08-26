@@ -231,6 +231,14 @@ diff -u /tmp/proctor-baseline/{before,after}.txt
 
 ## インストール
 
+### Homebrew（推奨）
+
+```bash
+brew install syarihu/tap/agent-proctor
+```
+
+### ソースからビルド
+
 ```bash
 scripts/create-signing-cert.sh   # 初回だけ。ローカル署名用の証明書を作る
 scripts/install.sh               # /Applications に入れ、~/bin/proctor を張る

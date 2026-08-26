@@ -256,6 +256,14 @@ never touched.
 
 ## Install
 
+### Homebrew (recommended)
+
+```bash
+brew install syarihu/tap/agent-proctor
+```
+
+### From source
+
 ```bash
 scripts/create-signing-cert.sh   # once. Creates a local code signing certificate
 scripts/install.sh               # installs to /Applications and links ~/bin/proctor
