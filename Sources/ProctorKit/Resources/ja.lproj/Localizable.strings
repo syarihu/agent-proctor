@@ -26,7 +26,7 @@
 "error.task_id.exhausted" = "ID を採番できません";
 
 /* proctor --help。行の並びがそのまま画面に出る */
-"cli.usage" = "使い方: proctor <コマンド> [オプション]\n\nworktree で働くコーディングエージェントを見張り、手が挙がったら知らせる。\n\n  ls             動いているエージェントの一覧\n                   --all              全リポジトリを対象にする\n                   --json             JSON で出す (AI・サイドバー向け)\n  worktree ls    worktree の一覧 (動いていないものも出る)\n                   --all              全リポジトリを対象にする\n                   --json             JSON で出す (AI 向け)\n  skill [名前]   エージェントに読ませる手引きを出す (名前なしで一覧)\n  attach <ID>    そのセッションのエージェント (claude / agy / codex) を開く (続きから)\n  rm <ID>        台帳から1件外す (worktree には触らない)\n  sidebar        iTerm2 に吸着するサイドバー (Agent Proctor.app) を起動する\n  --version      版を表示する\n\n自分で worktree を作ったり片付けたりはしない。あるものを見せるところまでで、\nその先の手順は `skill worktree` がエージェントに渡す。";
+"cli.usage" = "使い方: proctor <コマンド> [オプション]\n\nworktree で働くコーディングエージェントを見張り、手が挙がったら知らせる。\n\n  ls             動いているエージェントの一覧\n                   --all              全リポジトリを対象にする\n                   --json             JSON で出す (AI・サイドバー向け)\n  worktree ls    worktree の一覧 (動いていないものも出る)\n                   --all              全リポジトリを対象にする\n                   --json             JSON で出す (AI 向け)\n  skill [名前]   作業中の手順をエージェントに読ませる (名前なしで一覧)\n  setup [相手]   proctor の繋ぎ方を出す (名前なしで一覧)\n  attach <ID>    そのセッションのエージェント (claude / agy / codex) を開く (続きから)\n  rm <ID>        台帳から1件外す (worktree には触らない)\n  sidebar        iTerm2 に吸着するサイドバー (Agent Proctor.app) を起動する\n  --version      版を表示する\n\n自分で worktree を作ったり片付けたりはしない。あるものを見せるところまでで、\nその先の手順は `skill worktree` がエージェントに渡す。";
 
 "cli.unknown_command" = "知らないコマンドです: %@";
 "cli.outside_repo" = "git リポジトリの外なので、すべてのセッションを表示します";
@@ -50,6 +50,8 @@
 "cli.error.app_launch_failed" = "Agent Proctor.app を起動できませんでした";
 /* %1$@ は渡された名前、%2$@ は使える名前の一覧 */
 "cli.error.unknown_skill" = "そんな手引きはありません: %1$@ (使えるのは %2$@)";
+/* %1$@ は渡されたエージェント名、%2$@ は繋ぎ方のある相手の一覧 */
+"cli.error.unknown_setup" = "そのエージェントの繋ぎ方はありません: %1$@ (使えるのは %2$@)";
 "cli.error.unknown_subcommand" = "知らないサブコマンドです: %@";
 
 /* proctor worktree ls の STATE 列。何をしてよい場所なのかが分かる言葉にする */
@@ -62,20 +64,23 @@
 "cli.worktree.state.missing" = "実体なし";
 
 "cli.skill.hint" = "読むには: proctor skill <名前>";
+"cli.setup.hint" = "読むには: proctor setup <相手>";
 
-/* 同梱の手引き。proctor skill ls に出る */
+/* 同梱の手順書。proctor skill ls に出る */
 "skill.worktree.title" = "git worktree を作る・片付ける";
 "skill.worktree.summary" = "worktree の名前・作り方・片付け方";
-"skill.setup-claude.title" = "Claude Code と proctor を繋ぐ";
-"skill.setup-claude.summary" = "Claude Code の hooks・statusLine・worktree の入口";
-"skill.setup-agy.title" = "Antigravity と proctor を繋ぐ";
-"skill.setup-agy.summary" = "Antigravity (agy) の hooks と statusLine";
-"skill.setup-codex.title" = "Codex と proctor を繋ぐ";
-"skill.setup-codex.summary" = "Codex の hooks と、そこでは見えないもの";
-"skill.setup-other.title" = "その他のエージェントと proctor を繋ぐ";
-"skill.setup-other.summary" = "手引きの無いエージェントで、hook が何を送ればよいか";
-"skill.setup-all.title" = "エージェントと proctor を繋ぐ";
-"skill.setup-all.summary" = "繋ぎ方の手引きをまとめて出す";
+
+/* 繋ぎ方の手引き。proctor setup ls に出る */
+"setup.claude.title" = "Claude Code と proctor を繋ぐ";
+"setup.claude.summary" = "Claude Code の hooks・statusLine・worktree の入口";
+"setup.agy.title" = "Antigravity と proctor を繋ぐ";
+"setup.agy.summary" = "Antigravity (agy) の hooks と statusLine";
+"setup.codex.title" = "Codex と proctor を繋ぐ";
+"setup.codex.summary" = "Codex の hooks と、そこでは見えないもの";
+"setup.other.title" = "その他のエージェントと proctor を繋ぐ";
+"setup.other.summary" = "手引きの無いエージェントで、hook が何を送ればよいか";
+"setup.all.title" = "エージェントと proctor を繋ぐ";
+"setup.all.summary" = "繋ぎ方の手引きをまとめて出す";
 
 /* メニューバー。押したら何が起きるかを書く (macOS の流儀) */
 "app.menu.show_sidebar" = "サイドバーを表示";

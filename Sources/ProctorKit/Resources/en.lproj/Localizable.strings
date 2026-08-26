@@ -26,7 +26,7 @@
 "error.task_id.exhausted" = "Cannot assign an ID";
 
 /* proctor --help。行の並びがそのまま画面に出る */
-"cli.usage" = "Usage: proctor <command> [options]\n\nWatches coding agents working in worktrees and tells you when one raises its hand.\n\n  ls             list the agents that are running\n                   --all              cover every repository\n                   --json             print JSON (for AI and the sidebar)\n  worktree ls    list the worktrees, running or not\n                   --all              cover every repository\n                   --json             print JSON (for AI)\n  skill [NAME]   print a guide for your agent to follow (no name lists them)\n  attach <ID>    open that session's agent (claude / agy / codex), resuming it\n  rm <ID>        drop one entry from the ledger (the worktree is left alone)\n  sidebar        launch the sidebar that clings to iTerm2 (Agent Proctor.app)\n  --version      print the version\n\nIt neither creates nor cleans up worktrees itself. It shows what is there, and\n`skill worktree` hands your agent the procedure for the rest.";
+"cli.usage" = "Usage: proctor <command> [options]\n\nWatches coding agents working in worktrees and tells you when one raises its hand.\n\n  ls             list the agents that are running\n                   --all              cover every repository\n                   --json             print JSON (for AI and the sidebar)\n  worktree ls    list the worktrees, running or not\n                   --all              cover every repository\n                   --json             print JSON (for AI)\n  skill [NAME]   print a procedure for your agent to follow (no name lists them)\n  setup [AGENT]  print how to wire proctor up (no name lists the agents)\n  attach <ID>    open that session's agent (claude / agy / codex), resuming it\n  rm <ID>        drop one entry from the ledger (the worktree is left alone)\n  sidebar        launch the sidebar that clings to iTerm2 (Agent Proctor.app)\n  --version      print the version\n\nIt neither creates nor cleans up worktrees itself. It shows what is there, and\n`skill worktree` hands your agent the procedure for the rest.";
 
 "cli.unknown_command" = "unknown command: %@";
 "cli.outside_repo" = "Not in a git repository, so every session is listed";
@@ -50,6 +50,8 @@
 "cli.error.app_launch_failed" = "Could not launch Agent Proctor.app";
 /* %1$@ は渡された名前、%2$@ は使える名前の一覧 */
 "cli.error.unknown_skill" = "No such guide: %1$@ (available: %2$@)";
+/* %1$@ は渡されたエージェント名、%2$@ は繋ぎ方のある相手の一覧 */
+"cli.error.unknown_setup" = "No such wiring guide: %1$@ (available: %2$@)";
 "cli.error.unknown_subcommand" = "unknown subcommand: %@";
 
 /* proctor worktree ls の STATE 列。何をしてよい場所なのかが分かる言葉にする */
@@ -62,20 +64,23 @@
 "cli.worktree.state.missing" = "gone";
 
 "cli.skill.hint" = "Read one with: proctor skill <name>";
+"cli.setup.hint" = "Read one with: proctor setup <agent>";
 
-/* 同梱の手引き。proctor skill ls に出る */
+/* 同梱の手順書。proctor skill ls に出る */
 "skill.worktree.title" = "Creating and cleaning up git worktrees";
 "skill.worktree.summary" = "how worktrees are named, created and swept up here";
-"skill.setup-claude.title" = "Wiring proctor up to Claude Code";
-"skill.setup-claude.summary" = "hooks, statusLine and the worktree entry point for Claude Code";
-"skill.setup-agy.title" = "Wiring proctor up to Antigravity";
-"skill.setup-agy.summary" = "hooks and statusLine for Antigravity (agy)";
-"skill.setup-codex.title" = "Wiring proctor up to Codex";
-"skill.setup-codex.summary" = "hooks for Codex, and what proctor cannot see there";
-"skill.setup-other.title" = "Wiring proctor up to any other agent";
-"skill.setup-other.summary" = "what a hook has to send for an agent proctor has no guide for";
-"skill.setup-all.title" = "Wiring proctor up to your agent";
-"skill.setup-all.summary" = "every wiring guide at once";
+
+/* 繋ぎ方の手引き。proctor setup ls に出る */
+"setup.claude.title" = "Wiring proctor up to Claude Code";
+"setup.claude.summary" = "hooks, statusLine and the worktree entry point for Claude Code";
+"setup.agy.title" = "Wiring proctor up to Antigravity";
+"setup.agy.summary" = "hooks and statusLine for Antigravity (agy)";
+"setup.codex.title" = "Wiring proctor up to Codex";
+"setup.codex.summary" = "hooks for Codex, and what proctor cannot see there";
+"setup.other.title" = "Wiring proctor up to any other agent";
+"setup.other.summary" = "what a hook has to send for an agent proctor has no guide for";
+"setup.all.title" = "Wiring proctor up to your agent";
+"setup.all.summary" = "every wiring guide at once";
 
 /* メニューバー。押したら何が起きるかを書く (macOS の流儀) */
 "app.menu.show_sidebar" = "Show Sidebar";

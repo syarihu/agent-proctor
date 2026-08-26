@@ -100,10 +100,9 @@ ledger altogether.
 A row that is waiting also carries **what it is waiting for** — `Bash: rm -rf
 build`, the command sitting in the permission prompt — in the strip and in the
 list below. That takes one more hook, `PermissionRequest`, which fires the moment
-permission is asked and carries the tool call with it (`proctor skill
-setup-claude` has the wiring). `Notification` on its own knows only that
-*something* was asked, and hears about it only once the prompt has waited about
-six seconds.
+permission is asked and carries the tool call with it (`proctor setup claude`
+has the wiring). `Notification` on its own knows only that *something* was
+asked, and hears about it only once the prompt has waited about six seconds.
 
 Inside the strip the lines are grouped the same way the list below is — under a
 small caption naming the organization (with its avatar) or the repository — so
@@ -137,11 +136,13 @@ exist and what symbol and name to call them by.
 ProctorKit/
   Model/       Data and vocabulary. No I/O
                TaskRecord, DiffCounts, CollectedTask, CollectedWorktree,
-               SubagentRun, TaskStatus, TaskID, RateLimits, AgentKind, RepoOrigin
+               SubagentRun, TaskStatus, TaskID, RateLimits, AgentKind, RepoOrigin,
+               Guide
   Repository/  The only door to the outside: the ledger, git and the environment
                LedgerStore, GitClient, GitHubClient, AvatarCache, ProcessRunner,
-               EnvironmentSource, ProcessLiveness, Paths, AppVersion, SkillLibrary,
-               AntigravityMetadataReader, CodexMetadataReader
+               EnvironmentSource, ProcessLiveness, Paths, AppVersion,
+               SkillLibrary, SetupLibrary, AntigravityMetadataReader,
+               CodexMetadataReader
   UseCase/     One per thing you want to do. Every decision lives here
                CollectTasks, CollectWorktrees, RecordHookEvent, RecordSessionStats,
                MarkSessionSeen, ReapClosedSessions, ForgetTask, HookPayload,
@@ -271,8 +272,9 @@ scripts/sign-app.sh "/Applications/Agent Proctor.app"
 **Installing over a running copy does not replace the one that is running.**
 Quit Agent Proctor and open it again afterwards. The CLI needs nothing: every
 invocation reads the bundle it is linked to, which is also where the guides
-`proctor skill` prints come from — updating proctor updates them, and an agent
-pointed at the command rather than at a copy of the text follows along.
+`proctor skill` and `proctor setup` print come from — updating proctor updates
+them, and an agent pointed at the command rather than at a copy of the text
+follows along.
 
 `~/bin/proctor` is a symlink into the bundle, so the copy that link points at is
 the one your hooks call and the one whose guides you read. Keep a single install:
@@ -296,7 +298,8 @@ then on.
 ```bash
 proctor ls              # list (--all for every repository, --json for machines)
 proctor worktree ls     # list the worktrees, running or not (--all, --json)
-proctor skill [name]    # print a guide for your agent to follow (no name lists them)
+proctor skill [name]    # print a procedure for your agent to follow (no name lists them)
+proctor setup [agent]   # print how to wire proctor up (no name lists the agents)
 proctor attach <id>     # open the agent (claude / agy / codex) for that session, resuming the conversation
 proctor rm <id>         # drop one row from the ledger (the worktree is left alone)
 proctor sidebar         # launch the sidebar app
@@ -420,14 +423,14 @@ Creating a worktree and sweeping it up afterwards is the agent's job. The
 procedure for it ships with proctor:
 
 ```bash
-proctor skill ls          # which guides there are
+proctor skill ls          # which procedures there are
 proctor skill worktree    # print one, for an agent to follow
 ```
 
 **The text lives in proctor rather than in your agent's configuration**, so
 updating proctor updates it everywhere at once. What goes into the agent is a
 single line telling it to run the command and follow what comes back, and
-the wiring guide for your agent (`proctor skill setup-claude` and friends) puts
+the wiring guide for your agent (`proctor setup claude` and friends) puts
 that line in the right place. With no setup at all, typing `! proctor skill worktree` in
 Claude Code drops the guide straight into the conversation.
 
@@ -442,11 +445,12 @@ they have to be merged rather than replaced), so instead of a procedure this is
 written as **instructions for an AI to follow** — and proctor prints them:
 
 ```bash
-proctor skill setup-claude    # or setup-agy, setup-codex, setup-other
-proctor skill setup-all       # every guide at once
+proctor setup ls        # which agents there are guides for
+proctor setup claude    # or agy, codex, other
+proctor setup all       # every guide at once
 ```
 
-→ in Claude Code, `! proctor skill setup-claude` does it with nothing to install
+→ in Claude Code, `! proctor setup claude` does it with nothing to install
 first; anywhere else, run the command and hand its output to the agent.
 
 They live at

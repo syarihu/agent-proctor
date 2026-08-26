@@ -9,7 +9,7 @@ How to wire it up depends on your setup. If you already use hooks or a statusLin
 they have to be merged rather than replaced, and a procedure or a script cannot
 cover every existing configuration. So this is written as **instructions for an
 AI to follow** — hand it to the agent it is about, or let the agent run
-`proctor skill <name>` and read it itself.
+`proctor setup <agent>` and read it itself.
 
 Codex reads lifecycle hooks from `~/.codex/hooks.json`, in the same shape Claude
 Code uses. Two things are different.

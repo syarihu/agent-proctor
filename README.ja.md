@@ -90,7 +90,7 @@ proctor は届いた終わりを保留して、最後の子が帰ってくるま
 確認待ちの行には、**何の承認を待っているか**も付く——`Bash: rm -rf build` のように、
 権限確認に出ているコマンドそのもの。上のストリップと下の一覧の両方に出る。
 これにはフックが1つ増える (`PermissionRequest`。権限確認が出るその瞬間に発火して、
-ツールの呼び出しを載せてくる。繋ぎ方は `proctor skill setup-claude` にある)。
+ツールの呼び出しを載せてくる。繋ぎ方は `proctor setup claude` にある)。
 `Notification` だけでは「何かを訊かれた」までしか分からず、しかもプロンプトが
 6秒ほど待たされてからでないと届かない。
 
@@ -123,11 +123,13 @@ Kit が知っているのは「どんな状態があり、どんな記号と名�
 ProctorKit/
   Model/       データと語彙。I/O を持たない
                TaskRecord, DiffCounts, CollectedTask, CollectedWorktree,
-               SubagentRun, TaskStatus, TaskID, RateLimits, AgentKind, RepoOrigin
+               SubagentRun, TaskStatus, TaskID, RateLimits, AgentKind, RepoOrigin,
+               Guide
   Repository/  外の世界との出入り口。ここだけが台帳・git・環境を触る
                LedgerStore, GitClient, GitHubClient, AvatarCache, ProcessRunner,
-               EnvironmentSource, ProcessLiveness, Paths, AppVersion, SkillLibrary,
-               AntigravityMetadataReader, CodexMetadataReader
+               EnvironmentSource, ProcessLiveness, Paths, AppVersion,
+               SkillLibrary, SetupLibrary, AntigravityMetadataReader,
+               CodexMetadataReader
   UseCase/     やりたいこと1つに1つ。判断はすべてここが持つ
                CollectTasks, CollectWorktrees, RecordHookEvent, RecordSessionStats,
                MarkSessionSeen, ReapClosedSessions, ForgetTask, HookPayload,
@@ -247,7 +249,8 @@ scripts/sign-app.sh "/Applications/Agent Proctor.app"
 
 **動いているアプリの上から入れ直しても、動いているほうは入れ替わらない。**
 入れたあとに一度終了して開き直すこと。CLI のほうは何も要らない——叩くたびに
-自分が繋がっているバンドルを読むし、`proctor skill` が出す手引きもそこから来る。
+自分が繋がっているバンドルを読むし、`proctor skill` と `proctor setup` が出す本文も
+そこから来る。
 つまり **proctor を更新すれば手引きも更新される**。エージェント側に写しではなく
 コマンドを教えてあるのは、これに追従させるため。
 
@@ -271,7 +274,8 @@ scripts/sign-app.sh "/Applications/Agent Proctor.app"
 ```bash
 proctor ls              # 一覧（--all で全リポジトリ、--json で機械向け）
 proctor worktree ls     # worktree の一覧。動いていないものも出る（--all、--json）
-proctor skill [名前]    # エージェントに読ませる手引きを出す（名前なしで一覧）
+proctor skill [名前]    # 作業中の手順をエージェントに読ませる（名前なしで一覧）
+proctor setup [相手]    # proctor の繋ぎ方を出す（名前なしで一覧）
 proctor attach <ID>     # そのセッションのエージェント (claude / agy / codex) を開く（続きから）
 proctor rm <ID>         # 台帳から1件外す（worktree には触らない）
 proctor sidebar         # サイドバー（アプリ）を起動する
@@ -386,14 +390,14 @@ worktree を作るのも、終わったものを片付けるのもエージェ�
 その手順は proctor が同梱している。
 
 ```bash
-proctor skill ls          # どんな手引きがあるか
+proctor skill ls          # どんな手順があるか
 proctor skill worktree    # 1つ出す（エージェントが読んで従う）
 ```
 
 **本文をエージェントの設定に置かず proctor が持っている**ので、proctor を新しくすれば
 手引きも一斉に新しくなる。エージェント側に置くのは「このコマンドを実行して、
 出てきたものに従う」の一行だけで、それをどこに置くかは
-使っているエージェントの繋ぎ方の手引き（`proctor skill setup-claude` など）が
+使っているエージェントの繋ぎ方の手引き（`proctor setup claude` など）が
 面倒を見る。何も設定しなくても、
 Claude Code なら会話に `! proctor skill worktree` と打てばその場で本文が入る。
 
@@ -406,11 +410,12 @@ Claude Code なら会話に `! proctor skill worktree` と打てばその場で�
 手順書ではなく **AI に読ませて実行させる指示**にしてある。それを配るのも proctor 自身。
 
 ```bash
-proctor skill setup-claude    # setup-agy・setup-codex・setup-other も同じ
-proctor skill setup-all       # 繋ぎ方をまとめて出す
+proctor setup ls        # どのエージェントの繋ぎ方があるか
+proctor setup claude    # agy・codex・other も同じ
+proctor setup all       # 繋ぎ方をまとめて出す
 ```
 
-→ Claude Code なら会話に `! proctor skill setup-claude` と打つだけ。
+→ Claude Code なら会話に `! proctor setup claude` と打つだけ。
 他のエージェントなら、コマンドの出力をそのまま渡す。
 
 入れる前に中身を読みたいときは

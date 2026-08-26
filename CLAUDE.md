@@ -24,12 +24,15 @@ Conventional Commits のプレフィックスは使わない。何をしたか�
 | --- | --- |
 | `README.md` | `README.ja.md` |
 | `Sources/ProctorKit/Resources/en.lproj/skill-*.md` | `ja.lproj/skill-*.md` |
+| `Sources/ProctorKit/Resources/en.lproj/setup-*.md` | `ja.lproj/setup-*.md` |
 
 **片方だけ直さない。** 内容がずれると、どちらが正しいのか分からなくなる。
 
 `README.ja.md` の冒頭には「英語版が正本」と書いておく。
 
-`skill-*.md` はエージェントに読ませる手引きで、`proctor skill <名前>` が出す本体。
+どちらもエージェントに読ませる本文で、`skill-*.md` は作業中の手順を
+`proctor skill <名前>` が、`setup-*.md` は proctor の繋ぎ方を
+`proctor setup <相手>` が出す。
 **エージェントの設定に貼る写しを作らない**（写したものが古びるため）。
 どちらの言語を出すかは `Localized` が選ぶので、鍵と同じく**両方に置く**。
 こちらに「英語版が正本」とは書かない——読むのはエージェントで、
