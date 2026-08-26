@@ -260,6 +260,7 @@ never touched.
 
 ```bash
 brew install syarihu/tap/agent-proctor
+ln -s "$(brew --prefix agent-proctor)/Agent Proctor.app" /Applications/
 ```
 
 ### From source
