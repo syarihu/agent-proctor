@@ -132,6 +132,15 @@ public struct HookPayload {
 
     public var message: String { box["message"] as? String ?? "" }
 
+    /// 通知の種別 ("permission_prompt" / "idle_prompt" など)。
+    ///
+    /// **文言 (`message`) ではなくこちらで判じる。** あちらは版で変わるし、
+    /// 公式に決まっているのは種別のほうだけ。持っていない版もあるので、
+    /// 無いときの受け皿は呼ぶ側が用意する
+    public var notificationType: String? {
+        (box["notification_type"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
     /// ターンの始まり (UserPromptSubmit)。人が何か打った直後だけ真になる。
     /// 空のプロンプトは数えない (前のターンの活動を消してしまうため)
     public var isTurnStart: Bool {

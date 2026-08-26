@@ -87,7 +87,7 @@ payload() {
     payload s1 "$LAB/work" | "$BIN" _touch idle
     "$BIN" ls --all --json | grep '"status"'
 
-    say "_touch notification (アイドル通知: 何も出さない)"
+    say "_touch notification (アイドル通知: 確認待ちでなければ記録した状態を返す)"
     payload s1 "$LAB/work" ',"message":"Claude is waiting for your input"' | "$BIN" _touch notification
     "$BIN" ls --all --json | grep '"status"'
 
@@ -323,6 +323,30 @@ PY
 
     say "worktree ls (知らないサブコマンド)"
     "$BIN" worktree nope; echo "exit=$?"
+
+    # 権限確認をキャンセル (Esc) すると Claude Code はフックを1つも飛ばさない。
+    # 唯一届くアイドル通知で降ろせることを見ておく (でないと確認待ちが居座る)
+    say "確認待ちは、キャンセルされたあとアイドル通知で待機へ降りる"
+    payload s9 "$LAB/work" ',"notification_type":"permission_prompt","tool_name":"Bash","tool_input":{"command":"rm -rf build"}' \
+        | "$BIN" _touch notification
+    "$BIN" ls --all --json | grep -E '"(status|request)"'
+    payload s9 "$LAB/work" ',"notification_type":"idle_prompt"' | "$BIN" _touch notification
+    "$BIN" ls --all --json | grep -E '"(status|request)"'
+
+    # Notification は権限確認だけではない。認証できた・自動再開したも同じ口から来る。
+    # 全部を確認待ちに寄せると、ログインしただけで印が付いて居座る
+    say "状態と関係のない通知では何も起きない (認証できた)"
+    payload s9 "$LAB/work" ',"notification_type":"permission_prompt"' | "$BIN" _touch notification
+    payload s9 "$LAB/work" ',"notification_type":"auth_success"' | "$BIN" _touch notification
+    echo "(上の行に何も出なければ「変えない」の意味)"
+    "$BIN" ls --all --json | grep '"status"'
+
+    # 親のプロンプトが開いている最中に、子が暇になっただけということがある
+    say "子から届いたアイドル通知では親を降ろさない"
+    payload s9 "$LAB/work" ',"notification_type":"idle_prompt","agent_id":"c9"' \
+        | "$BIN" _touch notification
+    "$BIN" ls --all --json | grep '"status"'
+    payload s9 "$LAB/work" | "$BIN" _touch clear
 
     say "skill ls"
     "$BIN" skill ls

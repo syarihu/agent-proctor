@@ -20,11 +20,17 @@ func cmdTouch(_ args: Args) throws -> Int32 {
     let payload = HookPayload.fromStandardInput().naming(agent: args.value("--agent"))
 
     // notification は権限確認でもアイドル通知でも飛んでくる。
-    // どちらなのかの判断は UseCase が持つ
+    // どちらなのかの判断は UseCase が持つ。
+    //
+    // **アイドル通知も台帳まで通す。** あれは「応答が終わって暇になった」の合図で、
+    // 確認待ちで居座っている行を降ろすのに使う (理由は TaskStatus.settled)。
+    // 降ろしたのかどうかは、下と同じく**記録した状態**として返る
     if status == "notification" {
         guard let resolved = RecordHookEvent.resolveNotification(payload) else {
             if args.has("--json") { print("{}") }
-            return 0  // アイドル通知。何も出さないことで「変えない」を伝える
+            // 状態と関係のない通知 (認証できた等)。
+            // 何も出さないことで、呼び出し側に「変えない」を伝える
+            return 0
         }
         status = resolved
     }
@@ -41,6 +47,14 @@ func cmdTouch(_ args: Args) throws -> Int32 {
     // 記録しなかった場合 (git の外など) は届いた状態がそのまま返る。
     // Antigravity (agy) の hooks.json から呼ばれる場合は --json で空 JSON を返す
     func emit(_ value: String) {
+        // **指示はそのまま返さない。** settled は「もう待っていない」の合図で、
+        // 状態ではない。台帳に映せなかったとき (git の外・まだ載っていない・
+        // 書けなかった) にそのまま返すと、タブの色を決める側に
+        // 実在しない状態が渡る。映せたときは実際に書いた状態が返る
+        guard value != TaskStatus.settled else {
+            if args.has("--json") { print("{}") }
+            return
+        }
         print(args.has("--json") ? "{}" : value)
     }
     let recorded: String

@@ -117,6 +117,50 @@ public enum CollectTasks {
             untracked: GitClient.untrackedFiles(record.worktree)?.count ?? 0)
     }
 
+    /// まだ人が見ていないもの。**サイドバーの最上部に新着として出す分**。
+    ///
+    /// 集まるのは3つ。承認を待って止まっているもの (waiting)、終わったのに
+    /// まだタブを見ていないもの (done)、落ちたのにまだ見ていないもの (failed)。
+    ///
+    /// **「未読」の線は台帳側 (MarkSessionSeen.needsMark) と揃える。** あちらが
+    /// seenAt を打つ相手は done と failed なので、ここで別の線を引くと
+    /// タブを見ても消えない行ができてしまう。
+    ///
+    /// done は seenAt が付くと displayStatus が seen に畳まれるので、それで足りる。
+    /// failed は見たあとも failed のまま出す (見たからといって片付いたわけではない)
+    /// ので、こちらは seenAt を直に見る。
+    ///
+    /// 並びは TaskStatus.order の優先度が先、同じなら最後に動いた順。
+    /// **同じ値のときは渡された順を保つ** (Swift の sorted は安定ではないので
+    /// 添字で決着をつける。`ordered` や TaskGrouping と同じ考え方)
+    public static func awaitingReview(_ tasks: [CollectedTask]) -> [CollectedTask] {
+        tasks.filter(needsReview).enumerated().sorted { lhs, rhs in
+            let (a, b) = (priority(lhs.element), priority(rhs.element))
+            if a != b { return a < b }
+            if lhs.element.idleSeconds != rhs.element.idleSeconds {
+                return lhs.element.idleSeconds < rhs.element.idleSeconds
+            }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
+    }
+
+    /// **動いていた場所が消えたもの (missing) は入れない。** そこへ戻っても
+    /// 見るものが無いので、急いで見るべきものの列に混ぜても片付けられない
+    /// (一覧の行としては ⚠ で残るので、消えたこと自体は分かる)
+    private static func needsReview(_ task: CollectedTask) -> Bool {
+        switch task.displayStatus {
+        case TaskStatus.waiting, TaskStatus.done: return true
+        case TaskStatus.failed: return task.seenAt == nil
+        default: return false
+        }
+    }
+
+    /// 状態の並び順を優先度として使う。**ここに独自の順を作らない** —
+    /// 一覧の内訳 (TaskStatus.counts) と違う順に並ぶと、上と下で緊急度が食い違う
+    private static func priority(_ task: CollectedTask) -> Int {
+        TaskStatus.order.firstIndex(of: task.displayStatus) ?? TaskStatus.order.count
+    }
+
     /// エージェントごとの最新レートリミット情報を集約する。
     ///
     /// タスク一覧と台帳のグローバルキャッシュの両方から最新値を集め、

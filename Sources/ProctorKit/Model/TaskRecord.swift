@@ -41,6 +41,13 @@ public struct TaskRecord: Codable, Equatable {
     /// ツールを叩くたびに変わるので、ここが動いても updatedAt は動かさない
     /// (動かすと「経過」がツールのたびに 0 に戻り、並び順も落ち着かなくなる)
     public var activity: String?
+    /// 何の承認を待っているか ("Bash: mkdir -p /tmp/x" など)。
+    ///
+    /// **activity と別に持つ。** あちらは「もうやったこと」、こちらは
+    /// 「まだやっていないこと」で、消えるきっかけも違う (承認して動き出したら
+    /// こちらだけが消える)。混ぜると、承認を待っている最中に直前の
+    /// ツールが出て、それの承認を待っているように読めてしまう
+    public var request: String?
     /// 終わったあと、そのタブを見た時刻。見ていなければ nil。
     /// また動き出したら nil に戻す (次に終わったときは別の結果なので、改めて見てほしい)
     public var seenAt: Int?
@@ -51,12 +58,16 @@ public struct TaskRecord: Codable, Equatable {
     /// その行に対する SubagentStop はもう来ないので、
     /// セッションが永久に実行中のまま一覧に居座る。遅れて来たものを弾くために持つ
     public var finishedSubagents: [String: Int]?
-    /// 子を待つあいだ保留している「終わり」(done / failed)。
+    /// 子を待つあいだ保留している落ち着き先 (done / failed、または idle)。
     ///
     /// 親のターンは子を待たずに終わるので、まだ子が走っているうちに Stop が届く。
     /// そのまま完了にはできないが、捨ててしまうと**最後の子が帰ってきたときに
     /// 終わりを告げる者がいなくなる** (親の Stop と子の SubagentStop は
-    /// 非同期に飛ぶので、Stop のほうが先に着くことがある)。ここに預けておく
+    /// 非同期に飛ぶので、Stop のほうが先に着くことがある)。ここに預けておく。
+    ///
+    /// idle が入るのは、確認待ちを降ろしたのに子が走っていたとき
+    /// (`ClearAttention.standDown`)。あちらは Stop が来ない相手なので、
+    /// 最後の子が帰った時点で落ち着かせるにはここに預けるしかない
     public var pendingStatus: String?
     /// 人が明示的に付けた名前 (端末のタブに付けたタイトルなど)。
     /// エージェントが自分で付ける name より、こちらを先に出す
@@ -77,7 +88,8 @@ public struct TaskRecord: Codable, Equatable {
                 status: String, createdAt: Int, updatedAt: Int,
                 subagents: Int? = nil, subagentRuns: [SubagentRun]? = nil,
                 agent: String? = nil,
-                activity: String? = nil, seenAt: Int? = nil,
+                activity: String? = nil, request: String? = nil,
+                seenAt: Int? = nil,
                 finishedSubagents: [String: Int]? = nil,
                 pendingStatus: String? = nil, title: String? = nil,
                 name: String? = nil, model: String? = nil,
@@ -99,6 +111,7 @@ public struct TaskRecord: Codable, Equatable {
         self.subagentRuns = subagentRuns
         self.agent = agent
         self.activity = activity
+        self.request = request
         self.seenAt = seenAt
         self.finishedSubagents = finishedSubagents
         self.pendingStatus = pendingStatus

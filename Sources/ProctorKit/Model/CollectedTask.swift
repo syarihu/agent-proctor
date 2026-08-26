@@ -46,6 +46,8 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     public var agent: String?
     /// いま触っているツール。台帳の値そのまま (止まったあとも残っている)
     public var activity: String?
+    /// 何の承認を待っているか。台帳の値そのまま
+    public var request: String?
     /// 終わったあと、そのタブを見た時刻
     public var seenAt: Int?
     /// 人が明示的に付けた名前 (タブのタイトルなど)
@@ -92,6 +94,15 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     /// 止まったあとも出しておくと、終わった作業を今やっているように見える
     public var currentActivity: String? {
         status == TaskStatus.running ? activity : nil
+    }
+
+    /// いま出してよい「何の承認を待っているか」。確認待ちのあいだだけ返す。
+    ///
+    /// **状態で門番をする。** 承認したあと台帳から消えるまでには
+    /// 次のフックが1回要るので、素通しにすると動き出したセッションに
+    /// 「承認待ち」の文が残る
+    public var currentRequest: String? {
+        status == TaskStatus.waiting ? request : nil
     }
 
     /// いま出してよいサブエージェント。
@@ -160,6 +171,7 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
             : CollectedTask.visibleSubagents(subagentRuns, status: status).count
         agent = record.agent
         activity = record.activity
+        request = record.request
         seenAt = record.seenAt
         title = record.title
         name = record.name

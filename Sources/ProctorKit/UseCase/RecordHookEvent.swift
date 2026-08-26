@@ -50,13 +50,52 @@ public enum RecordHookEvent {
 
     /// Notification フックが何を意味するかを決める。
     ///
-    /// このイベントは権限確認や質問のほかに、「60秒入力なし」のアイドル通知でも
-    /// 発火する。アイドルまで確認待ちにすると、終わったあと放置しただけで
-    /// 印が付いてしまう。待たせているのはこちらではないので状態を変えない。
+    /// このイベントは権限確認や質問のほかに、「応答が終わって60秒、その間
+    /// 何も打っていない」のアイドル通知でも発火する。アイドルまで確認待ちに
+    /// すると、終わったあと放置しただけで印が付いてしまう。
     ///
-    /// - Returns: 記録すべき状態。何もしないときは nil。
+    /// アイドル通知は捨てずに `settled` として受ける。**あれが届いたということは
+    /// 応答が終わっているということ**なので、確認待ちで居座っている行を降ろせる
+    /// (権限確認をキャンセルするとフックが1つも飛ばない。理由は TaskStatus.settled)。
+    ///
+    /// **見分けるのは種別 (`notification_type`) で、文言では見ない。**
+    /// 文言は版で変わるし、公式に決まっているのは種別のほう。
+    /// 種別を送ってこない古い版のためだけに、文言の当て推量を残してある。
+    ///
+    /// - Returns: 記録すべき状態か指示。**何もしないときは nil**。
+    ///
+    /// このイベントは人に用がある通知だけではない。認証できた・ダイアログが
+    /// 閉じた・利用制限から自動再開した、も同じ口から届く。**全部を確認待ちに
+    /// 寄せると、認証しただけで印が付き、その後フックが来なければ居座る。**
     public static func resolveNotification(_ payload: HookPayload) -> String? {
-        payload.message.contains("waiting for your input") ? nil : TaskStatus.waiting
+        guard let type = payload.notificationType else {
+            // 種別を送ってこない古い版。文言しか手がかりが無い。
+            // 当たらなければ確認待ちに寄せる (下の default と同じ理由)
+            return payload.message.contains("waiting for your input")
+                ? TaskStatus.settled : TaskStatus.waiting
+        }
+        switch type {
+        // 人に用がある。手を挙げているのはこれら
+        case "permission_prompt",          // ツールの権限確認
+             "elicitation_dialog",         // MCP サーバーが入力を求めた
+             "elicitation_url_dialog",     // MCP サーバーがブラウザを開くよう求めた
+             "agent_needs_input",          // 裏で走っているセッションが入力待ちになった
+             "quota_auto_resume_stale":    // 制限が明けて Enter 待ちになった
+            return TaskStatus.waiting
+        // 待たせていたものが終わった。確認待ちで居座っている行を降ろす
+        case "idle_prompt",                // 応答が終わって60秒、その間入力なし
+             "elicitation_complete",       // 入力フォームが送られた・破棄された
+             "elicitation_response":       // その応答がサーバーへ返った
+            return TaskStatus.settled
+        // 状態の話ではない。触らない
+        case "auth_success", "agent_completed",
+             "quota_auto_resume_fired", "quota_auto_resume_disabled":
+            return nil
+        default:
+            // 知らない種別。**見落とすより、余分に印が付くほうを取る。**
+            // 種別は版ごとに増えるので、ここに落ちるのは新しい版で使う人
+            return TaskStatus.waiting
+        }
     }
 
     /// 状態を書き込む。知らないセッションなら新しく登録する。
@@ -128,6 +167,23 @@ public enum RecordHookEvent {
                 return status
             }
 
+            // 「もう待っていない」の合図。**確認待ちを降ろすためだけに使う。**
+            //
+            // 何をしていたかは分からないので、完了にはしない (キャンセルされた
+            // ターンに ✅ を付けると、見るべき結果があることになってしまう)。
+            // 動いている最中や終わったあとに届いた分は何もしない —— あれは
+            // ただの「暇になった」で、状態の話ではない
+            if status == TaskStatus.settled {
+                // **子の手元で起きた通知で親を降ろさない。** 親自身のプロンプトが
+                // 開いている最中に子が暇になっただけ、という組み合わせがある
+                guard payload.subagentID == nil,
+                      ledger.tasks[index].status == TaskStatus.waiting else {
+                    return ledger.tasks[index].status
+                }
+                // 降ろし方は人が押したときと同じところを通す (理由はそちら)
+                return ClearAttention.standDown(&ledger.tasks[index])
+            }
+
             // **既に居るセッションを idle で塗り替えない。**
             //
             // SessionStart は再開のときだけでなく、会話の圧縮 (compact) や
@@ -137,6 +193,11 @@ public enum RecordHookEvent {
             // ただし「誰がどこで動いているか」は入れ直す (理由は rebind)
             if status == TaskStatus.idle {
                 rebind(&ledger.tasks[index], payload: payload)
+                // **承認待ちの文だけは持ち越さない。** SessionStart が届いたのは
+                // セッションが開き直された (あるいは圧縮・clear された) ときなので、
+                // 前に出ていた権限確認はもう画面に無い。状態を塗り替えない方針は
+                // そのままなので、確認待ちのまま残ることはある (それは別の話)
+                ledger.tasks[index].request = nil
                 return ledger.tasks[index].status
             }
 
@@ -147,7 +208,8 @@ public enum RecordHookEvent {
                     removeSubagent(&ledger.tasks[index], id: subID, now: now)
                     settleHold(&ledger.tasks[index], now: now)
                 } else {
-                    applySubagents(&ledger.tasks[index], payload: payload, now: now)
+                    applySubagents(&ledger.tasks[index], payload: payload,
+                                   status: status, now: now)
                 }
                 return ledger.tasks[index].status
             }
@@ -239,8 +301,25 @@ public enum RecordHookEvent {
             case .set(let text):
                 ledger.tasks[index].activity = text
             }
+            // 何の承認を待っているか。**渡すのも届いた状態**で、理由は上と同じ
+            switch resolveRequest(status: status, payload: payload) {
+            case .keep:
+                break
+            case .clear:
+                if ledger.tasks[index].request != nil {
+                    ledger.tasks[index].request = nil
+                }
+            case .set(let text):
+                if ledger.tasks[index].request != text {
+                    ledger.tasks[index].request = text
+                }
+            case .fallback(let text):
+                if ledger.tasks[index].request == nil {
+                    ledger.tasks[index].request = text
+                }
+            }
             // サブエージェントの素性と手元。親の行とは別に持つ
-            applySubagents(&ledger.tasks[index], payload: payload, now: now)
+            applySubagents(&ledger.tasks[index], payload: payload, status: status, now: now)
 
             if (status == TaskStatus.done || status == TaskStatus.failed),
                !hasLiveSubagents, (ledger.tasks[index].subagents ?? 0) != 0 {
@@ -277,6 +356,12 @@ public enum RecordHookEvent {
                 ledger.tasks[index].subagents =
                     max(0, (ledger.tasks[index].subagents ?? 0) + delta)
                 ledger.tasks[index].updatedAt = now
+                // 最後の1体が帰ったなら、預かった終わりを確定させる。
+                // **1体ずつ持てる経路と揃える** (下の removeSubagent のあとと同じ)。
+                // ここが無いと、この経路のセッションだけ預かったものが宙に浮く
+                if ledger.tasks[index].subagents == 0 {
+                    settleHold(&ledger.tasks[index], now: now)
+                }
                 return
             }
 
@@ -317,7 +402,11 @@ public enum RecordHookEvent {
     ///
     /// どちらも upsert にしてあるのは、SubagentStart を繋いでいなくても
     /// 一覧が出るようにするため。順番が入れ替わっても取りこぼさない。
-    static func applySubagents(_ task: inout TaskRecord, payload: HookPayload, now: Int) {
+    /// - Parameter status: 届いた状態。**子の手元にも門番が要る。**
+    ///   確認待ちで届くツールは権限確認に出ているだけで、まだ実行されていない
+    ///   (親の行に載せない理由と同じ。`resolveActivity` を参照)
+    static func applySubagents(_ task: inout TaskRecord, payload: HookPayload,
+                               status: String, now: Int) {
         if let launched = payload.launchedSubagent {
             upsertSubagent(&task, id: launched.id, now: now) { run in
                 if let type = launched.type { run.type = type }
@@ -327,7 +416,9 @@ public enum RecordHookEvent {
         if let id = payload.subagentID {
             upsertSubagent(&task, id: id, now: now) { run in
                 if let type = payload.subagentType { run.type = type }
-                if let activity = payload.toolActivity { run.activity = activity }
+                if status != TaskStatus.waiting, let activity = payload.toolActivity {
+                    run.activity = activity
+                }
             }
         }
     }
@@ -395,6 +486,10 @@ public enum RecordHookEvent {
         task.status = held
         task.pendingStatus = nil
         task.updatedAt = now
+        // 確認待ちが解けたのだから、承認待ちの文も一緒に落とす。
+        // **表示は状態で隠せるが、台帳に残すと次の確認を弾いてしまう**
+        // (弱い方の書き込みは request が空のときだけ入るため)
+        task.request = nil
     }
 
     // MARK: -
@@ -419,12 +514,50 @@ public enum RecordHookEvent {
     static func resolveActivity(status: String, payload: HookPayload) -> ActivityUpdate {
         if status == TaskStatus.done || status == TaskStatus.failed { return .clear }
         if payload.isTurnStart { return .clear }
+        // 確認待ちで届くツールは**まだ実行されていない**もの (権限確認)。
+        // ここに載せると、承認していないコマンドを「いま触っているもの」として
+        // 出してしまう。断られたときは実行されないまま残る。載せる先は request
+        if status == TaskStatus.waiting { return .keep }
         // 子のツールは親と同じ session_id で飛んでくる。区別せずに載せると、
         // 親の行が子の作業で塗り替わって「親がいま何をしているか」が分からなくなる
         if payload.subagentID != nil { return .keep }
         if payload.launchedSubagent != nil { return .keep }
         if let activity = payload.toolActivity { return .set(activity) }
         return .keep
+    }
+
+    /// 「何の承認を待っているか」をどうするか。
+    ///
+    /// - 確認待ちになった → 何を訊かれているかを載せる
+    /// - それ以外の状態になった → 消す。**承認された瞬間に消えることがここの要**で、
+    ///   残すと動き出したセッションに「承認待ち」の文が付いて回る
+    /// - 子が上げた確認 (agent_id 付き) → 触らない。親の行に子の話を混ぜない
+    ///
+    /// 載せるものは2段構え。ツールの情報が来ていれば `toolActivity` と同じ
+    /// 組み立て ("Bash: mkdir -p /tmp/x") を使い、無ければ通知の文を置く。
+    /// **後者はツール名までしか言わない** ("Claude needs your permission to
+    /// use Bash") ので、コマンドまで出したいなら権限確認そのもののフックを繋ぐ
+    /// (手引きに書いてある)。
+    enum RequestUpdate: Equatable {
+        case keep
+        case clear
+        /// ツールから組んだもの。**上書きしてよい**
+        case set(String)
+        /// 通知の文から拾ったもの。**すでに何か載っているなら譲る。**
+        ///
+        /// 権限確認では権限確認のフックと `Notification` の両方が飛び、着く順は
+        /// 決まっていない。譲らせないと、コマンドまで分かっていた行が
+        /// 「ツール名しか言わない文」で塗り潰される (順番次第で消える)
+        case fallback(String)
+    }
+
+    static func resolveRequest(status: String, payload: HookPayload) -> RequestUpdate {
+        guard status == TaskStatus.waiting else { return .clear }
+        if payload.subagentID != nil { return .keep }
+        if let tool = payload.toolActivity { return .set(tool) }
+        let message = payload.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else { return .keep }
+        return .fallback(HookPayload.condensed(message))
     }
 
     /// payload から取り出すのに**外の世界を触る**値をまとめて持つ。
@@ -446,6 +579,19 @@ public enum RecordHookEvent {
             model = payload.modelName
             contextPercent = payload.contextPercent
             rateLimits = payload.rateLimits
+        }
+    }
+
+    /// 登録するときに載せる値。`keep` と `clear` はどちらも「まだ無い」に落ちる
+    private static func firstText(_ update: ActivityUpdate) -> String? {
+        if case .set(let text) = update { return text }
+        return nil
+    }
+
+    private static func firstText(_ update: RequestUpdate) -> String? {
+        switch update {
+        case .set(let text), .fallback(let text): return text
+        case .keep, .clear: return nil
         }
     }
 
@@ -484,10 +630,13 @@ public enum RecordHookEvent {
             createdAt: now,
             updatedAt: now,
             agent: payload.agent,
-            // 最初の1件目が PostToolUse のこともある (前のセッションの記録を
-            // 消したあとなど)。そのときも何をしているかは載せておく。
-            // ただし子が叩いたツールは親の手元ではないので載せない
-            activity: payload.subagentID == nil ? payload.toolActivity : nil,
+            // 最初の1件目が PostToolUse や権限確認のこともある (前のセッションの
+            // 記録を消したあとなど)。そのときも何をしているか・何を待っているかを
+            // 載せておく。**判断は更新のときと同じところを通す** —
+            // ここに書き分けを作ると、登録した回だけ違うものが載る
+            // (子が叩いたツールを載せない門番も、そちらが持っている)
+            activity: firstText(resolveActivity(status: status, payload: payload)),
+            request: firstText(resolveRequest(status: status, payload: payload)),
             title: facts.tabTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
             name: facts.name,
             model: facts.model,

@@ -55,6 +55,19 @@ public enum TaskStatus {
         status == done && seenAt != nil ? seen : status
     }
 
+    /// 「もう待っていない」の合図。**状態ではなく指示** (`clear` と同じ立場)。
+    ///
+    /// 権限確認をキャンセル (Esc) すると、Claude Code はターンを止めるが
+    /// **フックを1つも飛ばさない** (`PermissionDenied` は auto mode 専用で、
+    /// 手で断ったときには発火しない)。何もしないと、そのタブで次に何か打つまで
+    /// 確認待ちのまま居座る。
+    ///
+    /// 唯一届くのがアイドル通知 (`notification_type: idle_prompt` =
+    /// 「応答が終わって60秒、その間何も打っていない」) で、これは
+    /// **権限確認が出ている間は成立しない条件**なので、届いた時点で
+    /// 「あのプロンプトはもう無い」と読める。
+    public static let settled = "settled"
+
     /// hooks から受け取れる状態。notification はここに含めない
     /// (何を意味するかが payload 次第なので、確定した後の値がここに来る)
     ///
@@ -65,7 +78,7 @@ public enum TaskStatus {
     /// idle はセッションが始まった (再開した) だけで、まだ何もしていないとき。
     /// これが無いと、resume したセッションは最初のプロンプトを送るまで台帳に載らず、
     /// その worktree が「誰もいない」に見え続ける
-    public static let fromHooks = [idle, running, waiting, done, failed, "clear"]
+    public static let fromHooks = [idle, running, waiting, done, failed, "clear", settled]
 
     public static func mark(_ status: String) -> String { marks[status] ?? "?" }
     public static func label(_ status: String) -> String {

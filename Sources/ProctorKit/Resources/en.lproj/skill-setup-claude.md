@@ -41,7 +41,9 @@ removed.
 | --- | --- | --- | --- |
 | `SessionStart` | none | `proctor _touch idle` | a session opened here (also on `--resume`) |
 | `UserPromptSubmit` | none | `proctor _touch running` | started working |
-| `PostToolUse` | `*` | `proctor _touch running` | back to running |
+| `PostToolUse` | `*` | `proctor _touch running` | a tool succeeded, back to running |
+| `PostToolUseFailure` | `*` | `proctor _touch running` | a tool failed, back to running |
+| `PermissionRequest` | `*` | `proctor _touch waiting --json` | permission is being asked, and for what |
 | `Notification` | none | `proctor _touch notification` | possibly waiting for me |
 | `Stop` | none | `proctor _touch done` | the turn finished |
 | `StopFailure` | none | `proctor _touch failed` | the turn died (rate limit, overloaded) |
@@ -66,11 +68,36 @@ running session cannot be knocked back by it.
   you approved keeps looking like it is still waiting for you. It fires very
   often, but proctor discards writes that would not change anything, so it costs
   nothing.
+- **Why `PermissionRequest` is included**: it fires the moment Claude Code is
+  about to ask you for permission, and it carries `tool_name` and `tool_input`,
+  so proctor can show *what* is waiting on you — the actual command — instead of
+  only that something is. `Notification`'s permission prompt reaches you only
+  after the prompt has waited about six seconds (every keystroke defers it) and
+  its message never names the command, so without this hook the sidebar is both
+  late and vague. Pass `--json` so proctor prints `{}`: **this hook must not
+  return a permission decision**, and `{}` is a decision-free answer that leaves
+  the allow/deny flow exactly as it was.
 - **Why `Notification` passes `notification` rather than `waiting`**: this event
-  also fires for the *no input for 60 seconds* idle notification, not just
-  permission prompts. Treating both the same marks a session as blocked simply
-  because you walked away after it finished. Passing `notification` lets proctor
-  look at the message and tell them apart.
+  carries far more than permission prompts — the *no input for a minute* idle
+  notice, MCP dialogs, a successful login, a quota that resumed on its own.
+  Treating them all the same marks a session as blocked because you signed in.
+  Passing `notification` lets proctor sort them by `notification_type`: some mean
+  *someone is being asked*, some mean *the wait is over*, and some mean nothing
+  about the state at all. (Versions too old to send a type fall back to reading
+  the message, which is why the type is what proctor looks at first.)
+- **Why `PostToolUseFailure` is included**: `PostToolUse` fires only after a
+  tool *succeeds*. Without this one, approving a call whose tool then fails
+  leaves the session sitting in *waiting* until you type something in that tab.
+- **Why the idle notification matters, and what it cannot fix**: cancelling a
+  permission prompt (`Esc`, or *No* with no comment) declines the call **and
+  stops the turn without firing a single hook** — `PermissionDenied` only fires
+  in auto mode, not when you answer the dialog yourself. proctor takes the one
+  thing that does arrive, the `idle_prompt` notification (Claude finished
+  responding about a minute ago and you have not typed since), as proof that the
+  prompt is gone, and drops that session from *waiting* to *idle*. It never
+  touches a session that is running or finished. So keep `Notification` wired,
+  and if your hook script filters the idle notification out before proctor sees
+  it, a cancelled prompt stays *waiting* until your next message in that tab.
 - **Why `StopFailure` is included**: when a turn dies on a rate limit or an
   overloaded error, `Stop` does not fire. Without this hook the session stays in
   the list as running and never settles.

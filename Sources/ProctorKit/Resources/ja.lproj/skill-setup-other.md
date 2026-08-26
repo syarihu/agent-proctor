@@ -16,6 +16,11 @@ agent-proctor は受け身の道具で、台帳 (`~/.local/state/proctor/state.j
 (Antigravity 向け)。どのエージェントのセッションかは、どれにも `--agent=<名前>` で
 名乗らせられる。
 
+権限確認のフックがあるなら、`tool_name` と `tool_input` を載せたまま
+`_touch waiting` に流す。proctor がツールの活動と同じ形のラベル
+("Bash: rm -rf build") を組み立てて、**何の承認を待っているか**として出す。
+これが無いときは `message` に落ちるが、そちらはたいていツール名までしか言わない。
+
 すでに同じイベントで別のことをしている場合（端末のタブに色を付けるなど）は、
 stdin が一度しか読めないことに注意する。先に JSON を読み切ってから、
 同じ内容を `proctor` にも渡す。
