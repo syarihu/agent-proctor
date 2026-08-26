@@ -26,6 +26,19 @@ public enum RecordHookEvent {
     /// 打ち切りが時間単位である以上、分単位まで据え置いても困らない
     public static let subagentHeartbeat = 60
 
+    /// リポジトリを「最近見た」と書き直す間隔。
+    ///
+    /// hook のたびに時刻を入れ直すと、そのたびにサイドバーが起きて数え直す
+    /// (理由は subagentHeartbeat と同じ)。この時刻は覚えているリポジトリが
+    /// 上限を超えたときに古い順で落とすためだけの値なので、日単位でも困らない
+    public static let repoMemoryRefresh = 24 * 3600
+
+    /// 覚えておくリポジトリの数の上限。
+    ///
+    /// 使わなくなったリポジトリのパスが際限なく溜まらないようにするための蓋。
+    /// 溢れたら「最後に見た」が古いものから落とす
+    public static let repoMemoryLimit = 50
+
     /// 終わった子の墓標を持っておく時間。
     ///
     /// 弾きたいのは「SubagentStop の直後に遅れて届いた、その子のイベント」なので、
@@ -65,12 +78,19 @@ public enum RecordHookEvent {
         let snapshot = LedgerStore.read()
         let payload = raw.resolvingAntigravitySubagent(in: snapshot)
         let facts = SessionFacts(payload)
-        let draft = findTask(in: snapshot, payload: payload) == nil
+        let known = findTask(in: snapshot, payload: payload)
+        let draft = known == nil
             ? draftRegistration(status: status, payload: payload, facts: facts,
                                 top: top, now: now)
             : nil
+        // リポジトリ本体の場所。**ここで git を起こし直さない。**
+        // 既に居るセッションなら台帳が答えを持っているし、初めてなら支度 (draft) を
+        // 組み立てたときに引いている。hooks は際限なく飛んでくるので、
+        // 分かっている答えのために毎回プロセスを起こすわけにいかない
+        let repo = known.map { snapshot.tasks[$0].repo } ?? draft?.repo
 
         return try LedgerStore.withLock { ledger in
+            if let repo { rememberRepo(&ledger, path: repo, now: now) }
             // このフックを送ってきたセッションだけは掃除から外す。生きている証拠が
             // いま届いているのに消すのはおかしいし、--resume で開き直したときに
             // 「前のプロセスが死んでいる」を理由に落とすと、付けた名前も経過時間も
@@ -106,6 +126,18 @@ public enum RecordHookEvent {
                 // セッションが終わったら一覧から消す
                 ledger.tasks.remove(at: index)
                 return status
+            }
+
+            // **既に居るセッションを idle で塗り替えない。**
+            //
+            // SessionStart は再開のときだけでなく、会話の圧縮 (compact) や
+            // clear でも飛ぶ。素直に受けると、動いている最中のセッションが
+            // その拍子に「待機中」へ落ちる。idle が意味を持つのは
+            // 「まだ台帳に居ないセッションが始まった」ときだけ。
+            // ただし「誰がどこで動いているか」は入れ直す (理由は rebind)
+            if status == TaskStatus.idle {
+                rebind(&ledger.tasks[index], payload: payload)
+                return ledger.tasks[index].status
             }
 
             // 子から届いた出来事 (PostToolUse / Stop 等) の場合。
@@ -159,23 +191,7 @@ public enum RecordHookEvent {
                     ledger.tasks[index].seenAt = nil
                 }
             }
-            if let session = payload.sessionID, ledger.tasks[index].sessionId != session {
-                ledger.tasks[index].sessionId = session
-            }
-            if let iterm = EnvironmentSource.itermSessionID(),
-               ledger.tasks[index].itermSession != iterm {
-                ledger.tasks[index].itermSession = iterm
-            }
-            // --resume で開き直すと同じセッションでもプロセスが変わるので、
-            // 毎回入れ直す。同じプロセスなら起動時刻も動かないため書き込みは増えない
-            if let pid = EnvironmentSource.agentPID() {
-                let startedAt = ProcessLiveness.startedAt(pid: pid)
-                if ledger.tasks[index].pid != pid
-                    || ledger.tasks[index].pidStartedAt != startedAt {
-                    ledger.tasks[index].pid = pid
-                    ledger.tasks[index].pidStartedAt = startedAt
-                }
-            }
+            rebind(&ledger.tasks[index], payload: payload)
             if let agent = payload.agent, ledger.tasks[index].agent != agent {
                 ledger.tasks[index].agent = agent
             }
@@ -449,7 +465,8 @@ public enum RecordHookEvent {
     private static func draftRegistration(status: String, payload: HookPayload,
                                           facts: SessionFacts,
                                           top: String, now: Int) -> TaskRecord? {
-        guard status == TaskStatus.running || status == TaskStatus.waiting,
+        guard status == TaskStatus.running || status == TaskStatus.waiting
+                || status == TaskStatus.idle,
               let session = payload.sessionID else { return nil }
 
         let branch = GitClient.currentBranch(top)
@@ -494,6 +511,44 @@ public enum RecordHookEvent {
         if let limits = record.rateLimits {
             ledger.agentRateLimits[agentKey] = limits
         }
+    }
+
+    /// 記録を**いま動いているプロセスとタブに結び直す**。状態には触らない。
+    ///
+    /// `--resume` は同じセッションIDのまま別のプロセス・別のタブで開き直すので、
+    /// ここを入れ直さないと、死んだプロセスの記録として掃除されてしまう。
+    /// 変わらなければ何も書かないので、台帳の更新時刻は動かない。
+    static func rebind(_ record: inout TaskRecord, payload: HookPayload) {
+        if let session = payload.sessionID, record.sessionId != session {
+            record.sessionId = session
+        }
+        if let iterm = EnvironmentSource.itermSessionID(), record.itermSession != iterm {
+            record.itermSession = iterm
+        }
+        if let pid = EnvironmentSource.agentPID() {
+            let startedAt = ProcessLiveness.startedAt(pid: pid)
+            if record.pid != pid || record.pidStartedAt != startedAt {
+                record.pid = pid
+                record.pidStartedAt = startedAt
+            }
+        }
+    }
+
+    /// セッションを見たリポジトリを覚えておく。
+    ///
+    /// worktree の一覧はここに載っているリポジトリだけを見に行く。
+    /// 初めて見たときと、記録が古くなったときにだけ書く (理由は repoMemoryRefresh)。
+    static func rememberRepo(_ ledger: inout LedgerFile, path: String, now: Int) {
+        if let seen = ledger.repos[path], now - seen < repoMemoryRefresh { return }
+        ledger.repos[path] = now
+        guard ledger.repos.count > repoMemoryLimit else { return }
+        // 溢れた分は「最後に見た」が古いものから落とす。
+        // 同じ時刻で並んだときはパスで決着をつける (辞書の順は毎回変わるので、
+        // それに任せると落ちるものが実行のたびに入れ替わる)
+        let survivors = ledger.repos.sorted {
+            $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key
+        }.prefix(repoMemoryLimit)
+        ledger.repos = Dictionary(uniqueKeysWithValues: survivors.map { ($0.key, $0.value) })
     }
 
     /// hook の情報から対象のタスクを引く。

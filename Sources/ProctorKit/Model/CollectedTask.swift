@@ -75,6 +75,13 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     /// 人が「この作業はこれ」と決めた名前のほうが、会話から起こした要約より当てになる
     public var displayName: String { title ?? name ?? id }
 
+    /// iTerm2 のタブとして開き直せるか。判定は TaskRecord.isItermManaged と同じ。
+    ///
+    /// 数え上げてから絞りたい側 (アプリ) のために持つ。**数える前に絞ると、
+    /// 端末の外で動いているセッションが worktree の突き合わせから漏れ、
+    /// 使われている作業場が「誰もいない」に見える**
+    public var isItermManaged: Bool { !(itermSession ?? "").isEmpty }
+
     /// 表示に使う状態。見たあとの完了は確認済みに畳む。
     /// 動いていた場所が消えていれば status のほうが先に missing になっている
     public var displayStatus: String {

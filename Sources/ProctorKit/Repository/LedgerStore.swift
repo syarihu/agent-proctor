@@ -6,12 +6,23 @@ public struct LedgerFile: Codable, Equatable {
     /// エージェントごとの最新レートリミット情報 ("claude", "agy" など)。
     /// セッションが 0 件になっても保持し続け、常時表示に使う
     public var agentRateLimits: [String: AgentRateLimits]
+    /// セッションを一度でも見たリポジトリ (メイン worktree の絶対パス → 最後に見た時刻)。
+    ///
+    /// セッションが全部終わったリポジトリは tasks から消える。worktree の一覧は
+    /// そういうリポジトリでこそ見たい (放置された worktree はそこに溜まる) ので、
+    /// セッションとは別に覚えておく。agentRateLimits と同じ「セッションではない区画」。
+    ///
+    /// ここに載っているリポジトリしか worktree を数えに行かないので、
+    /// ディスク全体を漁ることにはならない
+    public var repos: [String: Int]
 
     public init(version: Int = 1, tasks: [TaskRecord] = [],
-                agentRateLimits: [String: AgentRateLimits] = [:]) {
+                agentRateLimits: [String: AgentRateLimits] = [:],
+                repos: [String: Int] = [:]) {
         self.version = version
         self.tasks = tasks
         self.agentRateLimits = agentRateLimits
+        self.repos = repos
     }
 
     public init(from decoder: Decoder) throws {
@@ -19,6 +30,7 @@ public struct LedgerFile: Codable, Equatable {
         version = try box.decodeIfPresent(Int.self, forKey: .version) ?? 1
         tasks = try box.decodeIfPresent([TaskRecord].self, forKey: .tasks) ?? []
         agentRateLimits = try box.decodeIfPresent([String: AgentRateLimits].self, forKey: .agentRateLimits) ?? [:]
+        repos = try box.decodeIfPresent([String: Int].self, forKey: .repos) ?? [:]
     }
 }
 
@@ -115,6 +127,13 @@ public enum LedgerStore {
 
     /// エージェントごとの最新レートリミット情報を返す
     public static func agentRateLimits() -> [String: AgentRateLimits] { read().agentRateLimits }
+
+    /// セッションを見たことのあるリポジトリ。
+    ///
+    /// **消えたパスをここでは落とさない。** 読むのは hooks も含めた全員で、
+    /// そのたびにパスの数だけファイルの有無を確かめることになる。
+    /// 実体があるかどうかは、どのみち中を見に行く側 (CollectWorktrees) が確かめる
+    public static func repos() -> [String: Int] { read().repos }
 
     /// 台帳が最後に変わった時刻。表示側が「数え直すべきか」を判断するのに使う
     public static func lastModified() -> Date? {

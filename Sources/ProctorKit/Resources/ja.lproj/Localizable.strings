@@ -3,6 +3,7 @@
 
 /* CLI の一覧・メニューバー・サイドバーで共通に使う */
 "common.no_agents" = "動いているエージェントはいません";
+"common.no_worktrees" = "worktree はありません";
 
 /* 状態の名前 (TaskStatus)。CLI の表と、アプリの読み上げに出る */
 "status.idle" = "待機";
@@ -25,10 +26,11 @@
 "error.task_id.exhausted" = "ID を採番できません";
 
 /* proctor --help。行の並びがそのまま画面に出る */
-"cli.usage" = "使い方: proctor <コマンド> [オプション]\n\nworktree で働くコーディングエージェントを見張り、手が挙がったら知らせる。\n\n  ls             動いているエージェントの一覧\n                   --all              全リポジトリを対象にする\n                   --json             JSON で出す (AI・サイドバー向け)\n  attach <ID>    そのセッションのエージェント (claude / agy / codex) を開く (続きから)\n  rm <ID>        台帳から1件外す (worktree には触らない)\n  sidebar        iTerm2 に吸着するサイドバー (Agent Proctor.app) を起動する\n  --version      版を表示する\n\nworktree を作ったり片付けたりはしない。それは proctor を呼ぶ側の仕事で、\nここは走っているものを見せることに徹する。";
+"cli.usage" = "使い方: proctor <コマンド> [オプション]\n\nworktree で働くコーディングエージェントを見張り、手が挙がったら知らせる。\n\n  ls             動いているエージェントの一覧\n                   --all              全リポジトリを対象にする\n                   --json             JSON で出す (AI・サイドバー向け)\n  worktree ls    worktree の一覧 (動いていないものも出る)\n                   --all              全リポジトリを対象にする\n                   --json             JSON で出す (AI 向け)\n  skill [名前]   エージェントに読ませる手引きを出す (名前なしで一覧)\n  attach <ID>    そのセッションのエージェント (claude / agy / codex) を開く (続きから)\n  rm <ID>        台帳から1件外す (worktree には触らない)\n  sidebar        iTerm2 に吸着するサイドバー (Agent Proctor.app) を起動する\n  --version      版を表示する\n\n自分で worktree を作ったり片付けたりはしない。あるものを見せるところまでで、\nその先の手順は `skill worktree` がエージェントに渡す。";
 
 "cli.unknown_command" = "知らないコマンドです: %@";
 "cli.outside_repo" = "git リポジトリの外なので、すべてのセッションを表示します";
+"cli.outside_repo.worktrees" = "git リポジトリの外なので、すべてのリポジトリを表示します";
 /* %1$@ は台帳から外した ID、%2$@ は残した worktree の場所 */
 "cli.removed" = "台帳から外しました: %1$@ (%2$@ はそのまま)";
 
@@ -46,6 +48,24 @@
 "cli.error.launch_failed" = "%@ を起動できません";
 "cli.error.app_not_found" = "Agent Proctor.app が見つかりません。変わった場所に入れている場合は PROCTOR_APP でその場所を指してください";
 "cli.error.app_launch_failed" = "Agent Proctor.app を起動できませんでした";
+/* %1$@ は渡された名前、%2$@ は使える名前の一覧 */
+"cli.error.unknown_skill" = "そんな手引きはありません: %1$@ (使えるのは %2$@)";
+"cli.error.unknown_subcommand" = "知らないサブコマンドです: %@";
+
+/* proctor worktree ls の STATE 列。何をしてよい場所なのかが分かる言葉にする */
+"cli.worktree.state.sessions" = "使用中 (%d)";
+"cli.worktree.state.main" = "リポジトリ本体";
+"cli.worktree.state.removable" = "終わっている・消してよい";
+"cli.worktree.state.merged" = "マージ済み";
+"cli.worktree.state.idle" = "誰もいない";
+"cli.worktree.state.locked" = "ロック中";
+"cli.worktree.state.missing" = "実体なし";
+
+"cli.skill.hint" = "読むには: proctor skill <名前>";
+
+/* 同梱の手引き。proctor skill ls に出る */
+"skill.worktree.title" = "git worktree を作る・片付ける";
+"skill.worktree.summary" = "worktree の名前・作り方・片付け方";
 
 /* メニューバー。押したら何が起きるかを書く (macOS の流儀) */
 "app.menu.show_sidebar" = "サイドバーを表示";
@@ -78,6 +98,15 @@
 /* 一覧の行。%1$@ はブランチ名、%2$@ は経過時間 (5m など) */
 "app.row.branch_age" = "%1$@ · 経過: %2$@";
 "app.row.close_help" = "一覧から外す (worktree はそのまま)";
+
+/* セッションの乗っていない worktree。%d は件数 */
+"app.worktrees.summary" = "セッションがない worktree: %d";
+"app.worktrees.removable" = "· %d 片付けられる";
+"app.worktree.removable" = "終わっている";
+"app.worktree.merged" = "マージ済み";
+"app.worktree.locked" = "ロック中";
+/* %@ はその場所のパス */
+"app.worktree.open_help" = "そこへ行く。開いているタブがあればそのタブ: %@";
 
 /* タブを開けなかったとき。%@ はセッションの名前 */
 "app.alert.open_failed.title" = "%@ を開けませんでした";

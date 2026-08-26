@@ -60,8 +60,12 @@ public enum TaskStatus {
     ///
     /// failed は Claude Code の StopFailure (レートリミットや overloaded で
     /// ターンが落ちたとき) 用。このとき Stop は発火しないので、受け取れないと
-    /// 落ちたセッションが「実行中」のまま一覧に居座る
-    public static let fromHooks = [running, waiting, done, failed, "clear"]
+    /// 落ちたセッションが「実行中」のまま一覧に居座る。
+    ///
+    /// idle はセッションが始まった (再開した) だけで、まだ何もしていないとき。
+    /// これが無いと、resume したセッションは最初のプロンプトを送るまで台帳に載らず、
+    /// その worktree が「誰もいない」に見え続ける
+    public static let fromHooks = [idle, running, waiting, done, failed, "clear"]
 
     public static func mark(_ status: String) -> String { marks[status] ?? "?" }
     public static func label(_ status: String) -> String {

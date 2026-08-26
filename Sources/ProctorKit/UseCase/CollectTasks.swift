@@ -107,11 +107,14 @@ public enum CollectTasks {
     /// エージェントの成果はファイル追加であることが多く、ここが漏れると
     /// 「何もしていない」ように見えてしまう。
     public static func diff(for record: TaskRecord) -> DiffCounts {
+        // 聞けなかったときは 0 のまま出す。**ここは行に添える数字**で、
+        // 消してよいかの判断には使わない (それは CollectWorktrees の仕事で、
+        // あちらは「数え切れたか」を持ち回している)
         let lines = GitClient.changedLines(record.worktree, since: "HEAD")
         return DiffCounts(
-            added: lines.added,
-            removed: lines.removed,
-            untracked: GitClient.untrackedFiles(record.worktree).count)
+            added: lines?.added ?? 0,
+            removed: lines?.removed ?? 0,
+            untracked: GitClient.untrackedFiles(record.worktree)?.count ?? 0)
     }
 
     /// エージェントごとの最新レートリミット情報を集約する。

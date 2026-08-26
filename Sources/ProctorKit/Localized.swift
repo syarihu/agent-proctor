@@ -72,4 +72,15 @@ public enum Localized {
     public static func text(_ key: String, _ arguments: CVarArg...) -> String {
         String(format: text(key), locale: .current, arguments: arguments)
     }
+
+    /// 訳文と同じ置き場から、まとまった文書を1つ読む。
+    ///
+    /// 文言の表と違って、これは丸ごと1つの読み物 (エージェントに渡す手引き)。
+    /// 表に収めると改行だらけの1行になって手が入れられないので、ファイルのまま持つ。
+    /// 言語の選び方は文言とまったく同じなので、選んである .lproj からそのまま読む。
+    public static func document(_ name: String, extension ext: String = "md") -> String? {
+        guard let table, let url = table.url(forResource: name, withExtension: ext),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        return text
+    }
 }

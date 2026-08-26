@@ -3,6 +3,7 @@
 
 /* CLI の一覧・メニューバー・サイドバーで共通に使う */
 "common.no_agents" = "No agents are running";
+"common.no_worktrees" = "No worktrees";
 
 /* 状態の名前 (TaskStatus)。CLI の表と、アプリの読み上げに出る */
 "status.idle" = "Idle";
@@ -25,10 +26,11 @@
 "error.task_id.exhausted" = "Cannot assign an ID";
 
 /* proctor --help。行の並びがそのまま画面に出る */
-"cli.usage" = "Usage: proctor <command> [options]\n\nWatches coding agents working in worktrees and tells you when one raises its hand.\n\n  ls             list the agents that are running\n                   --all              cover every repository\n                   --json             print JSON (for AI and the sidebar)\n  attach <ID>    open that session's agent (claude / agy / codex), resuming it\n  rm <ID>        drop one entry from the ledger (the worktree is left alone)\n  sidebar        launch the sidebar that clings to iTerm2 (Agent Proctor.app)\n  --version      print the version\n\nIt neither creates nor cleans up worktrees. That is the job of whoever calls\nproctor; this only shows what is running.";
+"cli.usage" = "Usage: proctor <command> [options]\n\nWatches coding agents working in worktrees and tells you when one raises its hand.\n\n  ls             list the agents that are running\n                   --all              cover every repository\n                   --json             print JSON (for AI and the sidebar)\n  worktree ls    list the worktrees, running or not\n                   --all              cover every repository\n                   --json             print JSON (for AI)\n  skill [NAME]   print a guide for your agent to follow (no name lists them)\n  attach <ID>    open that session's agent (claude / agy / codex), resuming it\n  rm <ID>        drop one entry from the ledger (the worktree is left alone)\n  sidebar        launch the sidebar that clings to iTerm2 (Agent Proctor.app)\n  --version      print the version\n\nIt neither creates nor cleans up worktrees itself. It shows what is there, and\n`skill worktree` hands your agent the procedure for the rest.";
 
 "cli.unknown_command" = "unknown command: %@";
 "cli.outside_repo" = "Not in a git repository, so every session is listed";
+"cli.outside_repo.worktrees" = "Not in a git repository, so every repository is listed";
 /* %1$@ は台帳から外した ID、%2$@ は残した worktree の場所 */
 "cli.removed" = "Dropped from the ledger: %1$@ (%2$@ is left as it is)";
 
@@ -46,6 +48,24 @@
 "cli.error.launch_failed" = "Cannot launch %@";
 "cli.error.app_not_found" = "Agent Proctor.app was not found. If it is installed somewhere unusual, point PROCTOR_APP at it.";
 "cli.error.app_launch_failed" = "Could not launch Agent Proctor.app";
+/* %1$@ は渡された名前、%2$@ は使える名前の一覧 */
+"cli.error.unknown_skill" = "No such guide: %1$@ (available: %2$@)";
+"cli.error.unknown_subcommand" = "unknown subcommand: %@";
+
+/* proctor worktree ls の STATE 列。何をしてよい場所なのかが分かる言葉にする */
+"cli.worktree.state.sessions" = "in use (%d)";
+"cli.worktree.state.main" = "the repository itself";
+"cli.worktree.state.removable" = "done, safe to remove";
+"cli.worktree.state.merged" = "merged";
+"cli.worktree.state.idle" = "nobody here";
+"cli.worktree.state.locked" = "locked";
+"cli.worktree.state.missing" = "gone";
+
+"cli.skill.hint" = "Read one with: proctor skill <name>";
+
+/* 同梱の手引き。proctor skill ls に出る */
+"skill.worktree.title" = "Creating and cleaning up git worktrees";
+"skill.worktree.summary" = "how worktrees are named, created and swept up here";
 
 /* メニューバー。押したら何が起きるかを書く (macOS の流儀) */
 "app.menu.show_sidebar" = "Show Sidebar";
@@ -78,6 +98,15 @@
 /* 一覧の行。%1$@ はブランチ名、%2$@ は経過時間 (5m など) */
 "app.row.branch_age" = "%1$@ · idle %2$@";
 "app.row.close_help" = "Remove from the list (the worktree is left alone)";
+
+/* セッションの乗っていない worktree。%d は件数 */
+"app.worktrees.summary" = "worktrees with no session: %d";
+"app.worktrees.removable" = "· %d can go";
+"app.worktree.removable" = "done";
+"app.worktree.merged" = "merged";
+"app.worktree.locked" = "locked";
+/* %@ はその場所のパス */
+"app.worktree.open_help" = "Go there — the tab already in it, or a new one: %@";
 
 /* タブを開けなかったとき。%@ はセッションの名前 */
 "app.alert.open_failed.title" = "Could not open %@";
