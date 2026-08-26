@@ -12,9 +12,17 @@ import SwiftUI
 /// つまみを動かすとその場で反映される。プレビューは要らない。
 struct SettingsView: View {
     @ObservedObject var appearance: Appearance
+    @ObservedObject var notices: NoticeSettings
+    let notifier: Notifier
 
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginError: String?
+    /// 通知の許可。読むのに待ちが要る (通知センターに聞きに行く) ので、
+    /// 分かるまでは何も言わない。「許可されていません」と出しておいて
+    /// あとから覆ると、断った覚えを作ってしまう
+    @State private var notifyPermission: Notifier.Permission?
+    /// 通知の許可を尋ねている間。押し重ねてダイアログが重ならないようにする
+    @State private var askingNotify = false
     // 読むだけなら即返るので、最初の描画からほんとうの状態を出せる。
     // 一瞬だけ違う状態が見えると、それが答えだと思われてしまう
     @State private var automation = AutomationPermission.state()
@@ -142,6 +150,32 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle(Localized.text("app.settings.notify.waiting"),
+                       isOn: $notices.onWaiting)
+                Toggle(Localized.text("app.settings.notify.done"), isOn: $notices.onDone)
+                Toggle(Localized.text("app.settings.notify.failed"), isOn: $notices.onFailed)
+            } header: {
+                Text(Localized.text("app.settings.notify_section"))
+            } footer: {
+                Text(Localized.text("app.settings.notify_footer"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                LabeledContent(Localized.text("app.settings.notify")) {
+                    HStack(spacing: 12) {
+                        Text(notifyState)
+                            .foregroundStyle(notifyPermission == .granted
+                                             ? .secondary : .primary)
+                        Spacer()
+                        Button(notifyAction, action: requestNotify)
+                            // 尋ねている間は止める。隣のオートメーションと同じ扱い
+                            .disabled(askingNotify || notifyPermission == nil
+                                      || notifyPermission == .unavailable)
+                    }
+                }
                 LabeledContent(Localized.text("app.settings.automation")) {
                     HStack(spacing: 12) {
                         Text(automationState)
@@ -169,6 +203,14 @@ struct SettingsView: View {
             automation = AutomationPermission.state()
             // gh にログインし直したあと、開き直せば選べるようになってほしい
             appearance.refreshOrganizationAvailability()
+            refreshNotifyPermission()
+        }
+        // 何か1つでも入れた直後に許可を尋ねる。**設定を閉じて何かが終わるまで
+        // 何も起きないのでは遅い** — 入れたのに効かなかったように見える。
+        // onChange の2引数版は macOS 14 からなので、値そのものを見る
+        .onChange(of: notices.wanted.isEmpty) { empty in
+            guard !empty, notifyPermission == .undecided else { return }
+            requestNotify()
         }
         // この画面が一番出す動作は「システム設定を開く」で、それは設定ウィンドウを
         // 閉じない。onAppear だけだと、向こうで許可して戻ってきても表示が
@@ -182,6 +224,8 @@ struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(
             for: NSApplication.didBecomeActiveNotification)) { _ in
             automation = AutomationPermission.state()
+            // 通知も同じ。システム設定で入れ直して戻ってきたときに拾う
+            refreshNotifyPermission()
             // gh も同じ理由でここに要る。「gh auth login を済ませると選べる」と
             // 案内しておきながら、端末で済ませて戻ってきても止まったままだと、
             // 案内どおりにやったのに効かなかったように見える。
@@ -206,6 +250,43 @@ struct SettingsView: View {
         automation == .undecided
             ? Localized.text("app.settings.automation.ask")
             : Localized.text("app.action.open_settings")
+    }
+
+    private var notifyState: String {
+        switch notifyPermission {
+        case .granted: return Localized.text("app.settings.notify.granted")
+        case .denied: return Localized.text("app.settings.notify.denied")
+        case .undecided: return Localized.text("app.settings.notify.undecided")
+        case .unavailable: return Localized.text("app.settings.notify.unavailable")
+        // まだ聞き終わっていない。空にせず、確かめている最中だと分かる字を出す
+        case nil: return Localized.text("app.settings.notify.checking")
+        }
+    }
+
+    /// まだ決まっていないときだけダイアログを出せる。
+    /// それ以外はシステム設定へ送るしかない (オートメーションと同じ事情)
+    private var notifyAction: String {
+        notifyPermission == .undecided
+            ? Localized.text("app.settings.automation.ask")
+            : Localized.text("app.action.open_settings")
+    }
+
+    private func requestNotify() {
+        guard notifyPermission == .undecided else {
+            Notifier.openSettings()
+            return
+        }
+        // 答えが返ってから映す。尋ねている最中に読むと、まだ
+        // 「まだ尋ねていません」のままの答えが返ってくる
+        askingNotify = true
+        Task {
+            notifyPermission = await notifier.requestAuthorization()
+            askingNotify = false
+        }
+    }
+
+    private func refreshNotifyPermission() {
+        Task { notifyPermission = await notifier.permission() }
     }
 
     private func requestAutomation() {

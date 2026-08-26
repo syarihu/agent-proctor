@@ -22,7 +22,7 @@ altogether, because the row would lead nowhere. The `proctor` CLI is not tied to
 a terminal and lists those sessions all the same.
 
 <p align="center">
-  <img src="docs/images/sidebar-and-terminal.png" alt="The sidebar beside iTerm2, listing three sessions across two repositories under the organization that owns them" width="880">
+  <img src="docs/images/sidebar-and-terminal.png" alt="The sidebar beside iTerm2: a Needs you strip at the top with a session waiting for approval and a finished one, three sessions across two repositories under the organization that owns them, and a macOS notification saying which session is waiting and what for" width="880">
 </p>
 
 ```
@@ -120,8 +120,22 @@ The tab you currently have open gets a thin bar on the left and a faint
 background, which also cancels the dimming so the place you are looking at never
 sinks into the list.
 
+When you are not looking at the sidebar at all, macOS says it for you: a
+notification goes out the moment a session starts waiting for you, finishes, or
+falls over, carrying what it is waiting for in its body. Clicking it goes to that
+tab, exactly like clicking a row. **Nothing is sent for the tab you are looking
+at** — while iTerm2 is in front with that tab open, what happened is already on
+screen, and a banner over it is only noise. Nothing is announced at startup
+either: opening the app again is not news, and a session that was already waiting
+is one you left there yourself. A notification is withdrawn once its session is
+dealt with — you answered the prompt, or you looked at the finished tab — so the
+notification centre does not fill up with errands you have already run. Each of
+the three has its own switch in *Settings… → Notifications*, and how they appear
+— banner or alert, sound or silence — belongs to System Settings → Notifications
+like any other app.
+
 <p align="center">
-  <img src="docs/images/status-transitions.gif" alt="Subagent rows appearing and leaving, another session turning orange when it needs an answer, and a finished one going quiet once its tab has been looked at" width="420">
+  <img src="docs/images/status-transitions.gif" alt="Subagent rows appearing and leaving, a session turning orange when it needs an answer and a notification saying what it is waiting for, the notification going away once it is answered, and a finished one going quiet once its tab has been looked at" width="760">
 </p>
 
 ## Structure
@@ -286,11 +300,16 @@ On first launch macOS asks for permission to control iTerm2 — allow it.
 *Settings…* from the menu bar, and the *Permission* section will take you to the
 right page of System Settings to turn it back on.
 
+It asks about notifications on first launch too, and the same *Permission*
+section shows where that stands and takes you to its page in System Settings.
+Refusing costs you the banners only; the sidebar and the `Needs you` strip carry
+on regardless.
+
 Open *Settings…* and turn on *Open at login*, and it will start on its own from
 then on.
 
 <p align="center">
-  <img src="docs/images/settings.png" alt="The settings window: sidebar text size, width, opacity, background, how rows are grouped, the make-room toggle, open at login, whether controlling iTerm2 is allowed, and the version" width="460">
+  <img src="docs/images/settings.png" alt="The settings window: sidebar text size, width, opacity, background, how rows are grouped, the make-room toggle, open at login, which of waiting, finishing and failing are notified, whether sending notifications and controlling iTerm2 are allowed, and the version" width="460">
 </p>
 
 ## Usage

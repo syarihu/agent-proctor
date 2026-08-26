@@ -55,6 +55,25 @@ public enum TaskStatus {
         status == done && seenAt != nil ? seen : status
     }
 
+    /// まだ人の手が要るか。確認待ちと、まだ見ていない完了・失敗。
+    ///
+    /// **seenAt の効き方が状態で違うので、線引きはここに1本だけ引く。**
+    /// done は seenAt が付けば display が seen に畳むのでそれで足りるが、
+    /// failed は見たあとも failed のまま出す (見たからといって片付いたわけでは
+    /// ないため)。この違いを使う側それぞれに書かせると、片方だけ直したときに
+    /// **タブを見ても消えないもの**ができる (サイドバーの新着からは消えたのに
+    /// 通知センターには残る、など)。
+    ///
+    /// 動いていた場所が消えたもの (missing) は入れない。そこへ戻っても
+    /// 見るものが無く、急かしたところで片付けられない。
+    public static func needsPerson(status: String, seenAt: Int?) -> Bool {
+        switch display(status: status, seenAt: seenAt) {
+        case waiting, done: return true
+        case failed: return seenAt == nil
+        default: return false
+        }
+    }
+
     /// 「もう待っていない」の合図。**状態ではなく指示** (`clear` と同じ立場)。
     ///
     /// 権限確認をキャンセル (Esc) すると、Claude Code はターンを止めるが

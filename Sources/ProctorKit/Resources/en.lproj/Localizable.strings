@@ -106,6 +106,11 @@
 "app.settings.sidebar_footer" = "Row spacing follows the text size, and you can also drag the left edge of the sidebar to change its width.\nWith “Shrink iTerm2 to make room” on, a full-width iTerm2 window has its left edge moved right so the sidebar does not cover it, and gets its width back when the sidebar is hidden or Agent Proctor quits.";
 "app.settings.launch_section" = "Startup";
 "app.settings.launch_at_login" = "Open at login";
+"app.settings.notify_section" = "Notifications";
+"app.settings.notify.waiting" = "When a session starts waiting for you";
+"app.settings.notify.done" = "When a session finishes";
+"app.settings.notify.failed" = "When a session fails";
+"app.settings.notify_footer" = "Nothing is sent for the tab you are looking at — while iTerm2 is in front and that tab is open, what happens there is already on screen.\nClicking a notification takes you to its tab, and the notification goes away once you have dealt with it. How they appear and whether they make a sound is up to System Settings → Notifications.";
 
 /* 一覧の見出し。Organization でまとめたとき、持ち主を読めなかったリポジトリの行き先 */
 "app.group.no_organization" = "No organization";
@@ -138,7 +143,10 @@
 "app.action.open_settings" = "Open System Settings";
 "app.alert.automation.later" = "Later";
 
-/* オートメーションの許可。設定ウィンドウ側 */
+/* 通知そのもの。%1$@ は状態 (⏳ Waiting など)、%2$@ はリポジトリ名、%3$@ はブランチ名 */
+"app.notify.subtitle" = "%1$@ · %2$@ · %3$@";
+
+/* オートメーションと通知の許可。設定ウィンドウ側 */
 "app.settings.automation_section" = "Permission";
 "app.settings.automation" = "Controlling iTerm2";
 "app.settings.automation_footer" = "macOS asks only once. If you have already refused, it will not ask again, so the switch has to be turned back on in System Settings. The permission is tied to the code signature, so a rebuild signed differently starts over.";
@@ -148,6 +156,13 @@
 "app.settings.automation.not_running" = "iTerm2 is not running";
 "app.settings.automation.unknown" = "Cannot tell right now";
 "app.settings.automation.ask" = "Allow…";
+"app.settings.notify" = "Sending notifications";
+"app.settings.notify.granted" = "Allowed";
+"app.settings.notify.denied" = "Not allowed";
+"app.settings.notify.undecided" = "Not asked yet";
+"app.settings.notify.checking" = "Checking…";
+/* バンドルの外 (swift run) で動いているとき。通知そのものを出せない */
+"app.settings.notify.unavailable" = "Not available in this build";
 
 /* 版の表示。%@ は版そのもの (0.1.0 など) */
 "app.settings.version" = "Version %@";

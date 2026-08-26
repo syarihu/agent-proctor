@@ -12,9 +12,13 @@ import SwiftUI
 final class SettingsWindow {
     private var window: NSWindow?
     private let appearance: Appearance
+    private let notices: NoticeSettings
+    private let notifier: Notifier
 
-    init(appearance: Appearance) {
+    init(appearance: Appearance, notices: NoticeSettings, notifier: Notifier) {
         self.appearance = appearance
+        self.notices = notices
+        self.notifier = notifier
     }
 
     func show() {
@@ -28,7 +32,9 @@ final class SettingsWindow {
     }
 
     private func make() -> NSWindow {
-        let hosting = NSHostingController(rootView: SettingsView(appearance: appearance))
+        let hosting = NSHostingController(
+            rootView: SettingsView(appearance: appearance, notices: notices,
+                                   notifier: notifier))
         let window = NSWindow(contentViewController: hosting)
         window.title = Localized.text("app.settings.window_title")
         window.styleMask = [.titled, .closable]

@@ -106,6 +106,11 @@
 "app.settings.sidebar_footer" = "行の余白も文字の大きさに合わせて変わります。幅はサイドバーの左端をドラッグしても変えられます。\n「幅を詰めて場所を空ける」を入れておくと、iTerm2 が画面いっぱいのときにウィンドウの左端を右へ寄せて、サイドバーが重ならないようにします。サイドバーを隠すか終了すると元の幅に戻します。";
 "app.settings.launch_section" = "起動";
 "app.settings.launch_at_login" = "ログイン時に起動";
+"app.settings.notify_section" = "通知";
+"app.settings.notify.waiting" = "確認待ちになったとき";
+"app.settings.notify.done" = "終わったとき";
+"app.settings.notify.failed" = "失敗したとき";
+"app.settings.notify_footer" = "表示中のタブの状態は通知しません。\n通知を押すとそのタブへ移動します。通知の表示方法や通知音については、システム設定 → 通知から変更してください。";
 
 /* 一覧の見出し。Organization でまとめたとき、持ち主を読めなかったリポジトリの行き先 */
 "app.group.no_organization" = "Organization なし";
@@ -138,7 +143,10 @@
 "app.action.open_settings" = "システム設定を開く";
 "app.alert.automation.later" = "あとで";
 
-/* オートメーションの許可。設定ウィンドウ側 */
+/* 通知そのもの。%1$@ は状態 (⏳ 確認待ち など)、%2$@ はリポジトリ名、%3$@ はブランチ名 */
+"app.notify.subtitle" = "%1$@ · %2$@ · %3$@";
+
+/* オートメーションと通知の許可。設定ウィンドウ側 */
 "app.settings.automation_section" = "許可";
 "app.settings.automation" = "iTerm2 の操作";
 "app.settings.automation_footer" = "macOS が尋ねるのは一度きりです。すでに断っている場合は聞き直してこないので、システム設定で入れ直すことになります。許可はコード署名に紐づくので、別の署名でビルドし直すと最初からになります。";
@@ -148,6 +156,13 @@
 "app.settings.automation.not_running" = "iTerm2 が起動していません";
 "app.settings.automation.unknown" = "いま確かめられません";
 "app.settings.automation.ask" = "許可…";
+"app.settings.notify" = "通知を出す";
+"app.settings.notify.granted" = "許可済み";
+"app.settings.notify.denied" = "許可されていません";
+"app.settings.notify.undecided" = "まだ尋ねていません";
+"app.settings.notify.checking" = "確かめています…";
+/* バンドルの外 (swift run) で動いているとき。通知そのものを出せない */
+"app.settings.notify.unavailable" = "このビルドでは出せません";
 
 /* 版の表示。%@ は版そのもの (0.1.0 など) */
 "app.settings.version" = "バージョン %@";

@@ -21,6 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var reaper: Reaper!
     private var focus: FocusWatcher!
     private var settings: SettingsWindow!
+    private var notices: NoticeSettings!
+    private var notifier: Notifier!
+    private var noticeWatcher: NoticeWatcher!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)  // Dock アイコンを出さない
@@ -52,7 +55,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.store.setCollecting(visible)
         }
 
-        settings = SettingsWindow(appearance: appearance)
+        notices = NoticeSettings()
+        notifier = Notifier()
+        notifier.onOpen = { [weak self] id in self?.open(taskID: id) }
+        // 何も出さない設定なら尋ねない。使わない許可を求めるダイアログは、
+        // 何を聞かれているのか分からないまま断られる
+        if !notices.wanted.isEmpty { notifier.requestAuthorizationIfNeeded() }
+        noticeWatcher = NoticeWatcher(store: store, settings: notices, notifier: notifier)
+
+        settings = SettingsWindow(appearance: appearance, notices: notices,
+                                  notifier: notifier)
 
         menuBar = MenuBarController(store: store)
         menuBar.onToggleSidebar = { [weak self] in self?.sidebar.toggle() }

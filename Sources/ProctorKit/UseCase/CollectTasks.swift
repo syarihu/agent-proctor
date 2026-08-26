@@ -144,15 +144,11 @@ public enum CollectTasks {
         }.map(\.element)
     }
 
-    /// **動いていた場所が消えたもの (missing) は入れない。** そこへ戻っても
-    /// 見るものが無いので、急いで見るべきものの列に混ぜても片付けられない
-    /// (一覧の行としては ⚠ で残るので、消えたこと自体は分かる)
+    /// **線引きは持たない。** 同じ問い (まだ人の手が要るか) を macOS の通知側でも
+    /// するので、答えは `TaskStatus.needsPerson` に1本だけ置いてある。
+    /// ここに写しを作ると、片方だけ直したときに上と下で食い違う
     private static func needsReview(_ task: CollectedTask) -> Bool {
-        switch task.displayStatus {
-        case TaskStatus.waiting, TaskStatus.done: return true
-        case TaskStatus.failed: return task.seenAt == nil
-        default: return false
-        }
+        TaskStatus.needsPerson(status: task.status, seenAt: task.seenAt)
     }
 
     /// 状態の並び順を優先度として使う。**ここに独自の順を作らない** —
