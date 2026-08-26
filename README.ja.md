@@ -235,7 +235,7 @@ diff -u /tmp/proctor-baseline/{before,after}.txt
 
 ```bash
 brew install syarihu/tap/agent-proctor
-ln -s "$(brew --prefix agent-proctor)/Agent Proctor.app" /Applications/
+proctor sidebar
 ```
 
 ### ソースからビルド
