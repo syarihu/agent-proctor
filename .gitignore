@@ -7,3 +7,4 @@ build/
 .knowledge/knowledge.db.bak.*
 .knowledge/search.log
 .knowledge/command.log
+.claude/
