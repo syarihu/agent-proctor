@@ -124,6 +124,7 @@
 
 /* 一覧の行。%1$@ はブランチ名、%2$@ は経過時間 (5m など) */
 "app.row.branch_age" = "%1$@ · idle %2$@";
+"app.row.pr_help" = "#%1$@ %2$@\nOpen in the browser";
 "app.row.close_help" = "Remove from the list (the worktree is left alone)";
 
 /* セッションの乗っていない worktree。%d は件数 */

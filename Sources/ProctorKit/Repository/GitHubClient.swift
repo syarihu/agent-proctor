@@ -38,6 +38,44 @@ public enum GitHubClient {
         return ProcessRunner.capture([gh, "auth", "token"]).ok
     }
 
+    /// そのブランチに紐づく PR を1つ引く。
+    ///
+    /// **`gh pr view` ではなく `gh pr list` を使う。** view のほうは PR が
+    /// 無いときも非0で終わるので、**「無い」と「聞けなかった」が終了コードから
+    /// 見分けられない**。list なら、無いときは空の配列を返して正常終了し、
+    /// 認証が切れているときや git の外で呼ばれたときだけ非0になる。
+    /// 見分けが付かないまま覚えると、gh が使えないだけの状態が
+    /// 「PR は無い」として焼き付く (`PullRequestLookup` の説明)。
+    ///
+    /// **`--state all` を落とさないこと。** 既定は open だけなので、
+    /// マージした PR を取りこぼす。作業が終わったあとにこそ
+    /// 「どの PR になったか」を見たい。新しいものから返るので先頭を採る。
+    ///
+    /// **branch は呼ぶ側から受け取る。** 台帳の branch は登録した時点の値で、
+    /// セッションの途中で `git switch` すればずれる。PR はブランチに紐づくので、
+    /// ずれた名前で引くと**別のブランチの PR を開かせる**ことになる。
+    ///
+    /// - Parameters:
+    ///   - worktree: どのリポジトリに聞くかを gh に決めさせるための場所
+    ///   - branch: いま実際に出ているブランチ名
+    public static func pullRequest(worktree: String, branch: String) -> PullRequestLookup {
+        // detached の `rev-parse --abbrev-ref` は "HEAD" を返す。台帳が
+        // ブランチを持たないときに入れる "-" ともども、名前ではないので聞かない
+        guard let gh = executable,
+              !branch.isEmpty, branch != "HEAD", branch != "-" else { return .unavailable }
+        // 待ち切りを入れるのは、届かないホストだと gh が1分近く黙るため。
+        // 呼ぶのは常駐しているアプリなので、返らない問い合わせを残せない
+        let (ok, output) = ProcessRunner.capture(
+            [gh, "pr", "list", "--head", branch, "--state", "all", "--limit", "1",
+             "--json", "number,url,state,isDraft,title"],
+            cwd: worktree, timeout: 15)
+        guard ok, let data = output.data(using: .utf8),
+              let found = try? JSONDecoder().decode([PullRequestRef].self, from: data) else {
+            return .unavailable
+        }
+        return found.first.map(PullRequestLookup.found) ?? .absent
+    }
+
     /// 持ち主のアイコンの URL。user でも organization でも同じ口で引ける。
     ///
     /// GitHub 以外のホストは相手にしない。gh は GitHub 専用の道具で、

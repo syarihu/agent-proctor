@@ -124,6 +124,7 @@
 
 /* 一覧の行。%1$@ はブランチ名、%2$@ は経過時間 (5m など) */
 "app.row.branch_age" = "%1$@ · 経過: %2$@";
+"app.row.pr_help" = "#%1$@ %2$@\nブラウザで開く";
 "app.row.close_help" = "一覧から外す (worktree はそのまま)";
 
 /* セッションの乗っていない worktree。%d は件数 */

@@ -8,7 +8,9 @@ import Foundation
 /// どこに clone するかが人それぞれだから。** 同じ組織のリポジトリを別の場所に
 /// 置いていれば別の組織として並ぶし、worktree を別のところに切っていれば
 /// 本体とも離れてしまう。remote URL なら、どこに置いてあっても同じ答えになる。
-public struct RepoOrigin: Codable, Equatable {
+/// (中身は文字列3つなので、スレッドを跨いで渡しても困らない。
+/// 表示側が別のスレッドへ持ち出すため `Sendable` を明示しておく)
+public struct RepoOrigin: Codable, Equatable, Sendable {
     /// ホスト名 ("github.com")。アイコンを取りに行ってよい相手かの判断に使う
     public var host: String
     /// 持ち主。GitHub では user か organization の login 名。

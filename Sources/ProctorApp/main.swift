@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarController!
     private var folding: GroupFolding!
     private var avatars: OrgAvatarStore!
+    private var pullRequests: PullRequestStore!
     private var reaper: Reaper!
     private var focus: FocusWatcher!
     private var settings: SettingsWindow!
@@ -32,15 +33,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appearance = Appearance()
         folding = GroupFolding()
         avatars = OrgAvatarStore()
+        pullRequests = PullRequestStore()
         let store = store!
         let appearance = appearance!
         let folding = folding!
         let avatars = avatars!
+        let pullRequests = pullRequests!
 
         sidebar = SidebarPanel(
             appearance: appearance,
             content: TaskListView(store: store, appearance: appearance, folding: folding,
                                   avatars: avatars,
+                                  pullRequests: pullRequests,
                                   onOpen: { [weak self] task in
                 self?.open(taskID: task.id)
             }, onClose: { [weak self] task in
@@ -53,6 +57,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sidebar.onVisibilityChange = { [weak self] visible in
             // 見えていない間は git を起動しない
             self?.store.setCollecting(visible)
+            // gh も同じ。誰も見ていない番号のために問い合わせを出さない
+            self?.pullRequests.setEnabled(visible)
         }
 
         notices = NoticeSettings()

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import ProctorKit
 
@@ -12,6 +13,7 @@ struct TaskListView: View {
     @ObservedObject var appearance: Appearance
     @ObservedObject var folding: GroupFolding
     @ObservedObject var avatars: OrgAvatarStore
+    @ObservedObject var pullRequests: PullRequestStore
     var onOpen: (CollectedTask) -> Void
     var onClose: (CollectedTask) -> Void
     /// セッションの乗っていない worktree を押したとき。
@@ -35,6 +37,9 @@ struct TaskListView: View {
         // ここも body 1回につき1度だけ。**まとめ方 (org / repo) の外側で数える** —
         // 手が挙がっているものは、どうまとめていようと最上部に出したい
         let pending = CollectTasks.awaitingReview(store.tasks)
+        // 並びの鍵も body 1回につき1度だけ。見出しとタスクIDを全部つなぐ文字列なので、
+        // animation と onChange の両方から呼ぶと同じ組み立てが2度走る
+        let ordering = orderKey(orgs: orgs, repos: repos)
         return ZStack {
             // 背景のアンビエントグロー（確認待ちや実行中の状態に応じたやわらかな環境光）
             ambientGlow
@@ -88,7 +93,7 @@ struct TaskListView: View {
                             }
                         }
                         .animation(.spring(response: 0.35, dampingFraction: 0.78),
-                                   value: orderKey(orgs: orgs, repos: repos))
+                                   value: ordering)
                     }
                 }
                 .padding(base * 0.3)
@@ -101,6 +106,13 @@ struct TaskListView: View {
                        value: pending.isEmpty)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // 一覧から消えた worktree の PR を落とす。見張りは `.task` が畳まれて
+        // 止まるが、取れた答えのほうを外す者がいないので、ここで掃く。
+        // **並びが変わったことを知らせる鍵に相乗りする** —— 顔ぶれが変われば
+        // 必ず動くので、掃除のためだけに数え直す必要がない
+        .onChange(of: ordering) { _ in
+            pullRequests.keep(worktrees: Set(store.tasks.map(\.worktree)))
+        }
     }
 
     private var rateLimitSummaries: [AgentQuotaSummary] {
@@ -130,6 +142,7 @@ struct TaskListView: View {
             ForEach(group.tasks) { task in
                 TaskRow(task: task, base: base,
                         isCurrent: isCurrent(task),
+                        pullRequests: pullRequests,
                         onOpen: onOpen, onClose: onClose)
                     .padding(.leading, base + indent)
             }
@@ -519,6 +532,7 @@ private struct TaskRow: View {
     let base: CGFloat
     /// いま iTerm2 で開いているタブ
     let isCurrent: Bool
+    @ObservedObject var pullRequests: PullRequestStore
     var onOpen: (CollectedTask) -> Void
     var onClose: (CollectedTask) -> Void
 
@@ -571,8 +585,13 @@ private struct TaskRow: View {
                         .truncationMode(.tail)
                 }
 
-                // ブランチ・経過時間・サブエージェント・diff
+                // PR・ブランチ・経過時間・サブエージェント・diff
                 HStack(alignment: .firstTextBaseline, spacing: base * 0.6) {
+                    // **番号のほうを残す。** 幅が足りないときに削るのは
+                    // ブランチ名の末尾で、番号は削れると別の PR になってしまう
+                    if let pr = pullRequests.refs[task.worktree] {
+                        PRBadge(ref: pr, base: base).layoutPriority(1)
+                    }
                     Text(Localized.text("app.row.branch_age", task.branch, shortAge(task.idleSeconds)))
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -679,6 +698,29 @@ private struct TaskRow: View {
             }
         }
         .help(task.worktree)
+        // PR を取りに行くのは、行が出ている間だけ。一覧から消えれば SwiftUI が
+        // これごと畳むので、居なくなった作業場のために回り続けることはない。
+        //
+        // **鍵は変わらない。** 台帳の worktree は登録した時点から動かないので
+        // (`RecordHookEvent.rebind` が入れ直すのは端末とプロセスだけ)、
+        // これは見張りが行のどこに紐づいているかを言うためだけに書いてある
+        .task(id: task.worktree) {
+            await pullRequests.watch(worktree: task.worktree, origin: task.origin)
+        }
+        // ターンの切れ目で聞き直す。**`gh pr create` を走らせた直後がここ。**
+        // 期限が切れるのを待つと、PR を作ってから最大2分は番号が出ない。
+        //
+        // **見るのは台帳の状態で、表示の状態ではない。** displayStatus のほうは
+        // 完了を見たときにも (done → seen) 動くが、あれはタブを覗いただけで
+        // ターンが終わったわけではない。そこで聞き直すと、同じターンに対して
+        // gh がもう1回起きる。
+        // 確認待ちと実行中を外してあるのは、ひとつのターンの中で何度も
+        // 行き来するため (権限を聞かれるたびに戻る)
+        .onChange(of: task.status) { status in
+            guard task.exists,
+                  status == TaskStatus.done || status == TaskStatus.failed else { return }
+            pullRequests.noteTurnEnded(worktree: task.worktree, origin: task.origin)
+        }
     }
 
     /// ホバー中だけ出る「一覧から外す」ボタン。
@@ -874,6 +916,51 @@ private struct DiffBadge: View {
     }
 }
 
+/// ブランチに紐づく PR の番号。押すとブラウザで開く。
+///
+/// **ブランチと同じ行に置く。** PR はブランチの持ち物なので、diff と同じ
+/// 「git まわり」の段に並ぶほうが読み筋が揃う。セッション名の行に前置きすると、
+/// あちらは1行に切り詰めてある上に状態で色が変わるので、名前が削れて色も濁る。
+/// 遅れて届くものなので、目立つ行で後から生えると横にずれるという理由もある。
+private struct PRBadge: View {
+    let ref: PullRequestRef
+    let base: CGFloat
+
+    @State private var hovering = false
+
+    var body: some View {
+        // 番号だけを出す。"PR" と添えると、ブランチ名に割ける幅がその分減る
+        Text("#\(ref.number)")
+            .font(.system(size: base * 0.8).monospacedDigit())
+            .foregroundStyle(Palette.pullRequest(ref))
+            // 押せることは下線で示す。常に引いておくと、色の付いた文字が
+            // 並ぶ行がさらに賑やかになる
+            .underline(hovering)
+            // 文字そのものは小さいので、当たり判定だけ縦に広げる。
+            // 横に広げないのは、ブランチ名との間が空いて別の行に見えるため
+            .padding(.vertical, base * 0.2)
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            // クリックは行と同じ onTapGesture で受ける。内側のタップが
+            // 優先されるので行の「開く」は動かない (閉じるボタンと同じ作り)。
+            // **`Button` にはしない。** サイドバーは nonactivatingPanel で、
+            // この方式でないと手前に出ていないときの1回目のクリックが吸われる
+            .onTapGesture { open() }
+            .help(Localized.text("app.row.pr_help", String(ref.number), ref.title))
+            // 押せることを読み上げにも伝える。**見た目の経路とは別に要る** ——
+            // `Text` に手を付けただけでは、操作できるものとして扱われない
+            .accessibilityElement()
+            .accessibilityLabel("#\(ref.number) \(ref.title)")
+            .accessibilityAddTraits(.isLink)
+            .accessibilityAction { open() }
+    }
+
+    private func open() {
+        guard let url = URL(string: ref.url) else { return }
+        NSWorkspace.shared.open(url)
+    }
+}
+
 /// 完了時にシュッと一筆書きで描かれるチェックマーク
 private struct AnimatedCheckmark: View {
     let size: CGFloat
@@ -971,6 +1058,29 @@ enum Palette {
     static let claude = Color(red: 0.878, green: 0.478, blue: 0.345)       // #e07a58 (テラコッタ)
     static let antigravity = Color(red: 0.353, green: 0.647, blue: 0.980)  // #5aa5fa (ブルー)
     static let codex = Color(red: 0.063, green: 0.639, blue: 0.498)        // #10a37f (グリーン)
+
+    /// PR の状態。同じ行に並ぶ diff バッジと同じ濃さで持つ。
+    ///
+    /// **タイトルの状態色 (`TaskRow.titleColor`) とは役目が違う。** あちらは
+    /// 「まだ手を付けていないか」を示すもので、こちらは PR そのものの状態。
+    /// 同じ行の diff が既に色を持っているので、ここに色を置いても浮かない
+    static let prOpen = Color(red: 0.298, green: 0.686, blue: 0.314)   // #4caf50
+    static let prMerged = Color(red: 0.671, green: 0.533, blue: 0.941) // #ab88f0
+    static let prClosed = Color(red: 0.937, green: 0.325, blue: 0.314) // #ef5350
+
+    /// PR1件を何色で出すか。
+    ///
+    /// **下書きは状態より先に見る。** 開いてはいてもレビューには出ていないので、
+    /// 開いている PR と同じ色で並べると、見てもらえる状態だと読み違える
+    static func pullRequest(_ ref: PullRequestRef) -> Color {
+        if ref.isDraft { return dim }
+        switch ref.state {
+        case PullRequestState.open: return prOpen
+        case PullRequestState.merged: return prMerged
+        case PullRequestState.closed: return prClosed
+        default: return dim
+        }
+    }
 
     /// 状態そのものを表す色。畳んだ見出しの内訳のように、
     /// 印と数だけで状態を見せる場所で使う。
