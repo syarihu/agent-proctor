@@ -78,7 +78,13 @@ scripts/baseline.sh after    # 変更後
 diff -u /tmp/proctor-baseline/{before,after}.txt
 ```
 
-アプリの見た目を変えたときは `scripts/install.sh` で入れ直して実機で確かめる。
+アプリの見た目を変えたときは `scripts/switch-cli.sh dev` で入れ直して実機で確かめ、
+終わったら `scripts/switch-cli.sh brew` で戻す。
+
+`install.sh` を直に叩かないのは、proctor の入口が2つあるため。
+hooks が呼ぶ `~/bin/proctor` は張り替わるが、手で打つときに引かれる PATH 上の
+`proctor` は Homebrew 版のまま残るので、どちらの版の挙動を見ているのか分からなくなる。
+`switch-cli.sh` はその2つをまとめて動かす。今どちらを向いているかは `status` で見る。
 
 
 # Local Knowledge Base
