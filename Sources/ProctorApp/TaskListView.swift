@@ -698,8 +698,12 @@ private struct TaskRow: View {
             }
         }
         .help(task.worktree)
-        // PR を取りに行くのは、行が出ている間だけ。作業場が変わったら見張り直す
-        // (同じ行が別の worktree を指すことはないが、鍵を明示しておく)
+        // PR を取りに行くのは、行が出ている間だけ。一覧から消えれば SwiftUI が
+        // これごと畳むので、居なくなった作業場のために回り続けることはない。
+        //
+        // **鍵は変わらない。** 台帳の worktree は登録した時点から動かないので
+        // (`RecordHookEvent.rebind` が入れ直すのは端末とプロセスだけ)、
+        // これは見張りが行のどこに紐づいているかを言うためだけに書いてある
         .task(id: task.worktree) {
             await pullRequests.watch(worktree: task.worktree, origin: task.origin)
         }
