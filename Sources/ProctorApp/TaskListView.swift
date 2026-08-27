@@ -938,12 +938,22 @@ private struct PRBadge: View {
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             // クリックは行と同じ onTapGesture で受ける。内側のタップが
-            // 優先されるので行の「開く」は動かない (閉じるボタンと同じ作り)
-            .onTapGesture {
-                guard let url = URL(string: ref.url) else { return }
-                NSWorkspace.shared.open(url)
-            }
+            // 優先されるので行の「開く」は動かない (閉じるボタンと同じ作り)。
+            // **`Button` にはしない。** サイドバーは nonactivatingPanel で、
+            // この方式でないと手前に出ていないときの1回目のクリックが吸われる
+            .onTapGesture { open() }
             .help(Localized.text("app.row.pr_help", String(ref.number), ref.title))
+            // 押せることを読み上げにも伝える。**見た目の経路とは別に要る** ——
+            // `Text` に手を付けただけでは、操作できるものとして扱われない
+            .accessibilityElement()
+            .accessibilityLabel("#\(ref.number) \(ref.title)")
+            .accessibilityAddTraits(.isLink)
+            .accessibilityAction { open() }
+    }
+
+    private func open() {
+        guard let url = URL(string: ref.url) else { return }
+        NSWorkspace.shared.open(url)
     }
 }
 
