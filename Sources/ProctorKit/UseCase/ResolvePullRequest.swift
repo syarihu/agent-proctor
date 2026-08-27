@@ -157,7 +157,12 @@ public enum ResolvePullRequest {
         entries[worktree] = Entry(branch: branch, ref: ref, at: Date())
         failures.removeValue(forKey: worktree)
         while order.count > limit {
-            entries.removeValue(forKey: order.removeFirst())
+            // **クールダウンも一緒に落とす。** 覚えを捨てたのに待ちだけ残ると、
+            // 次に聞かれたとき、手元に何も無いのに問い合わせもしない状態になる
+            // (最大10分、番号が出ないまま何も起きない)
+            let evicted = order.removeFirst()
+            entries.removeValue(forKey: evicted)
+            failures.removeValue(forKey: evicted)
         }
         lock.unlock()
     }
