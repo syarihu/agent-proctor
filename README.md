@@ -28,11 +28,13 @@ The session name, context usage and subagent count are things a tab cannot tell
 you. `elapsed` is the time since the status last changed — if something has been
 running for a long time, that is a hint that it is either thinking hard or stuck.
 The tool line is what the agent is touching right now, and subagents hang under
-the session that spawned them, one row each.
+the session that spawned them, one row each. When the branch has a pull request,
+its number leads that line and takes you to it in the browser; the colour says
+whether it is open, merged or closed, and a draft stays dim.
 
 ```
 ⏳ Fix the empty state of the sidebar  (context: 13%)
-   develop · elapsed: 59s
+   #128 develop · elapsed: 59s
 ▶ Split the kit into layers  (context: 32%)
    main · elapsed: 1m  🤖2              +74 -3 ?2
    Edit: TaskStore.swift
