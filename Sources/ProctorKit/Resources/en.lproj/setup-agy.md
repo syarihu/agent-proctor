@@ -11,7 +11,7 @@ cover every existing configuration. So this is written as **instructions for an
 AI to follow** — hand it to the agent it is about, or let the agent run
 `proctor setup <agent>` and read it itself.
 
-Antigravity uses `hooks.json` (placed in `~/.gemini/config/hooks.json` or `.agents/hooks.json`) and statusLine configured in `~/.gemini/antigravity-cli/settings.json`.
+Antigravity uses `hooks.json` (placed in `~/.gemini/config/hooks.json` or `.agents/hooks.json`) and a statusLine configured in `~/.gemini/antigravity-cli/settings.json`.
 
 Session titles for Antigravity are resolved automatically in the following priority order:
 1. AI-generated conversation summary title from `~/.gemini/antigravity-cli/conversation_summaries.db`
