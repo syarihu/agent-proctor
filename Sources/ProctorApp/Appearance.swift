@@ -70,7 +70,7 @@ final class Appearance: ObservableObject {
 
     // MARK: - タブ番号
 
-    /// 行に iTerm2 のタブ番号 (⌘N) を出すか。
+    /// 行に iTerm2 のタブ番号 (⌘1〜⌘9) を出すか。
     ///
     /// **切ってあるときは端末に番号を聞きに行かない。** 出さない番号のために
     /// 1秒ごとに Apple Event を1件投げ続けることになる (ItermBridge.focusedTab)。

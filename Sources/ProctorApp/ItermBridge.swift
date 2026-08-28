@@ -213,7 +213,7 @@ enum ItermBridge {
         for index in stride(from: 2, to: fields.count, by: 2) {
             let session = fields[index]
             guard !session.isEmpty, let number = Int(fields[index + 1]) else { continue }
-            // 分割ペインは1つのタブに複数のセッションが乗る。⌘N はタブに効くので、
+            // 分割ペインは1つのタブに複数のセッションが乗る。鍵はタブに効くので、
             // 同じタブのセッションはどれも同じ番号でよい
             numbers[session] = number
         }

@@ -71,7 +71,7 @@ final class FocusWatcher {
                     }
                     // **番号は空でも配る。** 窓を全部閉じたときの空は
                     // 「タブが1つも無い」という答えなので、古い番号を残すと
-                    // もう無いタブへ ⌘N を押させることになる。
+                    // 消えたタブの番号を押させることになる。
                     // 聞けなかったとき (nil) はここへ来ないので取り違えない
                     if tab.tabNumbers != self.tabNumbers {
                         self.tabNumbers = tab.tabNumbers
