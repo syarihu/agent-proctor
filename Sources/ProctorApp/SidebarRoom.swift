@@ -201,6 +201,41 @@ final class SidebarRoom {
             && abs(lhs.width - rhs.width) < 2 && abs(lhs.height - rhs.height) < 2
     }
 
+    /// その枠が一番多く乗っている画面。どこにも掛かっていなければ nil。
+    ///
+    /// **画面をメイン決め打ちにしないためにある。** 端末を別の画面に出していると、
+    /// 左端 (visibleFrame.minX) も画面の高さも別物になるので、メイン画面の
+    /// 物差しで測ると場所を空け損ねるし、置いたサイドバーが画面の外へ出る。
+    ///
+    /// 比べる前に NSScreen の枠を CGWindowList の向き (メイン画面の左上が原点で
+    /// 下向き) に直す。x はどちらの座標系でも同じなので、直すのは y だけ
+    static func screen(containing bounds: CGRect) -> NSScreen? {
+        var best: NSScreen?
+        var bestArea: CGFloat = 0
+        for screen in NSScreen.screens {
+            // 交わらないときの intersection は null 矩形で、幅も高さも 0 になる
+            let overlap = cgFrame(of: screen).intersection(bounds)
+            let area = overlap.width * overlap.height
+            if area > bestArea {
+                bestArea = area
+                best = screen
+            }
+        }
+        return best
+    }
+
+    /// NSScreen の枠を CGWindowList と同じ向きで表したもの。
+    ///
+    /// AppKit の原点はメイン画面の左下、CGWindowList はメイン画面の左上。
+    /// **どの画面を映すときも引き算に使うのはメイン画面の高さ** で、
+    /// その画面自身の高さではない (原点はメイン画面にあるため)
+    private static func cgFrame(of screen: NSScreen) -> CGRect {
+        guard let primary = NSScreen.screens.first else { return screen.frame }
+        return CGRect(x: screen.frame.minX,
+                      y: primary.frame.height - screen.frame.maxY,
+                      width: screen.frame.width, height: screen.frame.height)
+    }
+
     /// CGWindowList から最前面の iTerm2 のウィンドウ枠を読む。
     /// SidebarPanel と同じ見方をするので、判定もそこに合わせてある
     static func currentItermBounds() -> CGRect? {

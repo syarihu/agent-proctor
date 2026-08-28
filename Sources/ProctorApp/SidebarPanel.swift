@@ -230,9 +230,6 @@ final class SidebarPanel: NSObject {
     }
 
     private func updatePosition() {
-        guard let screen = NSScreen.screens.first else { return }
-        let screenHeight = screen.frame.height
-
         // 手で閉じている間は場所も追わない。次に開いたときに合わせ直す
         guard !userHidden else {
             pollInterval = 0.5
@@ -254,6 +251,15 @@ final class SidebarPanel: NSObject {
             return
         }
 
+        // 座標を入れ替える基準はメイン画面。CGWindowList の原点は
+        // 「メイン画面の左上」、AppKit の原点は「メイン画面の左下」なので、
+        // どの画面に乗っている窓でも、引き算に使う高さはメイン画面のものになる
+        guard let primary = NSScreen.screens.first else { return }
+        // 寄せるのも置くのも、**その窓が乗っている画面**を基準にする。
+        // メイン画面で決め打ちにすると、別の画面に出した端末では左端も高さも
+        // 別物を見ることになり、場所を空け損ねたうえにサイドバーが画面の外へ出る
+        let screen = SidebarRoom.screen(containing: bounds) ?? primary
+
         // 左に隙間が無ければ iTerm2 を右へ寄せて場所を作る。
         // 動かせたなら枠が変わっているので、置くのは次の周回で読み直してから。
         //
@@ -266,9 +272,13 @@ final class SidebarPanel: NSObject {
             return
         }
 
-        // CGWindowList の原点は画面の左上、AppKit は左下。ここで入れ替える
-        let target = NSRect(x: max(0, bounds.minX - width),
-                            y: screenHeight - (bounds.minY + bounds.height),
+        // CGWindowList の原点は画面の左上、AppKit は左下。ここで入れ替える。
+        // 左端で止めるのはその画面の縁であって 0 ではない。0 で止めると、
+        // メイン画面より左に置いた画面 (枠の x が負になる) の端末に付いていけない。
+        // 縁を visibleFrame で測るのは makeRoom と揃えるため。Dock が左にあるとき、
+        // frame で測ると場所を空けられなかった場合に Dock の下へ潜り込む
+        let target = NSRect(x: max(screen.visibleFrame.minX, bounds.minX - width),
+                            y: primary.frame.height - (bounds.minY + bounds.height),
                             width: width, height: bounds.height)
 
         if target != lastTarget {
