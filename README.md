@@ -46,7 +46,8 @@ whether it is open, merged or closed, and a draft stays dim.
 
 Everything you have not dealt with is gathered into a `Needs you` strip pinned
 at the top of the sidebar: a session stopped for your approval, a finished one
-you have not looked at, and one that fell over and you have not looked at either.
+you have not dealt with, and one that fell over that you have not dealt with
+either.
 A row that is waiting also carries what it is waiting for — `Bash: rm -rf
 build`, the command sitting in the permission prompt. A waiting row leaves the
 strip the moment you answer that prompt; a finished or failed one leaves once
