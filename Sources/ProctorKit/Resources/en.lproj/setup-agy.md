@@ -11,7 +11,7 @@ cover every existing configuration. So this is written as **instructions for an
 AI to follow** — hand it to the agent it is about, or let the agent run
 `proctor setup <agent>` and read it itself.
 
-Antigravity uses `hooks.json` (placed in `~/.gemini/config/hooks.json` or `.agents/hooks.json`) and statusline configured in `~/.gemini/antigravity-cli/settings.json`.
+Antigravity uses `hooks.json` (placed in `~/.gemini/config/hooks.json` or `.agents/hooks.json`) and statusLine configured in `~/.gemini/antigravity-cli/settings.json`.
 
 Session titles for Antigravity are resolved automatically in the following priority order:
 1. AI-generated conversation summary title from `~/.gemini/antigravity-cli/conversation_summaries.db`
@@ -46,7 +46,7 @@ agent-proctor is not installed — stop there and tell me.
 | `PreToolUse` | `invoke_subagent` | `[ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _subagent start` | a subagent started |
 | `Stop` | none | `[ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _touch done --json` | the turn finished |
 
-2. If using statusline in `~/.gemini/antigravity-cli/settings.json`, pass the stdin JSON to `proctor _stats`:
+2. If using statusLine in `~/.gemini/antigravity-cli/settings.json`, pass the stdin JSON to `proctor _stats`:
    ```python
    # Inside statusline script:
    try:
@@ -59,7 +59,7 @@ agent-proctor is not installed — stop there and tell me.
        pass
    ```
 
-3. If you end up writing a script file — the statusline script above, or an
+3. If you end up writing a script file — the statusLine script above, or an
    existing hook script you have to extend — look at where the scripts already
    registered in your configuration live and put yours in the same place. The
    layout that is already on this machine beats any layout this document could

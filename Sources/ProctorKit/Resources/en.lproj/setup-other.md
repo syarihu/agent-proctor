@@ -27,7 +27,7 @@ If your hook script already does something else with the same event — colourin
 the terminal tab, for instance — remember that stdin can only be read once. Read
 the JSON to completion first, then hand the same content to `proctor`.
 
-If wiring it up means writing a script file — something to pass the statusline
+If wiring it up means writing a script file — something to pass the statusLine
 JSON along, or an existing hook script that has to be extended — look at where
 the scripts already registered in that agent's configuration live, and put it in
 the same place. The layout that is already on the machine beats any layout this
