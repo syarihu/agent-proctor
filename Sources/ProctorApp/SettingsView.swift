@@ -43,7 +43,11 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 12)
         }
-        .frame(width: 460)
+        // **要確認の選択肢が入り切る幅。** セグメントは幅を等分するので、
+        // 長いほうの「完了ボタンを押したとき」(13pt で 132) が2つ分要る。
+        // 余白を足すと 300 強、ラベル (120) と Form の内側の余白を引くと、
+        // 460 では足りずに選択肢が真ん中で切れる
+        .frame(width: 540)
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -161,9 +165,8 @@ struct SettingsView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    // 他の Picker より広いのは、選択肢が「いつ消えるか」の文だから。
-                    // 縮めると日本語のほうが「完了ボタンを押した…」で切れる
-                    .frame(maxWidth: 300)
+                    // **ここだけ幅を決めない。** 他の Picker は語 (「リポジトリ」など) が
+                    // 並ぶだけだが、こちらは選択肢が文なので、残っている幅を全部使わせる
                 }
             } header: {
                 Text(Localized.text("app.settings.unread_section"))
