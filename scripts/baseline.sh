@@ -236,6 +236,23 @@ PY
     # 残すと以降の節で ID の採番がずれて、何を見ている節なのか分かりにくくなる
     payload s9 "$LAB/work" | "$BIN" _touch clear
 
+    # 終わった行には2行目が無く、印と名前だけでは「何が終わったか」が分からない。
+    # Stop が渡してくる last_assistant_message を、要確認の一覧に出す分だけ載せる
+    say "終わったターンの締めが載る (markdown の骨組みは落ちる)"
+    payload s1 "$LAB/work" ',"last_assistant_message":"## 結論\n\n**recap** は `hook` では取れないのだ。\n\n- 案1\n- 案2"' \
+        | "$BIN" _touch done
+    "$BIN" ls --all --json | grep -E '"(status|summary)"'
+
+    # 保留されていた終わりが確定するときの done は、文を持たずに飛んでくる。
+    # そこで消すと、載せてくるエージェントでも締めが1回で消える
+    say "文を持たない done では、載っている締めが消えない"
+    payload s1 "$LAB/work" | "$BIN" _touch done
+    "$BIN" ls --all --json | grep '"summary"'
+
+    say "また動き出すと締めは消える (前のターンの話なので)"
+    payload s1 "$LAB/work" | "$BIN" _touch running
+    "$BIN" ls --all --json | grep -E '"(status|summary)"'
+
     say "_stats (statusline からの横流し)"
     printf '{"session_id":"s1","model":{"display_name":"Opus 5"},"context_window":{"used_percentage":42.6},"session_name":"テスト"}' | "$BIN" _stats
     "$BIN" ls --all --json | grep -E '"(name|model|contextPercent)"'

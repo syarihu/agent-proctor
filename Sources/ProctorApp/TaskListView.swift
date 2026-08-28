@@ -1401,16 +1401,32 @@ private struct InboxRow: View {
                         .frame(width: base * 1.6, alignment: .trailing)
                         .layoutPriority(1)
                 }
-                // 何の承認を待っているか。**ここだけは2行目を許す。**
-                // 手が挙がっていることは記号で分かるが、何を訊かれているかは
-                // 言葉でしか分からず、それが無いとどのみちタブへ行くことになる。
-                // 真ん中を省くのは、頭 (ツール名) と末尾 (対象) の両方を残したいため
+                // **ここだけは2行目を許す。** 確認待ちなら何を訊かれているか、
+                // 終わっていれば何を言い残したか。手が挙がっていることも
+                // 終わったことも記号で分かるが、その中身は言葉でしか分からず、
+                // 無いとどのみちタブへ行くことになる。
+                //
+                // どちらも状態で門番されているので同時には出ない。それでも
+                // **確認待ちを先に見る** — こちらが人を待たせている側なので、
+                // 両方載っている台帳を読んだときに急ぐほうを出す
                 if let request = task.currentRequest {
+                    // 真ん中を省くのは、頭 (ツール名) と末尾 (対象) の両方を残したいため
                     Text(request)
                         .font(.system(size: base * 0.7).monospaced())
                         .foregroundStyle(Palette.waiting.opacity(0.9))
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else if let summary = task.currentSummary {
+                    // こちらは文なので等幅にしない (揃える桁が無い)。
+                    // 末尾を省くのは、エージェントが結論から書くため。
+                    // 真ん中を抜くと、読ませたい書き出しは残るのに文が壊れる。
+                    // 色を落としているのは、これが「もう済んだ話」だから
+                    Text(summary)
+                        .font(.system(size: base * 0.7))
+                        .foregroundStyle(Palette.dim)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }

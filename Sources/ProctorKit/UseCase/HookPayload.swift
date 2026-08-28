@@ -265,6 +265,48 @@ public struct HookPayload {
         return flat.count <= limit ? flat : String(flat.prefix(limit))
     }
 
+    /// 終わったターンが最後に言ったこと。
+    ///
+    /// Claude Code の `Stop` / `StopFailure` / `SubagentStop` に入っている。
+    /// **transcript を読みに行かずに済むのがここを使う理由**で、Claude Code 自身が
+    /// そう言っている ("Avoids the need to read and parse the transcript file")。
+    /// 持ってこないエージェントでは nil のまま通るので、繋ぎ方は変えなくていい。
+    ///
+    /// 載せるのは地の文だけを1行に均したもの。エージェントの返事は markdown なので、
+    /// そのまま持つと `**` や `##` が記号のまま一覧に出る。
+    /// 長さは activity より緩くしてある (あちらはツール名、こちらは文)
+    public var lastMessage: String? {
+        for key in ["last_assistant_message", "lastAssistantMessage"] {
+            guard let text = box[key] as? String else { continue }
+            let prose = HookPayload.plainProse(text)
+            if !prose.isEmpty { return HookPayload.condensed(prose, limit: 120) }
+        }
+        return nil
+    }
+
+    /// markdown を人の文に均す。**要るのは地の文だけ。**
+    ///
+    /// 見出し・箇条書き・表・引用・コードブロックは文章の骨組みで、1行に潰すと
+    /// 記号だけが残って読めなくなる (「## 結論 - A - B」)。行ごと落とす。
+    /// 強調とコード記法は文の途中に出るので、記号だけ外して中身は残す。
+    ///
+    /// 箇条書きの判定に**後ろの空白まで見る**のは、`**結論**` のように
+    /// 強調で書き出した段落を巻き添えにしないため
+    static func plainProse(_ text: String) -> String {
+        let prose = text.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { line in
+                !(line.hasPrefix("#") || line.hasPrefix("- ") || line.hasPrefix("* ")
+                    || line.hasPrefix(">") || line.hasPrefix("|")
+                    || line.hasPrefix("```") || line.hasPrefix("---"))
+            }
+            .joined(separator: " ")
+        return prose
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "`", with: "")
+            .trimmingCharacters(in: .whitespaces)
+    }
+
     /// セッションを動かしているエージェント ("claude" / "agy" / "codex")。
     ///
     /// **Codex は Claude Code とほとんど同じ形の payload を送ってくる**
