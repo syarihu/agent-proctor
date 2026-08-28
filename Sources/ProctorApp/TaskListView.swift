@@ -1343,6 +1343,11 @@ private struct InboxRow: View {
             Text(" ")
                 .font(.system(size: base * 0.85, weight: .medium))
                 .hidden()
+                // 読み上げからも外す。`hidden()` が外すのは目に映る分だけで、
+                // 場所取りのための空白が読み上げに残ると、印のたびに
+                // 意味のない間が挟まる。**印そのものは残す** —
+                // これが掛かるのは overlay より前の、空白の側だけ
+                .accessibilityHidden(true)
                 .overlay { mark }
                 .frame(width: base * 1.1)
             VStack(alignment: .leading, spacing: base * 0.1) {
@@ -1378,17 +1383,19 @@ private struct InboxRow: View {
                         // 消すと高さを決める者がいなくなり、元の伸び縮みに戻る
                         .foregroundStyle(hovering ? Color.clear : Palette.dim)
                         // **右端で揃える。** overlay は既定で中央に重ねるので、
-                        // 指定しないと ✓ が経過の文字と違う位置に出る。
-                        // さらに ✓ は当たり判定のための余白を持っていて、
-                        // そのぶん円が文字より内側に寄る。負の padding で
-                        // 余白だけを打ち消す (当たり判定は contentShape で
-                        // 確定済みなので、これで狭くなることはない)
+                        // 指定しないと ✓ が経過の文字と違う位置に出る
+                        // (ZStack だったころは alignment がそれを担っていた)。
+                        //
+                        // 円が文字の右端よりわずかに内側に見えるのは、✓ が
+                        // 当たり判定のための余白を持っているため。**ここでは詰めない** —
+                        // 負の padding で寄せると親の枠がそのぶん縮み、
+                        // はみ出した側が押せなくなる (SwiftUI の当たり判定は
+                        // 親の枠で切られる)。見た目より押せるほうを採る
                         .overlay(alignment: .trailing) {
                             if hovering {
                                 ClearButton(base: base, size: base * 0.8,
                                             help: Localized.text("app.inbox.clear_one"),
                                             action: { onClear(task) })
-                                    .padding(.trailing, -base * 0.2)
                             }
                         }
                         .frame(width: base * 1.6, alignment: .trailing)
