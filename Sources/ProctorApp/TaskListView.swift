@@ -142,6 +142,7 @@ struct TaskListView: View {
             ForEach(group.tasks) { task in
                 TaskRow(task: task, base: base,
                         isCurrent: isCurrent(task),
+                        tabNumber: tabNumber(task),
                         pullRequests: pullRequests,
                         onOpen: onOpen, onClose: onClose)
                     .padding(.leading, base + indent)
@@ -172,6 +173,18 @@ struct TaskListView: View {
     private func isCurrent(_ task: CollectedTask) -> Bool {
         guard let focused = store.focusedSession, !focused.isEmpty else { return false }
         return task.itermSession == focused
+    }
+
+    /// そのセッションが乗っているタブの番号 (⌘N の N)。端末に聞けなかった間は nil。
+    ///
+    /// 台帳を持たないセッション (itermSession が無い) を巻き込まないよう、
+    /// 空の guid では引かない
+    private func tabNumber(_ task: CollectedTask) -> Int? {
+        // **設定はここでも見る。** 切ると端末に聞くのも止まるが、預かっている
+        // 番号が消えるのは次の周期なので、その間だけ出たままになってしまう
+        guard appearance.showTabNumbers else { return nil }
+        guard let session = task.itermSession, !session.isEmpty else { return nil }
+        return store.tabNumbers[session]
     }
 
     /// 折りたたみの開け閉め。畳むと行が消えるので、動かして見せないと
@@ -532,6 +545,8 @@ private struct TaskRow: View {
     let base: CGFloat
     /// いま iTerm2 で開いているタブ
     let isCurrent: Bool
+    /// このセッションが乗っているタブの番号 (⌘N の N)。聞けていない間は nil
+    let tabNumber: Int?
     @ObservedObject var pullRequests: PullRequestStore
     var onOpen: (CollectedTask) -> Void
     var onClose: (CollectedTask) -> Void
@@ -546,7 +561,13 @@ private struct TaskRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: base * 0.4) {
-            mark
+            // 状態の印と、その下にタブ番号。**列は広げない。**
+            // 横に並べると本文がその分だけ狭くなるが、縦に積むぶんには
+            // すでにある余白で足りる (行は3段組みで、印は1段目にしか要らない)
+            VStack(spacing: base * 0.2) {
+                mark
+                tabShortcut
+            }
                 .frame(width: base * 1.3, alignment: .center)
                 .padding(.top, base * 0.12)
 
@@ -777,6 +798,24 @@ private struct TaskRow: View {
             AnimatedCheckmark(size: base, color: Palette.done)
         default:
             Text(TaskStatus.mark(task.displayStatus)).font(.system(size: base))
+        }
+    }
+
+    /// ⌘1〜⌘9。押せばこの行のタブに飛べる、という手掛かり。
+    ///
+    /// **10番以降は ⌘ を付けない。** iTerm2 のタブ切り替えは ⌘1〜⌘9 までで、
+    /// 10番目に割り当てられた鍵は無い。番号そのものはタブにも出ているので、
+    /// 目印としては役に立つ。
+    ///
+    /// 幅は印の列に収まる。文字を縮めずに済むよう fixedSize を付けているので、
+    /// 万一はみ出しても切り落とされずに中央から溢れる (切れた番号は別のタブを指す)。
+    @ViewBuilder
+    private var tabShortcut: some View {
+        if let tabNumber {
+            Text(tabNumber <= 9 ? "⌘\(tabNumber)" : "\(tabNumber)")
+                .font(.system(size: base * 0.62, weight: .medium).monospacedDigit())
+                .foregroundStyle(isCurrent ? Palette.dim.opacity(0.9) : Palette.dim.opacity(0.55))
+                .fixedSize()
         }
     }
 

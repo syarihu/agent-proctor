@@ -22,15 +22,24 @@ final class FocusWatcher {
     private var timer: Timer?
     private var current: String?
     private var currentDirectory: String?
+    /// 前に配ったタブ番号。同じものを配り直さないために覚えておく
+    /// (@Published は同じ値でも一覧をまるごと組み直させる)
+    private var tabNumbers: [String: Int] = [:]
     private let writer = LedgerWriter()
 
     /// - Parameters:
     ///   - onFocus: 見ているタブが変わったときに呼ばれる
     ///   - onDirectory: 見ているタブの現在地が変わったときに呼ばれる。
     ///     **エージェントが動いていない場所も知りたい**ので、台帳とは別に追う
+    ///   - wantsTabNumbers: タブ番号を出す設定になっているか。**毎周期聞く。**
+    ///     設定は途中で変わるので、立ち上げたときの値を覚えると付いていけない
+    ///   - onTabNumbers: タブ番号 (⌘N の N) の顔ぶれが変わったときに呼ばれる。
+    ///     鍵はセッションの guid
     ///   - onSeen: 台帳に確認済みを書いたときに呼ばれる
     init(onFocus: @escaping (String?) -> Void,
          onDirectory: @escaping (String?) -> Void,
+         wantsTabNumbers: @escaping () -> Bool,
+         onTabNumbers: @escaping ([String: Int]) -> Void,
          onSeen: @escaping () -> Void) {
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
             Task { @MainActor [weak self] in
@@ -45,7 +54,9 @@ final class FocusWatcher {
 
                 // 聞けなかったとき (nil) は前の値を保つ。iTerm2 が一瞬答えなかった
                 // だけで印が飛ぶと、行がちらついて落ち着かない
-                if let tab = ItermBridge.focusedTab() {
+                // 出さない設定なら数えさせない。番号の分は空で返ってくるので、
+                // 下の突き合わせがそのまま「もう番号は無い」として配ってくれる
+                if let tab = ItermBridge.focusedTab(withTabNumbers: wantsTabNumbers()) {
                     let resolved = tab.session.isEmpty ? nil : tab.session
                     if resolved != self.current {
                         self.current = resolved
@@ -57,6 +68,14 @@ final class FocusWatcher {
                     if !tab.directory.isEmpty, tab.directory != self.currentDirectory {
                         self.currentDirectory = tab.directory
                         onDirectory(tab.directory)
+                    }
+                    // **番号は空でも配る。** 窓を全部閉じたときの空は
+                    // 「タブが1つも無い」という答えなので、古い番号を残すと
+                    // 消えたタブの番号を押させることになる。
+                    // 聞けなかったとき (nil) はここへ来ないので取り違えない
+                    if tab.tabNumbers != self.tabNumbers {
+                        self.tabNumbers = tab.tabNumbers
+                        onTabNumbers(tab.tabNumbers)
                     }
                 }
                 // 台帳を書くのはメインスレッドから外す (理由は LedgerWriter)

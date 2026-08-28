@@ -36,6 +36,13 @@ final class TaskStore: ObservableObject {
     /// 台帳には書かない。台帳を書くのはフックの役目で、覗いただけの
     /// リポジトリを覚えると、覚えておける件数の枠をそれで食ってしまう
     @Published private(set) var currentRepo: String?
+    /// セッションの guid ごとの iTerm2 タブ番号 (⌘N の N)。
+    ///
+    /// **台帳には書かない。** 番号はタブを開く・閉じる・並べ替えるたびに動くので、
+    /// 台帳に持たせるとその都度書き込みが走り、一覧の組み直しを呼び続ける。
+    /// 端末に聞けば分かるものなので、預かるだけにする
+    /// (聞きに行くのは FocusWatcher)
+    @Published private(set) var tabNumbers: [String: Int] = [:]
 
     /// 台帳の更新時刻を見に行く間隔。stat を叩くだけなので軽い
     private let pollInterval: TimeInterval = 0.5
@@ -115,6 +122,12 @@ final class TaskStore: ObservableObject {
     func setFocused(_ session: String?) {
         guard focusedSession != session else { return }
         focusedSession = session
+    }
+
+    /// タブ番号の顔ぶれが変わったときに呼ぶ。
+    func setTabNumbers(_ numbers: [String: Int]) {
+        guard tabNumbers != numbers else { return }
+        tabNumbers = numbers
     }
 
     /// いま見ているタブの現在地が変わったときに呼ぶ。

@@ -105,7 +105,8 @@ enum ItermBridge {
         return Set(ids)
     }
 
-    /// いま見ているタブ (最前面のウィンドウの現在のセッション) の guid と、その現在地。
+    /// いま見ているタブ (最前面のウィンドウの現在のセッション) の guid と、その現在地、
+    /// そして開いている全セッションのタブ番号 (⌘N の N)。
     ///
     /// ウィンドウが1つも無いときは空の guid を返す。窓が無い状態で
     /// `current window` を辿ると AppleScript がエラーになり、
@@ -114,26 +115,112 @@ enum ItermBridge {
     /// 聞けなかったとき (iTerm2 が居ない・許可が無い) は nil。
     /// 「どこも見ていない」と区別できないと、印を消してよいか決められない。
     ///
-    /// 現在地を同じ往復で取ってくる。1秒ごとに聞くものなので、
+    /// 現在地とタブ番号を同じ往復で取ってくる。1秒ごとに聞くものなので、
     /// Apple Event の往復を2つに増やしたくない。path は shell integration が
-    /// 無くても iTerm2 が追っている
-    static func focusedTab() -> (session: String, directory: String)? {
-        let source = """
+    /// 無くても iTerm2 が追っている。
+    ///
+    /// **タブ番号は毎回数え直すしかない。** iTerm2 は位置を答えてくれない。
+    ///
+    ///   - `index of tab` は辞書 (sdef) に載っているのに実装されておらず、
+    ///     引くと -1728 で落ちる
+    ///   - セッション変数の `tab.id` はタブに貼り付いた通し番号で、位置ではない。
+    ///     真ん中のタブを閉じても後ろのタブの `tab.id` は変わらない
+    ///   - `ITERM_SESSION_ID` の `w0t2p0` は作られたときの位置のまま固まる
+    ///
+    /// 残るのは `tabs of window` を数えながら回す道だけで、これは開く・閉じる・
+    /// 並べ替えのたびに変わる。だから覚え込まず、毎周期そのまま取り直す。
+    ///
+    /// **書き方でイベントの数がまるごと変わる。** `tell application` の中は
+    /// プロパティを1つ引くたびに Apple Event が飛び、1件おおよそ 17ms 掛かる
+    /// (AEDebugSends で数え、NSDate で計った実測値)。ここは1秒ごとに走るうえ、
+    /// NSAppleScript はメインスレッドを塞ぐので、件数がそのままサイドバーの
+    /// 引っかかりになる。守っているのは次の3つ。
+    ///
+    ///   - **`id of sessions of tabs of windows` で全ウィンドウを一発で取る。**
+    ///     ウィンドウ → タブ → セッションの入れ子が保たれたまま1件で返るので、
+    ///     並び順から番号を数えられる。ウィンドウごとに引くと
+    ///     `count of windows` + ウィンドウ数だけ増え、セッションごとに `id of s` を
+    ///     引くとタブ7つで 400ms に膨らむ
+    ///   - **中間変数に受けない。** `set s to current session of …` は
+    ///     その場で1件飛ぶ。`id of current session of …` と続けて書けば1件で済む
+    ///   - **`tell <指定子> to …` は指定子のまま渡る。** path を引くのに
+    ///     セッションを先に解決する必要はない
+    ///
+    /// この形で 4 件・67ms。番号を足す前 (4 件・66ms) と変わらない。
+    ///
+    /// - Parameter withTabNumbers: 番号を数えるか。**要らないなら数える行ごと落とす。**
+    ///   出さない番号のために1秒ごとに1件投げ続けることになる。文面が変われば
+    ///   別のものとしてコンパイル結果が覚えられる (execute の compiled は文面が鍵) ので、
+    ///   設定を切り替えても組み立て直しはそれぞれ一度きり
+    static func focusedTab(withTabNumbers: Bool)
+        -> (session: String, directory: String, tabNumbers: [String: Int])? {
+        var source = """
         tell application "iTerm2"
             if (count of windows) is 0 then return ""
-            set s to current session of current tab of current window
             set p to ""
             try
-                tell s to set p to (get variable named "path")
+                tell current session of current tab of current window ¬
+                    to set p to (get variable named "path")
             end try
-            return (id of s) & (character id 0) & p & (character id 0)
+            set out to (id of current session of current tab of current window) ¬
+                & (character id 0) & p & (character id 0)
+        """
+        if withTabNumbers {
+            source += """
+
+            set grid to id of sessions of tabs of windows
+            repeat with win in grid
+                set n to 0
+                repeat with row in win
+                    set n to n + 1
+                    repeat with g in row
+                        set out to out & (g as text) & (character id 0) ¬
+                            & (n as text) & (character id 0)
+                    end repeat
+                end repeat
+            end repeat
+            """
+        }
+        source += """
+
+            return out
         end tell
         """
-        guard let text = execute(source, interactive: false, reusable: true),
-              let tabs = parseTabs(text) else { return nil }
-        // 窓が無いときは空文字が返る。「聞けなかった」とは別物なので、
-        // 空のまま (guid も現在地も無し) として返す
-        return tabs.first ?? (session: "", directory: "")
+        guard let text = execute(source, interactive: false, reusable: true) else { return nil }
+        return parseFocus(text)
+    }
+
+    /// focusedTab の答えを読む。読めない形なら nil。
+    ///
+    /// 並びは (見ているセッションの guid, その現在地) が1組目で、
+    /// 2組目から先が (guid, タブ番号) の繰り返し。
+    ///
+    /// **形が違うものを空扱いにしない。** 空は「窓が1つも無い」という答えで、
+    /// 受け取る側はそれを信じて印を消す。壊れていたのなら、
+    /// 聞けなかったとき (nil) と同じ扱いにさせる。
+    private static func parseFocus(_ text: String)
+        -> (session: String, directory: String, tabNumbers: [String: Int])? {
+        // 窓が1つも無ければ空文字。これは「どこも見ていない」という確かな答え
+        if text.isEmpty { return (session: "", directory: "", tabNumbers: [:]) }
+        guard text.contains("\0") else { return nil }
+
+        var fields = text.components(separatedBy: "\0")
+        // 各組の末尾にも区切りを打っているので、最後に空の余りが1つ出る
+        if fields.last?.isEmpty == true { fields.removeLast() }
+        guard fields.count >= 2, fields.count % 2 == 0 else { return nil }
+
+        var numbers: [String: Int] = [:]
+        for index in stride(from: 2, to: fields.count, by: 2) {
+            let session = fields[index]
+            guard !session.isEmpty, let number = Int(fields[index + 1]) else { continue }
+            // 分割ペインは1つのタブに複数のセッションが乗る。鍵はタブに効くので、
+            // 同じタブのセッションはどれも同じ番号でよい
+            numbers[session] = number
+        }
+        return (session: fields[0],
+                directory: fields[1].isEmpty ? "" :
+                    URL(fileURLWithPath: fields[1]).resolvingSymlinksInPath().path,
+                tabNumbers: numbers)
     }
 
     /// 一番手前のウィンドウの枠を置き直す。

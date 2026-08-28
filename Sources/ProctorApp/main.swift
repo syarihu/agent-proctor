@@ -83,6 +83,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onFocus: { [weak self] session in self?.store.setFocused(session) },
             // エージェントが動いていない場所も一覧に混ぜたいので、現在地も預ける
             onDirectory: { [weak self] path in self?.store.setCurrentDirectory(path) },
+            // タブ番号は端末に聞かないと分からないので、こちらも預ける。
+            // 出さない設定のときは聞きに行かせない (問い合わせが1件減る)
+            wantsTabNumbers: { [weak self] in self?.appearance.showTabNumbers ?? false },
+            onTabNumbers: { [weak self] numbers in self?.store.setTabNumbers(numbers) },
             // 書いたのは自分なので、台帳の更新時刻を待たずに映す
             onSeen: { [weak self] in self?.store.refreshNow() })
 
