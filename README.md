@@ -100,7 +100,7 @@ Open *Settings…* and turn on *Open at login*, and it will start on its own fro
 then on. The sidebar's text size, width and grouping are set there too.
 
 <p align="center">
-  <img src="docs/images/settings.png" alt="The settings window: sidebar text size, width, opacity, background, how rows are grouped, the make-room toggle, open at login, which of waiting, finishing and failing are notified, whether sending notifications and controlling iTerm2 are allowed, and the version" width="460">
+  <img src="docs/images/settings.png" alt="The settings window: sidebar text size, width, opacity, background, how rows are grouped, the make-room toggle, open at login, when a notice is cleared from the Needs you strip, which of waiting, finishing and failing are notified, whether sending notifications and controlling iTerm2 are allowed, and the version" width="540">
 </p>
 
 ## Wiring up your agent

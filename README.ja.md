@@ -94,7 +94,7 @@ scripts/install.sh               # /Applications に入れ、~/bin/proctor を�
 サイドバーの文字の大きさや幅、行のまとめ方もそこで変えられます。
 
 <p align="center">
-  <img src="docs/images/settings.png" alt="設定ウィンドウ。文字の大きさ・幅・不透明度・下地・行のまとめ方・iTerm2 の幅を詰める設定、ログイン時に起動、確認待ち・完了・失敗のどれを通知するか、通知と iTerm2 の操作を許可しているか、バージョン" width="460">
+  <img src="docs/images/settings.png" alt="設定ウィンドウ。文字の大きさ・幅・不透明度・下地・行のまとめ方・iTerm2 の幅を詰める設定、ログイン時に起動、要確認から通知を消すタイミング、確認待ち・完了・失敗のどれを通知するか、通知と iTerm2 の操作を許可しているか、バージョン" width="540">
 </p>
 
 ## エージェントとの連携
