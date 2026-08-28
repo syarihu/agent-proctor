@@ -26,3 +26,12 @@ usually names the tool at best.
 If your hook script already does something else with the same event — colouring
 the terminal tab, for instance — remember that stdin can only be read once. Read
 the JSON to completion first, then hand the same content to `proctor`.
+
+If wiring it up means writing a script file — something to pass the statusLine
+JSON along, or an existing hook script that has to be extended — look at where
+the scripts already registered in that agent's configuration live, and put it in
+the same place. The layout that is already on the machine beats any layout this
+document could name. With nothing to follow, fall back to
+`<the agent's config directory>/hooks/<bundle id or identifier of whatever the script belongs to>/<script>`.
+Naming the directory after the owner says who put the script there, and it makes
+removing that tool later one directory plus the entries that point at it.

@@ -47,7 +47,7 @@ agent-proctor (https://github.com/syarihu/agent-proctor) と連携するよう�
 
 2. `~/.gemini/antigravity-cli/settings.json` で statusLine を使っている場合は、スクリプト内で stdin の JSON を `proctor _stats` に渡してください:
    ```python
-   # statusline スクリプト内:
+   # statusLine スクリプト内:
    try:
        proctor = os.path.expanduser('~/bin/proctor')
        if os.access(proctor, os.X_OK):
@@ -57,6 +57,15 @@ agent-proctor (https://github.com/syarihu/agent-proctor) と連携するよう�
    except Exception:
        pass
    ```
+
+3. スクリプトを書くことになった場合（上の statusLine スクリプトや、手を入れる必要の
+   ある既存のフックスクリプト）は、設定に既に登録されているスクリプトがどこに
+   置かれているかを見て、同じ場所に置いてください。この文書が示せるどんな置き方より、
+   その機械に既にある置き方のほうが優先です。倣う相手が無いときの既定として
+   `~/.gemini/config/hooks/<そのスクリプトの持ち主の bundle id か識別子>/<スクリプト>`
+   を使ってください。proctor なら `net.syarihu.proctor` です。持ち主の名前で
+   ディレクトリを切っておくと、誰が置いたものかが分かり、後でそのツールを外すときに
+   ディレクトリ1つと、そこを指している設定だけで済みます。
 ```
 
 ## worktree の入口も作ってください

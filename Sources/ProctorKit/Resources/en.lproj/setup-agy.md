@@ -11,7 +11,7 @@ cover every existing configuration. So this is written as **instructions for an
 AI to follow** — hand it to the agent it is about, or let the agent run
 `proctor setup <agent>` and read it itself.
 
-Antigravity uses `hooks.json` (placed in `~/.gemini/config/hooks.json` or `.agents/hooks.json`) and statusline configured in `~/.gemini/antigravity-cli/settings.json`.
+Antigravity uses `hooks.json` (placed in `~/.gemini/config/hooks.json` or `.agents/hooks.json`) and a statusLine configured in `~/.gemini/antigravity-cli/settings.json`.
 
 Session titles for Antigravity are resolved automatically in the following priority order:
 1. AI-generated conversation summary title from `~/.gemini/antigravity-cli/conversation_summaries.db`
@@ -46,9 +46,9 @@ agent-proctor is not installed — stop there and tell me.
 | `PreToolUse` | `invoke_subagent` | `[ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _subagent start` | a subagent started |
 | `Stop` | none | `[ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _touch done --json` | the turn finished |
 
-2. If using statusline in `~/.gemini/antigravity-cli/settings.json`, pass the stdin JSON to `proctor _stats`:
+2. If using statusLine in `~/.gemini/antigravity-cli/settings.json`, pass the stdin JSON to `proctor _stats`:
    ```python
-   # Inside statusline script:
+   # Inside statusLine script:
    try:
        proctor = os.path.expanduser('~/bin/proctor')
        if os.access(proctor, os.X_OK):
@@ -58,6 +58,16 @@ agent-proctor is not installed — stop there and tell me.
    except Exception:
        pass
    ```
+
+3. If you end up writing a script file — the statusLine script above, or an
+   existing hook script you have to extend — look at where the scripts already
+   registered in your configuration live and put yours in the same place. The
+   layout that is already on this machine beats any layout this document could
+   name. Only when there is nothing to follow, fall back to
+   `~/.gemini/config/hooks/<bundle id or identifier of whatever the script belongs to>/<script>`;
+   for proctor that is `net.syarihu.proctor`. Naming the directory after the
+   owner says who put the script there, and it makes removing that tool later
+   one directory plus the entries that point at it.
 ```
 
 ## Give yourself an entry point for worktrees
