@@ -118,16 +118,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 更新されないので、押した瞬間に近い itermSession はこちらで見る
         guard let task = store.record(id: taskID) else { return }
 
-        if let session = task.itermSession, ItermBridge.focus(sessionID: session) {
-            return
-        }
-        // 押しても何も起きないと手掛かりが無くなるので、失敗は伝える
-        if !ItermBridge.openTab(runningCommand: "proctor attach \(task.id)") {
-            let alert = NSAlert()
-            alert.messageText = Localized.text("app.alert.open_failed.title", task.displayName)
-            alert.informativeText = Localized.text("app.alert.open_failed.body")
-            alert.alertStyle = .warning
-            alert.runModal()
+        // **押されたのなら、許可の答えが出るまで待ってから開く。**
+        // 未決の間 ItermBridge は何も投げない (理由は permissionSettled) ので、
+        // 待たずに進むと、まだ何も試していないのに「開けませんでした」と言うことになる
+        Task { @MainActor in
+            await ItermBridge.settlePermission()
+
+            if let session = task.itermSession, ItermBridge.focus(sessionID: session) {
+                return
+            }
+            // 押しても何も起きないと手掛かりが無くなるので、失敗は伝える
+            if !ItermBridge.openTab(runningCommand: "proctor attach \(task.id)") {
+                let alert = NSAlert()
+                alert.messageText = Localized.text("app.alert.open_failed.title",
+                                                   task.displayName)
+                alert.informativeText = Localized.text("app.alert.open_failed.body")
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
         }
     }
 
@@ -139,17 +147,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// **エージェントは起こさない** — 続きの会話が無い場所なので、
     /// 何を始めるかは開いた人が決める
     private func open(worktree: CollectedWorktree) {
-        if let session = ItermBridge.sessionID(inDirectory: worktree.path),
-           ItermBridge.focus(sessionID: session) {
-            return
-        }
-        guard ItermBridge.openTab(inDirectory: worktree.path) else {
-            let alert = NSAlert()
-            alert.messageText = Localized.text("app.alert.open_failed.title", worktree.name)
-            alert.informativeText = Localized.text("app.alert.open_failed.body")
-            alert.alertStyle = .warning
-            alert.runModal()
-            return
+        // 待つ理由は open(taskID:) と同じ
+        Task { @MainActor in
+            await ItermBridge.settlePermission()
+
+            if let session = ItermBridge.sessionID(inDirectory: worktree.path),
+               ItermBridge.focus(sessionID: session) {
+                return
+            }
+            guard ItermBridge.openTab(inDirectory: worktree.path) else {
+                let alert = NSAlert()
+                alert.messageText = Localized.text("app.alert.open_failed.title",
+                                                   worktree.name)
+                alert.informativeText = Localized.text("app.alert.open_failed.body")
+                alert.alertStyle = .warning
+                alert.runModal()
+                return
+            }
         }
     }
 

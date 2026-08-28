@@ -54,11 +54,21 @@ enum ItermBridge {
             return
         }
         let asking = Task {
-            let state = await AutomationPermission.request()
-            // 相手が居ないうちは決めようがない。iTerm2 が起きてから聞き直す。
-            // 断られた場合も「出た答え」なので通す (以後の送信はその場で
-            // errAEEventNotPermitted が返るだけで、待たされることはない)
-            permissionSettled = state != .targetNotRunning
+            switch await AutomationPermission.request() {
+            case .granted, .denied:
+                // 断られたのも「出た答え」。以後の送信はその場で
+                // errAEEventNotPermitted が返るだけで、待たされることはない
+                permissionSettled = true
+            case .unknown:
+                // どちらとも言えない。**それでも通す。** 待たされる形ではないし、
+                // ここで止め続けると iTerm2 に何も言えないまま動かなくなる。
+                // 何が起きたかは送った先の失敗として出る
+                permissionSettled = true
+            case .undecided, .targetNotRunning:
+                // まだ答えが無い。**ここで通すと、次の送信でまたダイアログ待ちに
+                // なってメインスレッドが止まる。** 尋ね直せる機会を待つ
+                permissionSettled = false
+            }
         }
         // **待ちに入る前に預ける。** 待ってから預けると、その間に来た呼び出しが
         // 先客を見つけられず、同じ問い合わせをもう一度立ててしまう
