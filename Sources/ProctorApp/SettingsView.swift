@@ -43,7 +43,12 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 12)
         }
-        .frame(width: 460)
+        // **要確認の1行に合わせた幅。** セグメントは幅を等分するので、長いほうの
+        // 「完了ボタンを押したとき」(13pt で 132) が2つ分と余白で 300 ほど要る。
+        // ラベル (「通知を消すタイミング」で 120) を足すと 460 では収まらず、
+        // セグメントがラベルの下へ落ちて2行になる。
+        // 他の節はここまで要らないが、節ごとに幅は変えられない
+        .frame(width: 540)
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -149,6 +154,30 @@ struct SettingsView: View {
                 }
             } header: {
                 Text(Localized.text("app.settings.launch_section"))
+            }
+
+            Section {
+                LabeledContent(Localized.text("app.settings.unread")) {
+                    Picker("", selection: $notices.seenPolicy) {
+                        Text(Localized.text("app.settings.unread.on_open"))
+                            .tag(MarkSessionSeen.Policy.onOpen)
+                        Text(Localized.text("app.settings.unread.until_cleared"))
+                            .tag(MarkSessionSeen.Policy.untilCleared)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    // **ここだけ幅を決めない。** 他の Picker は語 (「リポジトリ」など) が
+                    // 並ぶだけだが、こちらは選択肢が文 (「完了ボタンを押したとき」は
+                    // 13pt で 132) なので、幅を決め打つと窓に入らずラベルの下へ落ちる。
+                    // 残っている幅を渡して、そこに収めてもらう
+                }
+            } header: {
+                Text(Localized.text("app.settings.unread_section"))
+            } footer: {
+                Text(Localized.text("app.settings.unread_footer"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {

@@ -46,10 +46,18 @@ whether it is open, merged or closed, and a draft stays dim.
 
 Everything you have not dealt with is gathered into a `Needs you` strip pinned
 at the top of the sidebar: a session stopped for your approval, a finished one
-you have not looked at, and one that fell over and you have not looked at either.
+you have not dealt with, and one that fell over that you have not dealt with
+either.
 A row that is waiting also carries what it is waiting for — `Bash: rm -rf
-build`, the command sitting in the permission prompt. It leaves the strip the
-moment you answer that prompt, or visit that tab.
+build`, the command sitting in the permission prompt. A waiting row leaves the
+strip the moment you answer that prompt; a finished or failed one leaves once
+you visit its tab.
+
+Visiting the tab is only the default. *Settings…* has a `Needs you` section
+where a notice for a finished or failed session can be made to stay until you
+clear it by hand, so having looked at something does not count as having
+replied to it. It then goes once that session moves again — sending it an
+instruction is enough — or once you press the ✓ on the notice.
 
 When you are not looking at the sidebar at all, macOS says it for you: a
 notification goes out the moment a session starts waiting for you, finishes, or
@@ -93,7 +101,7 @@ Open *Settings…* and turn on *Open at login*, and it will start on its own fro
 then on. The sidebar's text size, width and grouping are set there too.
 
 <p align="center">
-  <img src="docs/images/settings.png" alt="The settings window: sidebar text size, width, opacity, background, how rows are grouped, the make-room toggle, open at login, which of waiting, finishing and failing are notified, whether sending notifications and controlling iTerm2 are allowed, and the version" width="460">
+  <img src="docs/images/settings.png" alt="The settings window: sidebar text size, width, opacity, background, how rows are grouped, the make-room toggle, open at login, when a notice is cleared from the Needs you strip, which of waiting, finishing and failing are notified, whether sending notifications and controlling iTerm2 are allowed, and the version" width="540">
 </p>
 
 ## Wiring up your agent
