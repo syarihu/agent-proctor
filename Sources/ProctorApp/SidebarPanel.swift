@@ -274,8 +274,10 @@ final class SidebarPanel: NSObject {
 
         // CGWindowList の原点は画面の左上、AppKit は左下。ここで入れ替える。
         // 左端で止めるのはその画面の縁であって 0 ではない。0 で止めると、
-        // メイン画面より左に置いた画面 (枠の x が負になる) の端末に付いていけない
-        let target = NSRect(x: max(screen.frame.minX, bounds.minX - width),
+        // メイン画面より左に置いた画面 (枠の x が負になる) の端末に付いていけない。
+        // 縁を visibleFrame で測るのは makeRoom と揃えるため。Dock が左にあるとき、
+        // frame で測ると場所を空けられなかった場合に Dock の下へ潜り込む
+        let target = NSRect(x: max(screen.visibleFrame.minX, bounds.minX - width),
                             y: primary.frame.height - (bounds.minY + bounds.height),
                             width: width, height: bounds.height)
 
