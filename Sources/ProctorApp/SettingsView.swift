@@ -43,13 +43,7 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 12)
         }
-        // **要確認の1行が折れない幅。** セグメントは幅を等分するので、長いほうの
-        // 「完了ボタンを押したとき」(13pt で 132) が2つ分と余白で 300 ほど要る。
-        // ラベル (「通知を消すタイミング」で 120) と Form の内側の余白を足すと、
-        // 540 でも足りずに**セグメントがラベルの下へ落ちて2行になる**
-        // (切れるのではなく折り返す)。他の節はここまで要らないが、
-        // 節ごとに幅は変えられないので、いちばん要るところに合わせる
-        .frame(width: 600)
+        .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -168,7 +162,9 @@ struct SettingsView: View {
                     .labelsHidden()
                     .pickerStyle(.segmented)
                     // **ここだけ幅を決めない。** 他の Picker は語 (「リポジトリ」など) が
-                    // 並ぶだけだが、こちらは選択肢が文なので、残っている幅を全部使わせる
+                    // 並ぶだけだが、こちらは選択肢が文 (「完了ボタンを押したとき」は
+                    // 13pt で 132) なので、幅を決め打つと窓に入らずラベルの下へ落ちる。
+                    // 残っている幅を渡して、そこに収めてもらう
                 }
             } header: {
                 Text(Localized.text("app.settings.unread_section"))
