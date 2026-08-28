@@ -43,7 +43,12 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 12)
         }
-        .frame(width: 460)
+        // **要確認の1行に合わせた幅。** セグメントは幅を等分するので、長いほうの
+        // 「完了ボタンを押したとき」(13pt で 132) が2つ分と余白で 300 ほど要る。
+        // ラベル (「通知を消すタイミング」で 120) を足すと 460 では収まらず、
+        // セグメントがラベルの下へ落ちて2行になる。
+        // 他の節はここまで要らないが、節ごとに幅は変えられない
+        .frame(width: 540)
         .fixedSize(horizontal: false, vertical: true)
     }
 
