@@ -35,22 +35,36 @@ enum ItermBridge {
     /// 入れ直すたびに未決へ戻る。証明書を作っていない環境 (Homebrew から
     /// 入れた場合) では毎回ここを通ることになる
     private static var permissionSettled = false
-    /// いま尋ねている最中か。人が答えるまで戻らないので、重ねて尋ねない
-    private static var settling = false
+    /// いま尋ねている最中の問い合わせ。
+    ///
+    /// **旗ではなく問い合わせそのものを持つ。** 「尋ね中だから」と素通りさせると、
+    /// 答えを待ったつもりの呼び出しが待たずに先へ進んでしまう。持っていれば、
+    /// あとから来た者はその答えに相乗りできる
+    private static var settling: Task<Void, Never>?
 
     /// 許可の答えが出るまで待つ。もう出ているなら何もしない。
     ///
     /// 尋ねる往復は AutomationPermission がメインスレッドの外へ逃がすので、
     /// 人が答えるまで待たされるのは向こうのスレッドだけで済む。
     static func settlePermission() async {
-        guard !permissionSettled, !settling else { return }
-        settling = true
-        let state = await AutomationPermission.request()
-        settling = false
-        // 相手が居ないうちは決めようがない。iTerm2 が起きてから聞き直す。
-        // 断られた場合も「出た答え」なので通す (以後の送信はその場で
-        // errAEEventNotPermitted が返るだけで、待たされることはない)
-        permissionSettled = state != .targetNotRunning
+        guard !permissionSettled else { return }
+        // 先客が居るなら、その答えを一緒に待つ。二重には尋ねない
+        if let settling {
+            await settling.value
+            return
+        }
+        let asking = Task {
+            let state = await AutomationPermission.request()
+            // 相手が居ないうちは決めようがない。iTerm2 が起きてから聞き直す。
+            // 断られた場合も「出た答え」なので通す (以後の送信はその場で
+            // errAEEventNotPermitted が返るだけで、待たされることはない)
+            permissionSettled = state != .targetNotRunning
+        }
+        // **待ちに入る前に預ける。** 待ってから預けると、その間に来た呼び出しが
+        // 先客を見つけられず、同じ問い合わせをもう一度立ててしまう
+        settling = asking
+        await asking.value
+        settling = nil
     }
 
     /// いま iTerm2 に開いているセッションの guid。
