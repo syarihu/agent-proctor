@@ -239,9 +239,11 @@ PY
     # 終わった行には2行目が無く、印と名前だけでは「何が終わったか」が分からない。
     # Stop が渡してくる last_assistant_message を、要確認の一覧に出す分だけ載せる
     # コードは開きと閉じで挟まれるので、フェンスの行だけ落としても中身が残る。
-    # 短い返事だと、それだけで2行目がコードで埋まる
-    say "終わったターンの締めが載る (見出しも箇条書きもコードの中身も落ちる)"
-    payload s1 "$LAB/work" ',"last_assistant_message":"## 結論\n\n**recap** は `hook` では取れないのだ。\n\n```swift\nlet policy = Policy(rawValue: raw)\nstore.apply(policy)\n```\n\n- 案1\n- 案2"' \
+    # 短い返事だと、それだけで2行目がコードで埋まる。
+    # 箇条書きは記号のものだけでなく番号付きも捨てるが、
+    # 「1.5 倍」のような文は残す (あちらは . の次が空白ではない)
+    say "終わったターンの締めが載る (骨組みは落ち、地の文だけ残る)"
+    payload s1 "$LAB/work" ',"last_assistant_message":"## 結論\n\n**recap** は `hook` では取れないのだ。\n\n```swift\nlet policy = Policy(rawValue: raw)\nstore.apply(policy)\n```\n\n- 案1\n+ 案2\n\n1. まず調べる\n2) 次に直す\n\n1.5 倍になったのだ。"' \
         | "$BIN" _touch done
     "$BIN" ls --all --json | grep -E '"(status|summary)"'
 

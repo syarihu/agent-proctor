@@ -289,9 +289,6 @@ public struct HookPayload {
     /// 見出し・箇条書き・表・引用・コードブロックは文章の骨組みで、1行に潰すと
     /// 記号だけが残って読めなくなる (「## 結論 - A - B」)。行ごと落とす。
     /// 強調とコード記法は文の途中に出るので、記号だけ外して中身は残す。
-    ///
-    /// 箇条書きの判定に**後ろの空白まで見る**のは、`**結論**` のように
-    /// 強調で書き出した段落を巻き添えにしないため
     static func plainProse(_ text: String) -> String {
         var kept: [String] = []
         // **コードは開きと閉じで挟まれるので、1行ずつの判定では捨てられない。**
@@ -308,8 +305,8 @@ public struct HookPayload {
                 continue
             }
             if insideFence { continue }
-            if line.hasPrefix("#") || line.hasPrefix("- ") || line.hasPrefix("* ")
-                || line.hasPrefix(">") || line.hasPrefix("|") || line.hasPrefix("---") {
+            if line.hasPrefix("#") || line.hasPrefix(">") || line.hasPrefix("|")
+                || line.hasPrefix("---") || isListItem(line) {
                 continue
             }
             kept.append(line)
@@ -318,6 +315,19 @@ public struct HookPayload {
             .replacingOccurrences(of: "**", with: "")
             .replacingOccurrences(of: "`", with: "")
             .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// 箇条書きの1項目か。記号のもの (`-` `*` `+`) と番号付き (`1.` `1)`) を見る。
+    ///
+    /// **どれも後ろの空白まで見る。** `-` だけで判じると `**結論**` のように
+    /// 強調で書き出した段落を巻き添えにするし、数字だけで判じると
+    /// 「1.5 倍になった」のような文が消える (あちらは `.` の次が空白ではない)
+    static func isListItem(_ line: String) -> Bool {
+        for marker in ["- ", "* ", "+ "] where line.hasPrefix(marker) { return true }
+        let digits = line.prefix(while: \.isNumber)
+        guard !digits.isEmpty else { return false }
+        let rest = line.dropFirst(digits.count)
+        return rest.hasPrefix(". ") || rest.hasPrefix(") ")
     }
 
     /// セッションを動かしているエージェント ("claude" / "agy" / "codex")。
