@@ -236,6 +236,34 @@ PY
     # 残すと以降の節で ID の採番がずれて、何を見ている節なのか分かりにくくなる
     payload s9 "$LAB/work" | "$BIN" _touch clear
 
+    # 終わった行には2行目が無く、印と名前だけでは「何が終わったか」が分からない。
+    # Stop が渡してくる last_assistant_message を、要確認の一覧に出す分だけ載せる
+    # コードは開きと閉じで挟まれるので、フェンスの行だけ落としても中身が残る。
+    # 短い返事だと、それだけで2行目がコードで埋まる。
+    # 箇条書きは記号のものだけでなく番号付きも捨てるが、
+    # 「1.5 倍」のような文は残す (あちらは . の次が空白ではない)
+    say "終わったターンの締めが載る (骨組みは落ち、地の文だけ残る)"
+    payload s1 "$LAB/work" ',"last_assistant_message":"## 結論\n\n**recap** は `hook` では取れないのだ。\n\n```swift\nlet policy = Policy(rawValue: raw)\nstore.apply(policy)\n```\n\n- 案1\n+ 案2\n\n1. まず調べる\n2) 次に直す\n\n1.5 倍になったのだ。"' \
+        | "$BIN" _touch done
+    "$BIN" ls --all --json | grep -E '"(status|summary)"'
+
+    # 保留されていた終わりが確定するときの done は、文を持たずに飛んでくる。
+    # そこで消すと、載せてくるエージェントでも締めが1回で消える
+    say "文を持たない done では、載っている締めが消えない"
+    payload s1 "$LAB/work" | "$BIN" _touch done
+    "$BIN" ls --all --json | grep '"summary"'
+
+    # 文は来たのに、骨組みだけで地の文が残らなかったとき。
+    # 「載せる文が無い」と分かっているので、前のターンの締めは残さない
+    say "骨組みだけの done では、載っている締めが消える"
+    payload s1 "$LAB/work" ',"last_assistant_message":"## 結論\n\n- 案1\n- 案2"' \
+        | "$BIN" _touch done
+    "$BIN" ls --all --json | grep -E '"(status|summary)"'
+
+    say "また動き出すと締めは消える (前のターンの話なので)"
+    payload s1 "$LAB/work" | "$BIN" _touch running
+    "$BIN" ls --all --json | grep -E '"(status|summary)"'
+
     say "_stats (statusline からの横流し)"
     printf '{"session_id":"s1","model":{"display_name":"Opus 5"},"context_window":{"used_percentage":42.6},"session_name":"テスト"}' | "$BIN" _stats
     "$BIN" ls --all --json | grep -E '"(name|model|contextPercent)"'

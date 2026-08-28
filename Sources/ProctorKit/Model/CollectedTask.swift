@@ -48,6 +48,8 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     public var activity: String?
     /// 何の承認を待っているか。台帳の値そのまま
     public var request: String?
+    /// 終わったターンが最後に言ったこと。台帳の値そのまま
+    public var summary: String?
     /// 終わったあと、そのタブを見た時刻
     public var seenAt: Int?
     /// 人が明示的に付けた名前 (タブのタイトルなど)
@@ -103,6 +105,15 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     /// 「承認待ち」の文が残る
     public var currentRequest: String? {
         status == TaskStatus.waiting ? request : nil
+    }
+
+    /// いま出してよい「ターンの締め」。終わったあとだけ返す。
+    ///
+    /// **ここも状態で門番をする** (`currentRequest` と同じ理由)。子を待って
+    /// 保留された done でも台帳には載るので、素通しにすると、まだ動いている行に
+    /// 終わったときの言葉が出る
+    public var currentSummary: String? {
+        status == TaskStatus.done || status == TaskStatus.failed ? summary : nil
     }
 
     /// いま出してよいサブエージェント。
@@ -172,6 +183,7 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         agent = record.agent
         activity = record.activity
         request = record.request
+        summary = record.summary
         seenAt = record.seenAt
         title = record.title
         name = record.name

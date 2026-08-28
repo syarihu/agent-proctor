@@ -318,6 +318,24 @@ public enum RecordHookEvent {
                     ledger.tasks[index].request = text
                 }
             }
+            // ターンが最後に言ったこと。**渡すのも届いた状態**で、理由は上2つと同じ。
+            //
+            // 子を待って保留された done でもここは通る (載せるのは届いた状態で
+            // 決まるため)。台帳には載るが、表示は状態で門番されているので
+            // 実行中のあいだ出ることはなく、最後の子が帰って完了が確定した
+            // ときには、もう文が載っている
+            switch resolveSummary(status: status, payload: payload) {
+            case .keep:
+                break
+            case .clear:
+                if ledger.tasks[index].summary != nil {
+                    ledger.tasks[index].summary = nil
+                }
+            case .set(let text):
+                if ledger.tasks[index].summary != text {
+                    ledger.tasks[index].summary = text
+                }
+            }
             // サブエージェントの素性と手元。親の行とは別に持つ
             applySubagents(&ledger.tasks[index], payload: payload, status: status, now: now)
 
@@ -558,6 +576,41 @@ public enum RecordHookEvent {
         let message = payload.message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else { return .keep }
         return .fallback(HookPayload.condensed(message))
+    }
+
+    /// 「終わったターンが最後に言ったこと」をどうするか。
+    ///
+    /// **終わったのに文が来ていないときは消さない (`keep`)。** `Stop` に
+    /// `last_assistant_message` を載せないエージェントもあり、そこで消すと
+    /// 載せてくる相手でも**保留されていた終わりが確定した拍子に消える**
+    /// (最後の子が帰ってきたときの done は、文を持たずに飛んでくる)
+    ///
+    /// **文は来たのに載せられなかったときは消す (`clear`)。** そちらは
+    /// 「分からない」ではなく「このターンに載せる地の文は無い」と分かっている。
+    /// 残すと前のターンの締めが今のターンの結論として読まれる
+    enum SummaryUpdate: Equatable {
+        case keep
+        case clear
+        case set(String)
+    }
+
+    /// - 子から届いた (agent_id 付き) → 触らない。親の行に子の話を混ぜない
+    ///   (`resolveActivity` と同じ線引き)
+    /// - 終わった (done / failed) → 言い残したことを載せる。
+    ///   届いたのに地の文が残らなかったときは消す
+    /// - また動き出した / 確認待ちになった → 消す。**前のターンの締めが残ると、
+    ///   いま動いている作業をもう終わったことのように読ませる**
+    /// - それ以外 → 触らない
+    static func resolveSummary(status: String, payload: HookPayload) -> SummaryUpdate {
+        if payload.subagentID != nil { return .keep }
+        if status == TaskStatus.done || status == TaskStatus.failed {
+            if let message = payload.lastMessage { return .set(message) }
+            // 届いた本文が箇条書き・見出し・コードだけだったなら、均した結果は空になる。
+            // 載せる文が無いことは分かっているので、前のターンの締めは残さない
+            return payload.carriesLastMessage ? .clear : .keep
+        }
+        if status == TaskStatus.running || status == TaskStatus.waiting { return .clear }
+        return .keep
     }
 
     /// payload から取り出すのに**外の世界を触る**値をまとめて持つ。

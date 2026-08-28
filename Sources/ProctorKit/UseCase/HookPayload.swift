@@ -265,6 +265,90 @@ public struct HookPayload {
         return flat.count <= limit ? flat : String(flat.prefix(limit))
     }
 
+    /// 終わったターンが最後に言ったこと。
+    ///
+    /// Claude Code の `Stop` / `StopFailure` / `SubagentStop` に入っている。
+    /// **transcript を読みに行かずに済むのがここを使う理由**で、Claude Code 自身が
+    /// そう言っている ("Avoids the need to read and parse the transcript file")。
+    /// 持ってこないエージェントでは nil のまま通るので、繋ぎ方は変えなくていい。
+    ///
+    /// 載せるのは地の文だけを1行に均したもの。エージェントの返事は markdown なので、
+    /// そのまま持つと `**` や `##` が記号のまま一覧に出る。
+    /// 長さは activity より緩くしてある (あちらはツール名、こちらは文)
+    public var lastMessage: String? {
+        guard let text = rawLastMessage else { return nil }
+        let prose = HookPayload.plainProse(text)
+        guard !prose.isEmpty else { return nil }
+        return HookPayload.condensed(prose, limit: 120)
+    }
+
+    /// 締めの文が**本文付きで届いたか**。
+    ///
+    /// **`lastMessage` が nil になる理由は2つある。** 鍵ごと来ていないのか、
+    /// 来てはいるが markdown の骨組みだけで地の文が残らなかったのか。
+    /// 前者は「このターンが何を言ったか分からない」で、後者は「載せる文が無い」と
+    /// 分かっている。台帳に載っている前のターンの締めを残すか消すかがそこで変わる
+    /// (`RecordHookEvent.resolveSummary`)
+    public var carriesLastMessage: Bool { rawLastMessage != nil }
+
+    /// 均す前の締めの文。2つの鍵は同じものの別名なので、先に見つかったほうを使う。
+    /// **空文字は「無い」に寄せる。** 何も言わずに終わったターンを
+    /// 「載せる文が無い」と扱うと、鍵を空で埋めてくるエージェントで締めが消える
+    private var rawLastMessage: String? {
+        for key in ["last_assistant_message", "lastAssistantMessage"] {
+            guard let text = box[key] as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            return text
+        }
+        return nil
+    }
+
+    /// markdown を人の文に均す。**要るのは地の文だけ。**
+    ///
+    /// 見出し・箇条書き・表・引用・コードブロックは文章の骨組みで、1行に潰すと
+    /// 記号だけが残って読めなくなる (「## 結論 - A - B」)。行ごと落とす。
+    /// 強調とコード記法は文の途中に出るので、記号だけ外して中身は残す。
+    static func plainProse(_ text: String) -> String {
+        var kept: [String] = []
+        // **コードは開きと閉じで挟まれるので、1行ずつの判定では捨てられない。**
+        // フェンスの行だけを落とすと中身がそのまま残り、短い返事では
+        // 2行目がまるごとコードで埋まる ("直したのだ。 let policy = …")
+        var insideFence = false
+        for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            // 開きと閉じは同じ形なので、出会うたびに裏返す。
+            // 閉じないまま終わる返事では、そこから先が丸ごと落ちる
+            // (中途半端に開いたコードを地の文として読ませるよりはよい)
+            if line.hasPrefix("```") {
+                insideFence.toggle()
+                continue
+            }
+            if insideFence { continue }
+            if line.hasPrefix("#") || line.hasPrefix(">") || line.hasPrefix("|")
+                || line.hasPrefix("---") || isListItem(line) {
+                continue
+            }
+            kept.append(line)
+        }
+        return kept.joined(separator: " ")
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "`", with: "")
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// 箇条書きの1項目か。記号のもの (`-` `*` `+`) と番号付き (`1.` `1)`) を見る。
+    ///
+    /// **どれも後ろの空白まで見る。** `-` だけで判じると `**結論**` のように
+    /// 強調で書き出した段落を巻き添えにするし、数字だけで判じると
+    /// 「1.5 倍になった」のような文が消える (あちらは `.` の次が空白ではない)
+    static func isListItem(_ line: String) -> Bool {
+        for marker in ["- ", "* ", "+ "] where line.hasPrefix(marker) { return true }
+        let digits = line.prefix(while: \.isNumber)
+        guard !digits.isEmpty else { return false }
+        let rest = line.dropFirst(digits.count)
+        return rest.hasPrefix(". ") || rest.hasPrefix(") ")
+    }
+
     /// セッションを動かしているエージェント ("claude" / "agy" / "codex")。
     ///
     /// **Codex は Claude Code とほとんど同じ形の payload を送ってくる**

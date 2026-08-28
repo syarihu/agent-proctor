@@ -48,6 +48,17 @@ public struct TaskRecord: Codable, Equatable {
     /// こちらだけが消える)。混ぜると、承認を待っている最中に直前の
     /// ツールが出て、それの承認を待っているように読めてしまう
     public var request: String?
+    /// 終わったターンが最後に言ったこと (hooks の `last_assistant_message`)。
+    ///
+    /// **activity / request と並べて3つ目として持つ。** activity は「いま触っている
+    /// ツール」、request は「まだ承認していないもの」、こちらは**もう終わった話**で、
+    /// 消えるきっかけも違う (また動き出したときに古くなるのはこれだけ)。
+    ///
+    /// 持つ理由は、要確認の一覧で終わった行に出す2行目が無いこと。印と名前だけでは
+    /// 「終わった」ことは分かっても「何が終わったか」が分からず、どのみちタブを
+    /// 開くことになる。承認待ちの行が request を出しているのと同じ役目を、
+    /// 終わった行で果たす
+    public var summary: String?
     /// 終わったあと、**もう知らせなくていいと決まった時刻**。まだなら nil。
     /// また動き出したら nil に戻す (次に終わったときは別の結果なので、改めて見てほしい)。
     ///
@@ -94,6 +105,7 @@ public struct TaskRecord: Codable, Equatable {
                 subagents: Int? = nil, subagentRuns: [SubagentRun]? = nil,
                 agent: String? = nil,
                 activity: String? = nil, request: String? = nil,
+                summary: String? = nil,
                 seenAt: Int? = nil,
                 finishedSubagents: [String: Int]? = nil,
                 pendingStatus: String? = nil, title: String? = nil,
@@ -117,6 +129,7 @@ public struct TaskRecord: Codable, Equatable {
         self.agent = agent
         self.activity = activity
         self.request = request
+        self.summary = summary
         self.seenAt = seenAt
         self.finishedSubagents = finishedSubagents
         self.pendingStatus = pendingStatus
