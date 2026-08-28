@@ -396,7 +396,9 @@ enum ItermBridge {
         // 呼ぶ側はどれも nil を受けたら前の値を保つ作りなので、
         // 答えが出たあとの周回で追いつく
         guard permissionSettled else {
-            Task { await settlePermission() }
+            // 待つ役は1つで足りる。ここは1秒ごとにも通るので、毎回起こすと
+            // 答えを待つだけの Task が溜まり続ける
+            if settling == nil { Task { await settlePermission() } }
             return nil
         }
 
