@@ -48,7 +48,7 @@ agent-proctor is not installed — stop there and tell me.
 
 2. If using statusLine in `~/.gemini/antigravity-cli/settings.json`, pass the stdin JSON to `proctor _stats`:
    ```python
-   # Inside statusline script:
+   # Inside statusLine script:
    try:
        proctor = os.path.expanduser('~/bin/proctor')
        if os.access(proctor, os.X_OK):

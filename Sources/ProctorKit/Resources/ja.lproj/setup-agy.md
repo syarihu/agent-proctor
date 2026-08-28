@@ -47,7 +47,7 @@ agent-proctor (https://github.com/syarihu/agent-proctor) と連携するよう�
 
 2. `~/.gemini/antigravity-cli/settings.json` で statusLine を使っている場合は、スクリプト内で stdin の JSON を `proctor _stats` に渡してください:
    ```python
-   # statusline スクリプト内:
+   # statusLine スクリプト内:
    try:
        proctor = os.path.expanduser('~/bin/proctor')
        if os.access(proctor, os.X_OK):
