@@ -86,9 +86,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 書いたのは自分なので、台帳の更新時刻を待たずに映す
             onSeen: { [weak self] in self?.store.refreshNow() })
 
-        // 背景色は iTerm2 が起きてウィンドウを持つまで取れない。
-        // 一度取れれば十分なので、取れるまで少し粘る
-        chaseBackground(remaining: 30)
+        // **許可の答えが出るのを待ってから iTerm2 に話しかける。**
+        // 未決のまま Apple Event を投げると、同意ダイアログが出ている間
+        // メインスレッドが止まり、ここから先が何も描かれない (詳しくは
+        // ItermBridge.permissionSettled)。尋ねるのは裏に回るので、
+        // 立ち上がりはここで一旦 macOS に返る
+        Task { @MainActor in
+            await ItermBridge.settlePermission()
+            // 背景色は iTerm2 が起きてウィンドウを持つまで取れない。
+            // 一度取れれば十分なので、取れるまで少し粘る
+            self.chaseBackground(remaining: 30)
+        }
     }
 
     /// 居場所を作るために詰めた iTerm2 の幅を返してから終わる。

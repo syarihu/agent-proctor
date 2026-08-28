@@ -24,6 +24,35 @@ enum ItermBridge {
     /// 毎回出すと、許可しないと決めた人にとって邪魔にしかならない
     private static var permissionWarned = false
 
+    /// 許可の答えが出ているか。**出るまで Apple Event を1つも投げない。**
+    ///
+    /// まだ誰も決めていないうちに投げると、macOS が同意ダイアログを出し、
+    /// **答えるまで送信が戻らない。** 投げているのはメインスレッドなので、
+    /// ランループごと止まってサイドバーもメニューバーの項目も描かれない。
+    /// 「入れ直したら何も出てこない」の正体がこれで、答えたとたんに出てくる。
+    ///
+    /// 許可は「バンドルID + 署名の中身」に紐づくので、アドホック署名だと
+    /// 入れ直すたびに未決へ戻る。証明書を作っていない環境 (Homebrew から
+    /// 入れた場合) では毎回ここを通ることになる
+    private static var permissionSettled = false
+    /// いま尋ねている最中か。人が答えるまで戻らないので、重ねて尋ねない
+    private static var settling = false
+
+    /// 許可の答えが出るまで待つ。もう出ているなら何もしない。
+    ///
+    /// 尋ねる往復は AutomationPermission がメインスレッドの外へ逃がすので、
+    /// 人が答えるまで待たされるのは向こうのスレッドだけで済む。
+    static func settlePermission() async {
+        guard !permissionSettled, !settling else { return }
+        settling = true
+        let state = await AutomationPermission.request()
+        settling = false
+        // 相手が居ないうちは決めようがない。iTerm2 が起きてから聞き直す。
+        // 断られた場合も「出た答え」なので通す (以後の送信はその場で
+        // errAEEventNotPermitted が返るだけで、待たされることはない)
+        permissionSettled = state != .targetNotRunning
+    }
+
     /// いま iTerm2 に開いているセッションの guid。
     ///
     /// 取得に失敗したときは nil を返す。空配列と区別できないと、
@@ -347,6 +376,15 @@ enum ItermBridge {
         // iTerm2 が起きていないときに叩くと AppleScript が起動させてしまう。
         // サイドバーは iTerm2 に付き従うものなので、いないときは何もしない
         guard isItermRunning else { return nil }
+
+        // **答えが出るまでは投げない** (理由は permissionSettled)。
+        // 尋ねるのは裏に回して、ここは「聞けなかった」ことにして引き返す。
+        // 呼ぶ側はどれも nil を受けたら前の値を保つ作りなので、
+        // 答えが出たあとの周回で追いつく
+        guard permissionSettled else {
+            Task { await settlePermission() }
+            return nil
+        }
 
         let script: NSAppleScript
         if reusable, let cached = compiled[source] {
