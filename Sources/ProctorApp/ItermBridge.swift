@@ -24,6 +24,62 @@ enum ItermBridge {
     /// 毎回出すと、許可しないと決めた人にとって邪魔にしかならない
     private static var permissionWarned = false
 
+    /// 許可の答えが出ているか。**出るまで Apple Event を1つも投げない。**
+    ///
+    /// まだ誰も決めていないうちに投げると、macOS が同意ダイアログを出し、
+    /// **答えるまで送信が戻らない。** 投げているのはメインスレッドなので、
+    /// その間はランループが回らず、タイマーが1つも動かない。サイドバーも
+    /// メニューバーの項目も描かれないまま、画面には何も出ない。
+    /// 戻るのは、人が答えたときか、Apple Event が時間切れになるか、
+    /// iTerm2 が居なくなったときのいずれかになる。
+    ///
+    /// **これは一度きりの通り道ではない。** 許可はバンドルIDと署名の中身に
+    /// 紐づいていて、scripts/sign-app.sh は証明書が無ければアドホック署名に
+    /// 落ちる。署名の中身は組み立てるたびに変わるので、入れ直すたびに
+    /// 未決へ戻り、そのたびにここを通る
+    private static var permissionSettled = false
+    /// いま尋ねている最中の問い合わせ。
+    ///
+    /// **旗ではなく問い合わせそのものを持つ。** 「尋ね中だから」と素通りさせると、
+    /// 答えを待ったつもりの呼び出しが待たずに先へ進んでしまう。持っていれば、
+    /// あとから来た者はその答えに相乗りできる
+    private static var settling: Task<Void, Never>?
+
+    /// 許可の答えが出るまで待つ。もう出ているなら何もしない。
+    ///
+    /// 尋ねる往復は AutomationPermission がメインスレッドの外へ逃がすので、
+    /// 人が答えるまで待たされるのは向こうのスレッドだけで済む。
+    static func settlePermission() async {
+        guard !permissionSettled else { return }
+        // 先客が居るなら、その答えを一緒に待つ。二重には尋ねない
+        if let settling {
+            await settling.value
+            return
+        }
+        let asking = Task {
+            switch await AutomationPermission.request() {
+            case .granted, .denied:
+                // 断られたのも「出た答え」。以後の送信はその場で
+                // errAEEventNotPermitted が返るだけで、待たされることはない
+                permissionSettled = true
+            case .unknown:
+                // どちらとも言えない。**それでも通す。** 待たされる形ではないし、
+                // ここで止め続けると iTerm2 に何も言えないまま動かなくなる。
+                // 何が起きたかは送った先の失敗として出る
+                permissionSettled = true
+            case .undecided, .targetNotRunning:
+                // まだ答えが無い。**ここで通すと、次の送信でまたダイアログ待ちに
+                // なってメインスレッドが止まる。** 尋ね直せる機会を待つ
+                permissionSettled = false
+            }
+        }
+        // **待ちに入る前に預ける。** 待ってから預けると、その間に来た呼び出しが
+        // 先客を見つけられず、同じ問い合わせをもう一度立ててしまう
+        settling = asking
+        await asking.value
+        settling = nil
+    }
+
     /// いま iTerm2 に開いているセッションの guid。
     ///
     /// 取得に失敗したときは nil を返す。空配列と区別できないと、
@@ -347,6 +403,17 @@ enum ItermBridge {
         // iTerm2 が起きていないときに叩くと AppleScript が起動させてしまう。
         // サイドバーは iTerm2 に付き従うものなので、いないときは何もしない
         guard isItermRunning else { return nil }
+
+        // **答えが出るまでは投げない** (理由は permissionSettled)。
+        // 尋ねるのは裏に回して、ここは「聞けなかった」ことにして引き返す。
+        // 呼ぶ側はどれも nil を受けたら前の値を保つ作りなので、
+        // 答えが出たあとの周回で追いつく
+        guard permissionSettled else {
+            // 待つ役は1つで足りる。ここは1秒ごとにも通るので、毎回起こすと
+            // 答えを待つだけの Task が溜まり続ける
+            if settling == nil { Task { await settlePermission() } }
+            return nil
+        }
 
         let script: NSAppleScript
         if reusable, let cached = compiled[source] {
