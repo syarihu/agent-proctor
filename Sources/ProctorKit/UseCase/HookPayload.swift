@@ -293,15 +293,28 @@ public struct HookPayload {
     /// 箇条書きの判定に**後ろの空白まで見る**のは、`**結論**` のように
     /// 強調で書き出した段落を巻き添えにしないため
     static func plainProse(_ text: String) -> String {
-        let prose = text.split(separator: "\n", omittingEmptySubsequences: false)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { line in
-                !(line.hasPrefix("#") || line.hasPrefix("- ") || line.hasPrefix("* ")
-                    || line.hasPrefix(">") || line.hasPrefix("|")
-                    || line.hasPrefix("```") || line.hasPrefix("---"))
+        var kept: [String] = []
+        // **コードは開きと閉じで挟まれるので、1行ずつの判定では捨てられない。**
+        // フェンスの行だけを落とすと中身がそのまま残り、短い返事では
+        // 2行目がまるごとコードで埋まる ("直したのだ。 let policy = …")
+        var insideFence = false
+        for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            // 開きと閉じは同じ形なので、出会うたびに裏返す。
+            // 閉じないまま終わる返事では、そこから先が丸ごと落ちる
+            // (中途半端に開いたコードを地の文として読ませるよりはよい)
+            if line.hasPrefix("```") {
+                insideFence.toggle()
+                continue
             }
-            .joined(separator: " ")
-        return prose
+            if insideFence { continue }
+            if line.hasPrefix("#") || line.hasPrefix("- ") || line.hasPrefix("* ")
+                || line.hasPrefix(">") || line.hasPrefix("|") || line.hasPrefix("---") {
+                continue
+            }
+            kept.append(line)
+        }
+        return kept.joined(separator: " ")
             .replacingOccurrences(of: "**", with: "")
             .replacingOccurrences(of: "`", with: "")
             .trimmingCharacters(in: .whitespaces)
