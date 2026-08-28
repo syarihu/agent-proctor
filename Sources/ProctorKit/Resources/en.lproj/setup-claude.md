@@ -126,6 +126,22 @@ reach the statusLine. proctor wants to show them, so pass them along from there.
   failure so the display never stops. It is called on every render, but proctor
   does not write when nothing changed, so the ledger's modification time stays put.
 
+### If you end up writing a script file
+
+None of this needs a script of its own: every hook here is a single guarded
+call, and the statusLine can be one too. Write a file only when you actually
+have to — an existing script that has to be extended, or a command that has
+outgrown one line.
+
+When you do, first look at where the scripts already registered in the settings
+live, and put yours in the same place. The layout that is already on this
+machine beats any layout this document could name. Only when there is nothing to
+follow, fall back to
+`~/.claude/hooks/<bundle id or identifier of whatever the script belongs to>/<script>`
+— for proctor that is `~/.claude/hooks/net.syarihu.proctor/`. Naming the
+directory after the owner says who put the script there, and it makes removing
+that tool later one directory plus the entries that point at it.
+
 ## Verify
 
 Once configured, open a new Claude Code session and run `proctor ls` to confirm

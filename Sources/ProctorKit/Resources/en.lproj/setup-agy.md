@@ -58,6 +58,16 @@ agent-proctor is not installed — stop there and tell me.
    except Exception:
        pass
    ```
+
+3. If you end up writing a script file — the statusline script above, or an
+   existing hook script you have to extend — look at where the scripts already
+   registered in your configuration live and put yours in the same place. The
+   layout that is already on this machine beats any layout this document could
+   name. Only when there is nothing to follow, fall back to
+   `~/.gemini/config/hooks/<bundle id or identifier of whatever the script belongs to>/<script>`;
+   for proctor that is `net.syarihu.proctor`. Naming the directory after the
+   owner says who put the script there, and it makes removing that tool later
+   one directory plus the entries that point at it.
 ```
 
 ## Give yourself an entry point for worktrees
