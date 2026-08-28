@@ -1333,7 +1333,18 @@ private struct InboxRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: base * 0.35) {
-            mark.frame(width: base * 1.1, alignment: .center)
+            // 印の背丈は1行目の文字に合わせる。**幅だけ決めると done の ✓ が
+            // 上に寄る** — 他の印は文字なので行送りぶんの高さを持つが、
+            // あちらは図形で、描く枠が文字より低い。上揃えの HStack では
+            // その差だけ持ち上がって見える。
+            //
+            // 高さを数字で書かずに見えない文字で取るのは、字の大きさが
+            // 設定で変わるため (書き写した数字はそのとき置いていかれる)
+            Text(" ")
+                .font(.system(size: base * 0.85, weight: .medium))
+                .hidden()
+                .overlay { mark }
+                .frame(width: base * 1.1)
             VStack(alignment: .leading, spacing: base * 0.1) {
                 HStack(spacing: base * 0.35) {
                     Text(task.displayName)
@@ -1366,11 +1377,18 @@ private struct InboxRow: View {
                         // ホバー中は ✓ に場所を譲る。**消さずに透明にする** —
                         // 消すと高さを決める者がいなくなり、元の伸び縮みに戻る
                         .foregroundStyle(hovering ? Color.clear : Palette.dim)
-                        .overlay {
+                        // **右端で揃える。** overlay は既定で中央に重ねるので、
+                        // 指定しないと ✓ が経過の文字と違う位置に出る。
+                        // さらに ✓ は当たり判定のための余白を持っていて、
+                        // そのぶん円が文字より内側に寄る。負の padding で
+                        // 余白だけを打ち消す (当たり判定は contentShape で
+                        // 確定済みなので、これで狭くなることはない)
+                        .overlay(alignment: .trailing) {
                             if hovering {
                                 ClearButton(base: base, size: base * 0.8,
                                             help: Localized.text("app.inbox.clear_one"),
                                             action: { onClear(task) })
+                                    .padding(.trailing, -base * 0.2)
                             }
                         }
                         .frame(width: base * 1.6, alignment: .trailing)
