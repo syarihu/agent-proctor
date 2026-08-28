@@ -110,10 +110,10 @@
 
 /* 未読をいつ降ろすか。見出しは要確認のストリップ (app.inbox.title) と同じ語にする */
 "app.settings.unread_section" = "要確認";
-"app.settings.unread" = "行が要確認から外れるのは";
+"app.settings.unread" = "通知を消すタイミング";
 "app.settings.unread.on_open" = "タブを開いたとき";
-"app.settings.unread.until_cleared" = "片付けたときだけ";
-"app.settings.unread_footer" = "「片付けたときだけ」にすると、終わった行・落ちた行はタブを開いても要確認に残ります。とりあえず見ただけのものが片付いたことにならないので、返事をし忘れたまま置き去りにしにくくなります。外れるのは、そのセッションが次に動いたとき (指示を送れば動きます) か、要確認の片付けボタンを押したときです。\n確認待ちの行はどちらでも変わりません。承認に答えた時点で外れます。";
+"app.settings.unread.until_cleared" = "完了ボタンを押したとき";
+"app.settings.unread_footer" = "「完了ボタンを押したとき」にすると、終わった通知・落ちた通知はタブを開いても要確認に残ります。とりあえず見ただけでは消えないので、返事をしないまま置いていったものに後から気づけます。消えるのは、そのセッションが次に動いたとき (指示を送れば動きます) か、通知の ✓ を押したときです。\n確認待ちの通知はどちらでも変わりません。承認に答えた時点で消えます。";
 
 "app.settings.notify_section" = "通知";
 "app.settings.notify.waiting" = "確認待ちになったとき";

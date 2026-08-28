@@ -53,10 +53,10 @@ strip the moment you answer that prompt; a finished or failed one leaves once
 you visit its tab.
 
 Visiting the tab is only the default. *Settings…* has a `Needs you` section
-where a finished or failed row can be made to stay until you clear it by hand,
-so having looked at something does not count as having replied to it. It then
-leaves once that session moves again — sending it an instruction is enough — or
-once you press the clear button on the strip.
+where a notice for a finished or failed session can be made to stay until you
+clear it by hand, so having looked at something does not count as having
+replied to it. It then goes once that session moves again — sending it an
+instruction is enough — or once you press the ✓ on the notice.
 
 When you are not looking at the sidebar at all, macOS says it for you: a
 notification goes out the moment a session starts waiting for you, finishes, or

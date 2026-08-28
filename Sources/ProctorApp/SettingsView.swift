@@ -161,7 +161,9 @@ struct SettingsView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 260)
+                    // 他の Picker より広いのは、選択肢が「いつ消えるか」の文だから。
+                    // 縮めると日本語のほうが「完了ボタンを押した…」で切れる
+                    .frame(maxWidth: 300)
                 }
             } header: {
                 Text(Localized.text("app.settings.unread_section"))
