@@ -1333,7 +1333,23 @@ private struct InboxRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: base * 0.35) {
-            mark.frame(width: base * 1.1, alignment: .center)
+            // 印の背丈は1行目の文字に合わせる。**幅だけ決めると done の ✓ が
+            // 上に寄る** — 他の印は文字なので行送りぶんの高さを持つが、
+            // あちらは図形で、描く枠が文字より低い。上揃えの HStack では
+            // その差だけ持ち上がって見える。
+            //
+            // 高さを数字で書かずに見えない文字で取るのは、字の大きさが
+            // 設定で変わるため (書き写した数字はそのとき置いていかれる)
+            Text(" ")
+                .font(.system(size: base * 0.85, weight: .medium))
+                .hidden()
+                // 読み上げからも外す。`hidden()` が外すのは目に映る分だけで、
+                // 場所取りのための空白が読み上げに残ると、印のたびに
+                // 意味のない間が挟まる。**印そのものは残す** —
+                // これが掛かるのは overlay より前の、空白の側だけ
+                .accessibilityHidden(true)
+                .overlay { mark }
+                .frame(width: base * 1.1)
             VStack(alignment: .leading, spacing: base * 0.1) {
                 HStack(spacing: base * 0.35) {
                     Text(task.displayName)
@@ -1354,20 +1370,36 @@ private struct InboxRow: View {
                     Spacer(minLength: base * 0.2)
                     // 経過と片付けるボタンは同じ場所を分け合う。**枠の幅は固定**で、
                     // 中身だけ入れ替える。並べて置くと狭い一覧で名前を削ることになり、
-                    // 幅を中身に任せるとホバーのたびに行が伸び縮みする
-                    ZStack(alignment: .trailing) {
-                        if hovering {
-                            ClearButton(base: base, size: base * 0.8,
-                                        help: Localized.text("app.inbox.clear_one"),
-                                        action: { onClear(task) })
-                        } else {
-                            Text(shortAge(task.idleSeconds))
-                                .font(.system(size: base * 0.7).monospacedDigit())
-                                .foregroundStyle(Palette.dim)
+                    // 幅を中身に任せるとホバーのたびに行が伸び縮みする。
+                    //
+                    // **高さも同じで、決めるのは経過の文字のほう。** ✓ は押しやすさの
+                    // ために padding を持っているぶん文字より背が高く、両方を
+                    // ZStack に入れて出し入れすると、その差だけ1行目が伸びて
+                    // 行がホバーのたびに下へずれる。overlay は親の大きさを変えないので、
+                    // 重ねるだけなら枠は動かない
+                    Text(shortAge(task.idleSeconds))
+                        .font(.system(size: base * 0.7).monospacedDigit())
+                        // ホバー中は ✓ に場所を譲る。**消さずに透明にする** —
+                        // 消すと高さを決める者がいなくなり、元の伸び縮みに戻る
+                        .foregroundStyle(hovering ? Color.clear : Palette.dim)
+                        // **右端で揃える。** overlay は既定で中央に重ねるので、
+                        // 指定しないと ✓ が経過の文字と違う位置に出る
+                        // (ZStack だったころは alignment がそれを担っていた)。
+                        //
+                        // 円が文字の右端よりわずかに内側に見えるのは、✓ が
+                        // 当たり判定のための余白を持っているため。**ここでは詰めない** —
+                        // 負の padding で寄せると親の枠がそのぶん縮み、
+                        // はみ出した側が押せなくなる (SwiftUI の当たり判定は
+                        // 親の枠で切られる)。見た目より押せるほうを採る
+                        .overlay(alignment: .trailing) {
+                            if hovering {
+                                ClearButton(base: base, size: base * 0.8,
+                                            help: Localized.text("app.inbox.clear_one"),
+                                            action: { onClear(task) })
+                            }
                         }
-                    }
-                    .frame(width: base * 1.6, alignment: .trailing)
-                    .layoutPriority(1)
+                        .frame(width: base * 1.6, alignment: .trailing)
+                        .layoutPriority(1)
                 }
                 // 何の承認を待っているか。**ここだけは2行目を許す。**
                 // 手が挙がっていることは記号で分かるが、何を訊かれているかは
