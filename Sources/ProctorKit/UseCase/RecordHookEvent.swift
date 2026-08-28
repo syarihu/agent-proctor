@@ -584,6 +584,10 @@ public enum RecordHookEvent {
     /// `last_assistant_message` を載せないエージェントもあり、そこで消すと
     /// 載せてくる相手でも**保留されていた終わりが確定した拍子に消える**
     /// (最後の子が帰ってきたときの done は、文を持たずに飛んでくる)
+    ///
+    /// **文は来たのに載せられなかったときは消す (`clear`)。** そちらは
+    /// 「分からない」ではなく「このターンに載せる地の文は無い」と分かっている。
+    /// 残すと前のターンの締めが今のターンの結論として読まれる
     enum SummaryUpdate: Equatable {
         case keep
         case clear
@@ -592,15 +596,18 @@ public enum RecordHookEvent {
 
     /// - 子から届いた (agent_id 付き) → 触らない。親の行に子の話を混ぜない
     ///   (`resolveActivity` と同じ線引き)
-    /// - 終わった (done / failed) → 言い残したことを載せる
+    /// - 終わった (done / failed) → 言い残したことを載せる。
+    ///   届いたのに地の文が残らなかったときは消す
     /// - また動き出した / 確認待ちになった → 消す。**前のターンの締めが残ると、
     ///   いま動いている作業をもう終わったことのように読ませる**
     /// - それ以外 → 触らない
     static func resolveSummary(status: String, payload: HookPayload) -> SummaryUpdate {
         if payload.subagentID != nil { return .keep }
         if status == TaskStatus.done || status == TaskStatus.failed {
-            guard let message = payload.lastMessage else { return .keep }
-            return .set(message)
+            if let message = payload.lastMessage { return .set(message) }
+            // 届いた本文が箇条書き・見出し・コードだけだったなら、均した結果は空になる。
+            // 載せる文が無いことは分かっているので、前のターンの締めは残さない
+            return payload.carriesLastMessage ? .clear : .keep
         }
         if status == TaskStatus.running || status == TaskStatus.waiting { return .clear }
         return .keep

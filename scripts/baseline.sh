@@ -253,6 +253,13 @@ PY
     payload s1 "$LAB/work" | "$BIN" _touch done
     "$BIN" ls --all --json | grep '"summary"'
 
+    # 文は来たのに、骨組みだけで地の文が残らなかったとき。
+    # 「載せる文が無い」と分かっているので、前のターンの締めは残さない
+    say "骨組みだけの done では、載っている締めが消える"
+    payload s1 "$LAB/work" ',"last_assistant_message":"## 結論\n\n- 案1\n- 案2"' \
+        | "$BIN" _touch done
+    "$BIN" ls --all --json | grep -E '"(status|summary)"'
+
     say "また動き出すと締めは消える (前のターンの話なので)"
     payload s1 "$LAB/work" | "$BIN" _touch running
     "$BIN" ls --all --json | grep -E '"(status|summary)"'

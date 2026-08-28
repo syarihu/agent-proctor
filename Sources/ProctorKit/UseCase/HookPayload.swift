@@ -276,10 +276,29 @@ public struct HookPayload {
     /// そのまま持つと `**` や `##` が記号のまま一覧に出る。
     /// 長さは activity より緩くしてある (あちらはツール名、こちらは文)
     public var lastMessage: String? {
+        guard let text = rawLastMessage else { return nil }
+        let prose = HookPayload.plainProse(text)
+        guard !prose.isEmpty else { return nil }
+        return HookPayload.condensed(prose, limit: 120)
+    }
+
+    /// 締めの文が**本文付きで届いたか**。
+    ///
+    /// **`lastMessage` が nil になる理由は2つある。** 鍵ごと来ていないのか、
+    /// 来てはいるが markdown の骨組みだけで地の文が残らなかったのか。
+    /// 前者は「このターンが何を言ったか分からない」で、後者は「載せる文が無い」と
+    /// 分かっている。台帳に載っている前のターンの締めを残すか消すかがそこで変わる
+    /// (`RecordHookEvent.resolveSummary`)
+    public var carriesLastMessage: Bool { rawLastMessage != nil }
+
+    /// 均す前の締めの文。2つの鍵は同じものの別名なので、先に見つかったほうを使う。
+    /// **空文字は「無い」に寄せる。** 何も言わずに終わったターンを
+    /// 「載せる文が無い」と扱うと、鍵を空で埋めてくるエージェントで締めが消える
+    private var rawLastMessage: String? {
         for key in ["last_assistant_message", "lastAssistantMessage"] {
-            guard let text = box[key] as? String else { continue }
-            let prose = HookPayload.plainProse(text)
-            if !prose.isEmpty { return HookPayload.condensed(prose, limit: 120) }
+            guard let text = box[key] as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            return text
         }
         return nil
     }
