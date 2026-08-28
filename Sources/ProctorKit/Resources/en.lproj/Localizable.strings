@@ -101,6 +101,7 @@
 "app.settings.grouping.repository" = "Repository";
 "app.settings.grouping.organization" = "Organization";
 "app.settings.grouping.needs_gh" = "Grouping by organization reads the owner from the git remote and its icon through the GitHub CLI. Install gh and run “gh auth login” to turn this on.";
+"app.settings.tab_numbers" = "Show tab numbers (⌘N)";
 "app.settings.make_room" = "Shrink iTerm2 to make room";
 "app.settings.sidebar_section" = "Sidebar";
 "app.settings.sidebar_footer" = "Row spacing follows the text size, and you can also drag the left edge of the sidebar to change its width.\nWith “Shrink iTerm2 to make room” on, a full-width iTerm2 window has its left edge moved right so the sidebar does not cover it, and gets its width back when the sidebar is hidden or Agent Proctor quits.";

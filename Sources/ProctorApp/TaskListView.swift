@@ -180,6 +180,9 @@ struct TaskListView: View {
     /// 台帳を持たないセッション (itermSession が無い) を巻き込まないよう、
     /// 空の guid では引かない
     private func tabNumber(_ task: CollectedTask) -> Int? {
+        // **設定はここでも見る。** 切ると端末に聞くのも止まるが、預かっている
+        // 番号が消えるのは次の周期なので、その間だけ出たままになってしまう
+        guard appearance.showTabNumbers else { return nil }
         guard let session = task.itermSession, !session.isEmpty else { return nil }
         return store.tabNumbers[session]
     }

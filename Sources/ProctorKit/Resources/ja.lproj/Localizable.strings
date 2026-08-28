@@ -101,6 +101,7 @@
 "app.settings.grouping.repository" = "リポジトリ";
 "app.settings.grouping.organization" = "Organization";
 "app.settings.grouping.needs_gh" = "Organization でまとめるには、持ち主を git の remote から、アイコンを GitHub CLI から読みます。gh を入れて「gh auth login」を済ませると選べるようになります。";
+"app.settings.tab_numbers" = "タブ番号 (⌘N) を出す";
 "app.settings.make_room" = "iTerm2 の幅を詰めて場所を空ける";
 "app.settings.sidebar_section" = "サイドバー";
 "app.settings.sidebar_footer" = "行の余白も文字の大きさに合わせて変わります。幅はサイドバーの左端をドラッグしても変えられます。\n「幅を詰めて場所を空ける」を入れておくと、iTerm2 が画面いっぱいのときにウィンドウの左端を右へ寄せて、サイドバーが重ならないようにします。サイドバーを隠すか終了すると元の幅に戻します。";

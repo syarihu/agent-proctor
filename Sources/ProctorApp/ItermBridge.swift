@@ -147,9 +147,14 @@ enum ItermBridge {
     ///     セッションを先に解決する必要はない
     ///
     /// この形で 4 件・67ms。番号を足す前 (4 件・66ms) と変わらない。
-    static func focusedTab()
+    ///
+    /// - Parameter withTabNumbers: 番号を数えるか。**要らないなら数える行ごと落とす。**
+    ///   出さない番号のために1秒ごとに1件投げ続けることになる。文面が変われば
+    ///   別のものとしてコンパイル結果が覚えられる (execute の compiled は文面が鍵) ので、
+    ///   設定を切り替えても組み立て直しはそれぞれ一度きり
+    static func focusedTab(withTabNumbers: Bool)
         -> (session: String, directory: String, tabNumbers: [String: Int])? {
-        let source = """
+        var source = """
         tell application "iTerm2"
             if (count of windows) is 0 then return ""
             set p to ""
@@ -159,6 +164,10 @@ enum ItermBridge {
             end try
             set out to (id of current session of current tab of current window) ¬
                 & (character id 0) & p & (character id 0)
+        """
+        if withTabNumbers {
+            source += """
+
             set grid to id of sessions of tabs of windows
             repeat with win in grid
                 set n to 0
@@ -170,6 +179,10 @@ enum ItermBridge {
                     end repeat
                 end repeat
             end repeat
+            """
+        }
+        source += """
+
             return out
         end tell
         """

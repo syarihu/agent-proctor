@@ -68,6 +68,17 @@ final class Appearance: ObservableObject {
         didSet { UserDefaults.standard.set(makeRoomForSidebar, forKey: Self.makeRoomKey) }
     }
 
+    // MARK: - タブ番号
+
+    /// 行に iTerm2 のタブ番号 (⌘N) を出すか。
+    ///
+    /// **切ってあるときは端末に番号を聞きに行かない。** 出さない番号のために
+    /// 1秒ごとに Apple Event を1件投げ続けることになる (ItermBridge.focusedTab)。
+    /// 見た目だけ消しても、止まるのは描画だけで問い合わせは残ってしまう
+    @Published var showTabNumbers: Bool {
+        didSet { UserDefaults.standard.set(showTabNumbers, forKey: Self.showTabNumbersKey) }
+    }
+
     // MARK: - 一覧のまとめ方
 
     /// 何も選んでいないときのまとめ方。
@@ -193,6 +204,7 @@ final class Appearance: ObservableObject {
     private static let makeRoomKey = "proctor_make_room"
     private static let groupingKey = "proctor_grouping"
     private static let canGroupByOrgKey = "proctor_can_group_by_org"
+    private static let showTabNumbersKey = "proctor_show_tab_numbers"
 
     init() {
         fontSize = Self.load(Self.sizeKey, in: Self.sizeRange, default: Self.defaultSize)
@@ -207,6 +219,9 @@ final class Appearance: ObservableObject {
         // 既定はオン。bool(forKey:) は未設定でも false を返すので、
         // 「保存されていない」と「切ってある」を object の有無で分ける
         makeRoomForSidebar = UserDefaults.standard.object(forKey: Self.makeRoomKey) as? Bool ?? true
+        // こちらも既定はオン (未設定と「切ってある」を object の有無で分ける)
+        showTabNumbers = UserDefaults.standard
+            .object(forKey: Self.showTabNumbersKey) as? Bool ?? true
 
         // まだ選んでいないときと、知らない値が入っていたときは既定に落とす
         groupingMode = GroupingMode(

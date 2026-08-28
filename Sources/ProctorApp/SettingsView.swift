@@ -124,6 +124,8 @@ struct SettingsView: View {
                         }
                     }
                 }
+                Toggle(Localized.text("app.settings.tab_numbers"),
+                       isOn: $appearance.showTabNumbers)
                 Toggle(Localized.text("app.settings.make_room"),
                        isOn: $appearance.makeRoomForSidebar)
             } header: {
