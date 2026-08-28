@@ -87,6 +87,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 出さない設定のときは聞きに行かせない (問い合わせが1件減る)
             wantsTabNumbers: { [weak self] in self?.appearance.showTabNumbers ?? false },
             onTabNumbers: { [weak self] numbers in self?.store.setTabNumbers(numbers) },
+            // 未読を降ろす合図。設定は途中で変わるので、覚え込ませずに毎回聞かせる
+            seenPolicy: { [weak self] in self?.notices.seenPolicy ?? .onOpen },
             // 書いたのは自分なので、台帳の更新時刻を待たずに映す
             onSeen: { [weak self] in self?.store.refreshNow() })
 

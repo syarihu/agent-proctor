@@ -107,6 +107,14 @@
 "app.settings.sidebar_footer" = "Row spacing follows the text size, and you can also drag the left edge of the sidebar to change its width.\nWith “Shrink iTerm2 to make room” on, a full-width iTerm2 window has its left edge moved right so the sidebar does not cover it, and gets its width back when the sidebar is hidden or Agent Proctor quits.";
 "app.settings.launch_section" = "Startup";
 "app.settings.launch_at_login" = "Open at login";
+
+/* 未読をいつ降ろすか。見出しは要確認のストリップ (app.inbox.title) と同じ語にする */
+"app.settings.unread_section" = "Needs you";
+"app.settings.unread" = "A row leaves the strip";
+"app.settings.unread.on_open" = "When you visit its tab";
+"app.settings.unread.until_cleared" = "Only when you clear it";
+"app.settings.unread_footer" = "With “Only when you clear it”, a finished or failed row stays in the strip after you have looked at its tab, so “I have seen it, I will reply later” does not quietly become “dealt with”. It leaves once that session moves again — sending it an instruction is enough — or once you press the clear button on the strip.\nA waiting row is not affected either way: it leaves when you answer its prompt.";
+
 "app.settings.notify_section" = "Notifications";
 "app.settings.notify.waiting" = "When a session starts waiting for you";
 "app.settings.notify.done" = "When a session finishes";

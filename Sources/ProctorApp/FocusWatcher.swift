@@ -5,7 +5,8 @@ import ProctorKit
 ///
 /// 使い道は2つ。
 ///   - 一覧のどの行が「いま開いているタブ」かの印
-///   - 終わったものを見たときに、確認済みの印を付ける (MarkSessionSeen)
+///   - 終わったものを見たときに、確認済みの印を付ける (MarkSessionSeen)。
+///     付けるかどうかは設定で変わるので、判断はあちらに預けて値を渡すだけにする
 ///
 /// iTerm2 に同梱の Python からなら FocusMonitor が変化を押してくれるが、
 /// アプリからは聞きに行くしかないので定期的に叩く。1回あたり Apple Event の
@@ -35,11 +36,14 @@ final class FocusWatcher {
     ///     設定は途中で変わるので、立ち上げたときの値を覚えると付いていけない
     ///   - onTabNumbers: タブ番号 (⌘N の N) の顔ぶれが変わったときに呼ばれる。
     ///     鍵はセッションの guid
+    ///   - seenPolicy: タブを開いた時点で未読を降ろすか。**こちらも毎周期聞く**
+    ///     (理由は wantsTabNumbers と同じ)
     ///   - onSeen: 台帳に確認済みを書いたときに呼ばれる
     init(onFocus: @escaping (String?) -> Void,
          onDirectory: @escaping (String?) -> Void,
          wantsTabNumbers: @escaping () -> Bool,
          onTabNumbers: @escaping ([String: Int]) -> Void,
+         seenPolicy: @escaping () -> MarkSessionSeen.Policy,
          onSeen: @escaping () -> Void) {
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
             Task { @MainActor [weak self] in
@@ -80,8 +84,10 @@ final class FocusWatcher {
                 }
                 // 台帳を書くのはメインスレッドから外す (理由は LedgerWriter)
                 let session = self.current
-                self.writer.submit({ (try? MarkSessionSeen.run(itermSession: session)) == true },
-                                   changed: onSeen)
+                let policy = seenPolicy()
+                self.writer.submit({
+                    (try? MarkSessionSeen.run(itermSession: session, policy: policy)) == true
+                }, changed: onSeen)
             }
         }
     }

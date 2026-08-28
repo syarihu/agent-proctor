@@ -152,6 +152,27 @@ struct SettingsView: View {
             }
 
             Section {
+                LabeledContent(Localized.text("app.settings.unread")) {
+                    Picker("", selection: $notices.seenPolicy) {
+                        Text(Localized.text("app.settings.unread.on_open"))
+                            .tag(MarkSessionSeen.Policy.onOpen)
+                        Text(Localized.text("app.settings.unread.until_cleared"))
+                            .tag(MarkSessionSeen.Policy.untilCleared)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 260)
+                }
+            } header: {
+                Text(Localized.text("app.settings.unread_section"))
+            } footer: {
+                Text(Localized.text("app.settings.unread_footer"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
                 Toggle(Localized.text("app.settings.notify.waiting"),
                        isOn: $notices.onWaiting)
                 Toggle(Localized.text("app.settings.notify.done"), isOn: $notices.onDone)
