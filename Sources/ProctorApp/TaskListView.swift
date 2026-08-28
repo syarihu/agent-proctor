@@ -1354,20 +1354,27 @@ private struct InboxRow: View {
                     Spacer(minLength: base * 0.2)
                     // 経過と片付けるボタンは同じ場所を分け合う。**枠の幅は固定**で、
                     // 中身だけ入れ替える。並べて置くと狭い一覧で名前を削ることになり、
-                    // 幅を中身に任せるとホバーのたびに行が伸び縮みする
-                    ZStack(alignment: .trailing) {
-                        if hovering {
-                            ClearButton(base: base, size: base * 0.8,
-                                        help: Localized.text("app.inbox.clear_one"),
-                                        action: { onClear(task) })
-                        } else {
-                            Text(shortAge(task.idleSeconds))
-                                .font(.system(size: base * 0.7).monospacedDigit())
-                                .foregroundStyle(Palette.dim)
+                    // 幅を中身に任せるとホバーのたびに行が伸び縮みする。
+                    //
+                    // **高さも同じで、決めるのは経過の文字のほう。** ✓ は押しやすさの
+                    // ために padding を持っているぶん文字より背が高く、両方を
+                    // ZStack に入れて出し入れすると、その差だけ1行目が伸びて
+                    // 行がホバーのたびに下へずれる。overlay は親の大きさを変えないので、
+                    // 重ねるだけなら枠は動かない
+                    Text(shortAge(task.idleSeconds))
+                        .font(.system(size: base * 0.7).monospacedDigit())
+                        // ホバー中は ✓ に場所を譲る。**消さずに透明にする** —
+                        // 消すと高さを決める者がいなくなり、元の伸び縮みに戻る
+                        .foregroundStyle(hovering ? Color.clear : Palette.dim)
+                        .overlay {
+                            if hovering {
+                                ClearButton(base: base, size: base * 0.8,
+                                            help: Localized.text("app.inbox.clear_one"),
+                                            action: { onClear(task) })
+                            }
                         }
-                    }
-                    .frame(width: base * 1.6, alignment: .trailing)
-                    .layoutPriority(1)
+                        .frame(width: base * 1.6, alignment: .trailing)
+                        .layoutPriority(1)
                 }
                 // 何の承認を待っているか。**ここだけは2行目を許す。**
                 // 手が挙がっていることは記号で分かるが、何を訊かれているかは
