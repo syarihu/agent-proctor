@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import ProctorKit
 
@@ -25,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var notices: NoticeSettings!
     private var notifier: Notifier!
     private var noticeWatcher: NoticeWatcher!
+    /// 「変更を数える」の切り替えを見張る札。手放すと購読ごと切れる
+    private var countObserver: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)  // Dock アイコンを出さない
@@ -39,6 +42,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let folding = folding!
         let avatars = avatars!
         let pullRequests = pullRequests!
+
+        // 数えるかどうかは設定を持っている側にしか分からないので、聞かせる。
+        // **覚え込ませずに毎回聞く** — 途中で切り替えても次の数え直しから効く
+        store.wantsDiff = { [weak appearance] in appearance?.countChanges ?? true }
+        // 切り替えた瞬間に映す。次の周期を待たせると、オンに戻したのに
+        // 数字が出ない時間ができて、設定が効かなかったように見える
+        // (専用の入口を呼ぶ理由は TaskStore.countingSettingChanged)。
+        //
+        // **@Published の publisher は willSet で発火する。** つまりこの中から
+        // appearance.countChanges を読むと、まだ切り替える前の値が返る。
+        // TaskStore は数え直しを始めるときに wantsDiff() で設定を読み直すので、
+        // 同期で呼ぶと**切り替える前の設定でまるごと1回数えてしまう**。
+        //
+        // 待つ長さはスイッチが動き終わるまで
+        // (あの入口を通ると数え直しがメインスレッドを掴む。理由は向こうに書いた)。
+        // debounce なのは、往復させたときに最後の1回しか走らせないため
+        countObserver = appearance.$countChanges
+            // 購読した瞬間にも現在値が流れてくる。起動時に数え直す用は無い
+            .dropFirst()
+            .debounce(for: .milliseconds(350), scheduler: RunLoop.main)
+            .sink { [weak store] _ in store?.countingSettingChanged() }
 
         sidebar = SidebarPanel(
             appearance: appearance,
@@ -122,8 +146,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// そのセッションが今もタブで生きていればそのタブにフォーカスし、
     /// いなければ新しいタブで `proctor attach` を実行して会話の続きから開く。
     private func open(taskID: String) {
-        // Store が持つ台帳から引き直す。数えた一覧 (tasks) は10秒ごとにしか
-        // 更新されないので、押した瞬間に近い itermSession はこちらで見る
+        // Store が持つ台帳から引き直す。数えた一覧 (tasks) は10秒かそれ以上の
+        // 間隔でしか更新されないので、押した瞬間に近い itermSession はこちらで見る
         guard let task = store.record(id: taskID) else { return }
 
         // **押されたのなら、許可の答えが出るまで待ってから開く。**

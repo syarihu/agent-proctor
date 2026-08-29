@@ -14,6 +14,11 @@ public enum CollectWorktrees {
     ///   - allRepos: 覚えているリポジトリを全部見る
     ///   - withOrigin: 持ち主 (remote) まで引く。**既定は false。要る人だけが払う**
     ///     (理由は CollectTasks.run と同じ)
+    ///   - countDiff: 未コミットの変更を数える。**既定は true (今までどおり)**。
+    ///     false にすると `diffKnown` が false のまま返るので、
+    ///     `isRemovable` も立たない。**数え切れていないものを「消してよい」と
+    ///     言わないための正しい落ち方**だが、画面の上では「片付けるものが無い」に
+    ///     見えてしまうので、切ってあると分かる字を出すのは呼ぶ側の仕事
     ///   - tasks: 突き合わせるセッション。既に集めてあるなら渡す。
     ///     渡さなければここで集める (CLI は集め直しても一度きりだが、
     ///     アプリは手元の一覧をそのまま使えるので git も台帳も読み直さずに済む)
@@ -22,11 +27,13 @@ public enum CollectWorktrees {
     ///     ちょっと覗いただけのリポジトリが記憶の枠を食うことはない
     public static func run(repo: String? = nil, allRepos: Bool = false,
                            withOrigin: Bool = false,
+                           countDiff: Bool = true,
                            tasks: [CollectedTask]? = nil,
                            also: [String] = [],
                            now: Int = Int(Date().timeIntervalSince1970))
         -> [CollectedRepoWorktrees] {
         runDetailed(repo: repo, allRepos: allRepos, withOrigin: withOrigin,
+                    countDiff: countDiff,
                     tasks: tasks, also: also, now: now).groups
     }
 
@@ -43,12 +50,15 @@ public enum CollectWorktrees {
     ///   対称性のためだけの引数は「これは誰が使うのか」を探させることになる
     public static func runDetailed(repo: String? = nil, allRepos: Bool = false,
                                    withOrigin: Bool = false,
+                                   countDiff: Bool = true,
                                    tasks: [CollectedTask]? = nil,
                                    repos: [String: Int]? = nil,
                                    also: [String] = [],
                                    now: Int = Int(Date().timeIntervalSince1970))
         -> (groups: [CollectedRepoWorktrees], incomplete: Bool) {
-        let sessions = tasks ?? CollectTasks.run(allRepos: true)
+        // 自分で集める回にも同じ答えを渡す。ここで数えてしまうと、
+        // 「数えない」と言われた回に git がセッションのぶんだけ起きる
+        let sessions = tasks ?? CollectTasks.run(allRepos: true, countDiff: countDiff)
 
         // 覚えているリポジトリと、いま動いているセッションのリポジトリを合わせる。
         // 台帳を覚えるより前から居座っているセッションがあっても取りこぼさない
@@ -86,7 +96,8 @@ public enum CollectWorktrees {
                 continue  // 場所ごと消えている。これは確かな答えなので黙って外す
             }
             guard let group = collect(repo: path, sessions: sessions,
-                                      withOrigin: withOrigin, now: now) else {
+                                      withOrigin: withOrigin, countDiff: countDiff,
+                                      now: now) else {
                 // 実体はあるのに git が答えない。**「無い」ではなく「分からない」**
                 incomplete = true
                 continue
@@ -102,7 +113,8 @@ public enum CollectWorktrees {
     /// 生きているリポジトリなら本体が必ず1件は出るので、空で返るのは
     /// 問い合わせに失敗したときだけ。呼ぶ側はそれを分からないものとして扱う。
     static func collect(repo: String, sessions: [CollectedTask],
-                        withOrigin: Bool, now: Int) -> CollectedRepoWorktrees? {
+                        withOrigin: Bool, countDiff: Bool,
+                        now: Int) -> CollectedRepoWorktrees? {
         let entries = GitClient.worktrees(repo)
         guard !entries.isEmpty else { return nil }
 
@@ -121,7 +133,10 @@ public enum CollectWorktrees {
             // 中身を見られる場所だけ数える。ベアリポジトリには作業ツリーが無く、
             // 実体を失っている場所は開くことすらできない
             let countable = exists && !entry.isBare
-            let counted = countable ? diff(at: entry.path) : nil
+            // 数えないと決めた回も nil にする。**0 を入れて「変更なし」に
+            // しないこと** — diffKnown が立ったまま空の差分が伝わると、
+            // 数えていない場所が「消してよい候補」として並んでしまう
+            let counted = (countable && countDiff) ? diff(at: entry.path) : nil
             return CollectedWorktree(
                 path: entry.path,
                 name: URL(fileURLWithPath: entry.path).lastPathComponent,

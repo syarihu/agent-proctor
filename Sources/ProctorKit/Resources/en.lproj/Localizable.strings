@@ -66,7 +66,7 @@
 /* proctor worktree ls の STATE 列。何をしてよい場所なのかが分かる言葉にする */
 "cli.worktree.state.sessions" = "in use (%d)";
 "cli.worktree.state.main" = "the repository itself";
-"cli.worktree.state.removable" = "done, safe to remove";
+"cli.worktree.state.removable" = "can go";
 "cli.worktree.state.merged" = "merged";
 "cli.worktree.state.idle" = "nobody here";
 "cli.worktree.state.locked" = "locked";
@@ -115,6 +115,9 @@
 "app.settings.grouping.organization" = "Organization";
 "app.settings.grouping.needs_gh" = "Grouping by organization reads the owner from the git remote and its icon through the GitHub CLI. Install gh and run “gh auth login” to turn this on.";
 "app.settings.tab_numbers" = "Show tab numbers (⌘1–⌘9)";
+"app.settings.count_changes" = "Count file changes";
+/* 切ってあるときだけ、トグルの真下に出す */
+"app.settings.count_changes.off" = "The sidebar stops running git diff for every session and worktree. It shows neither the +/− numbers nor whether a worktree can go. In a large repository this is what a count costs; proctor also stretches the interval on its own when counting turns out to be slow. “proctor ls” and “proctor worktree ls” count regardless.";
 "app.settings.make_room" = "Shrink iTerm2 to make room";
 "app.settings.sidebar_section" = "Sidebar";
 "app.settings.sidebar_footer" = "Row spacing follows the text size, and you can also drag the left edge of the sidebar to change its width.\nWith “Shrink iTerm2 to make room” on, a full-width iTerm2 window has its left edge moved right so the sidebar does not cover it, and gets its width back when the sidebar is hidden or Agent Proctor quits.";
@@ -152,7 +155,7 @@
 /* セッションの乗っていない worktree。%d は件数 */
 "app.worktrees.summary" = "worktrees with no session: %d";
 "app.worktrees.removable" = "· %d can go";
-"app.worktree.removable" = "done";
+"app.worktree.removable" = "can go";
 "app.worktree.merged" = "merged";
 "app.worktree.locked" = "locked";
 /* %@ はその場所のパス */

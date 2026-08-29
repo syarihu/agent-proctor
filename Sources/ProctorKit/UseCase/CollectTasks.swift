@@ -19,9 +19,16 @@ public enum CollectTasks {
     ///     答えはプロセスの中に覚えるので、生き続けるアプリでは最初の1回で済むが、
     ///     **一回きりで終わる CLI では毎回が「最初の1回」**になる。
     ///     `proctor ls` の表は持ち主を出さないので、既定では引かない
+    ///   - countDiff: 未コミットの変更を数える。**既定は true (今までどおり)**。
+    ///     false にすると差分は 0 のまま返る。大きいリポジトリでは1件につき
+    ///     git が2回起きるので、数字を出さないと決めた側 (アプリの設定) が
+    ///     問い合わせごと止められるようにしておく。
+    ///     **数えないときに何を返すかはここで決める。** 表示側が後から 0 を
+    ///     被せる形にすると、「数えた結果 0」との区別が View 任せになる
     public static func run(repo: String? = nil, allRepos: Bool = false,
                            itermOnly: Bool = false,
-                           withOrigin: Bool = false) -> [CollectedTask] {
+                           withOrigin: Bool = false,
+                           countDiff: Bool = true) -> [CollectedTask] {
         var records = LedgerStore.tasks()
         if !allRepos, let repo {
             records = records.filter { $0.repo == repo }
@@ -40,7 +47,7 @@ public enum CollectTasks {
                 exists: exists,
                 // 動いていた場所を手で消された場合。台帳には残っているので消失として見せる
                 status: exists ? record.status : TaskStatus.missing,
-                diff: exists ? diff(for: record) : DiffCounts(),
+                diff: exists && countDiff ? diff(for: record) : DiffCounts(),
                 ageSeconds: max(0, now - record.createdAt),
                 idleSeconds: max(0, now - record.updatedAt),
                 now: now)

@@ -98,10 +98,12 @@ to the right page of System Settings. Refusing notifications costs you the banne
 only — the sidebar and the `Needs you` strip carry on regardless.
 
 Open *Settings…* and turn on *Open at login*, and it will start on its own from
-then on. The sidebar's text size, width and grouping are set there too.
+then on. The sidebar's text size, width and grouping are set there too, as is
+whether it counts file changes at all — see
+[Counting changes](#counting-changes).
 
 <p align="center">
-  <img src="docs/images/settings.png" alt="The settings window: sidebar text size, width, opacity, background, how rows are grouped, the make-room toggle, open at login, when a notice is cleared from the Needs you strip, which of waiting, finishing and failing are notified, whether sending notifications and controlling iTerm2 are allowed, and the version" width="540">
+  <img src="docs/images/settings.png" alt="The settings window: sidebar text size, width, opacity, background, how rows are grouped, the tab-number and count-file-changes toggles, the make-room toggle, open at login, when a notice is cleared from the Needs you strip, which of waiting, finishing and failing are notified, whether sending notifications and controlling iTerm2 are allowed, and the version" width="540">
 </p>
 
 ## Wiring up your agent
@@ -190,10 +192,10 @@ proctor worktree ls --json     # the same facts, for an agent to read
 
 ```
 agent-proctor
-WORKTREE  BRANCH       STATE                 DIFF   IDLE
-work      feature      in use (2)            +1 ?1  3m
-spike     spike        nobody here           +1     2d
-merged    merged-work  done, safe to remove         6d
+WORKTREE  BRANCH       STATE        DIFF   IDLE
+work      feature      in use (2)   +1 ?1  3m
+spike     spike        nobody here  +1     2d
+merged    merged-work  can go              6d
 ```
 
 Each one comes with the sessions running in it, its uncommitted changes, whether
@@ -215,6 +217,28 @@ The text lives in proctor rather than in your agent's configuration, so
 updating proctor updates it everywhere at once. With no setup at all, typing
 `! proctor skill worktree` in Claude Code drops the guide straight into the
 conversation.
+
+### Counting changes
+
+The `+`/`-` on every row, and the diff column of the worktree list, come from
+`git diff --numstat` and `git ls-files --others`. Editing a file does not touch
+the ledger, so the sidebar has to count again on a timer to keep those numbers
+honest.
+
+In a large repository a single count takes seconds, and counting every ten
+seconds would leave git running the whole time. So proctor times each count and
+stretches the interval instead: the slower counting turns out to be, the longer
+it waits, until counting takes only a small slice of the time. A repository that
+answers straight away is left at the intervals it always had.
+
+If you would rather not pay for it at all, turn off *Settings… → Sidebar → Count
+file changes*. Neither the `+`/`-` numbers nor whether a worktree can go is
+shown any more — with nothing counted, proctor cannot say whether work is still
+sitting in it uncommitted, and saying only that a branch is merged would leave
+the least reliable half of the answer on screen.
+
+`proctor ls` and `proctor worktree ls` do not read that setting. They always
+count.
 
 ## Design
 

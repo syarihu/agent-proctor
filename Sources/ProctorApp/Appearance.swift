@@ -79,6 +79,22 @@ final class Appearance: ObservableObject {
         didSet { UserDefaults.standard.set(showTabNumbers, forKey: Self.showTabNumbersKey) }
     }
 
+    // MARK: - 変更を数える
+
+    /// セッションと worktree の未コミットの変更を数えるか。
+    ///
+    /// **切ってあるときは git に聞きに行かない。** 数字を消すだけでは、
+    /// `git diff --numstat` と `git ls-files --others` は数え直しのたびに
+    /// worktree の数だけ起き続ける。上のタブ番号と同じ形
+    /// (出さないものを問い合わせ続けない)。
+    ///
+    /// **NoticeSettings ではなくここに置いたのは、これが見た目の設定だから。**
+    /// 消えるのは行に添える数字と、worktree を片付けてよいかの言い切りで、
+    /// どちらもサイドバーの見せ方の話に収まる
+    @Published var countChanges: Bool {
+        didSet { UserDefaults.standard.set(countChanges, forKey: Self.countChangesKey) }
+    }
+
     // MARK: - 一覧のまとめ方
 
     /// 何も選んでいないときのまとめ方。
@@ -205,6 +221,7 @@ final class Appearance: ObservableObject {
     private static let groupingKey = "proctor_grouping"
     private static let canGroupByOrgKey = "proctor_can_group_by_org"
     private static let showTabNumbersKey = "proctor_show_tab_numbers"
+    private static let countChangesKey = "proctor_count_changes"
 
     init() {
         fontSize = Self.load(Self.sizeKey, in: Self.sizeRange, default: Self.defaultSize)
@@ -222,6 +239,10 @@ final class Appearance: ObservableObject {
         // こちらも既定はオン (未設定と「切ってある」を object の有無で分ける)
         showTabNumbers = UserDefaults.standard
             .object(forKey: Self.showTabNumbersKey) as? Bool ?? true
+        // こちらも既定はオン。数えるのが今までの振る舞いなので、
+        // 何も選んでいない人の見え方は変えない
+        countChanges = UserDefaults.standard
+            .object(forKey: Self.countChangesKey) as? Bool ?? true
 
         // まだ選んでいないときと、知らない値が入っていたときは既定に落とす
         groupingMode = GroupingMode(
