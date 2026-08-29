@@ -41,6 +41,7 @@ do {
     case "setup": code = try cmdSetup(parsed)
     case "attach": code = try cmdAttach(parsed)
     case "rm": code = try cmdRm(parsed)
+    case "title": code = try cmdTitle(parsed)
     case "sidebar": code = try cmdSidebar(parsed)
     // hooks 専用。人が打つものではないのでヘルプには出さない
     case "_touch": code = try cmdTouch(parsed)

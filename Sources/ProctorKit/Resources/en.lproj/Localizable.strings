@@ -23,21 +23,28 @@
 "error.ledger.lock_failed" = "Cannot acquire the lock: %@";
 "error.ledger.ambiguous_id" = "Ambiguous ID: %@";
 "error.ledger.not_found" = "No such task: %@";
+/* proctor title を、どのセッションか分からないところから叩かれたとき */
+"error.session.unidentified" = "Cannot tell which session this is. Run it from inside an agent's session, or point PROCTOR_ID at the one you mean.";
 "error.task_id.exhausted" = "Cannot assign an ID";
 
 /* proctor --help。行の並びがそのまま画面に出る */
-"cli.usage" = "Usage: proctor <command> [options]\n\nWatches coding agents working in worktrees and tells you when one raises its hand.\n\n  ls             list the agents that are running\n                   --all              cover every repository\n                   --json             print JSON (for AI and the sidebar)\n  worktree ls    list the worktrees, running or not\n                   --all              cover every repository\n                   --json             print JSON (for AI)\n  skill [NAME]   print a procedure for your agent to follow (no name lists them)\n  setup [AGENT]  print how to wire proctor up (no name lists the agents)\n  attach <ID>    open that session's agent (claude / agy / codex), resuming it\n  rm <ID>        drop one entry from the ledger (the worktree is left alone)\n  sidebar        launch the sidebar that clings to iTerm2 (Agent Proctor.app)\n  --version      print the version\n\nIt neither creates nor cleans up worktrees itself. It shows what is there, and\n`skill worktree` hands your agent the procedure for the rest.";
+"cli.usage" = "Usage: proctor <command> [options]\n\nWatches coding agents working in worktrees and tells you when one raises its hand.\n\n  ls             list the agents that are running\n                   --all              cover every repository\n                   --json             print JSON (for AI and the sidebar)\n  worktree ls    list the worktrees, running or not\n                   --all              cover every repository\n                   --json             print JSON (for AI)\n  skill [NAME]   print a procedure for your agent to follow (no name lists them)\n  setup [AGENT]  print how to wire proctor up (no name lists the agents)\n  attach <ID>    open that session's agent (claude / agy / codex), resuming it\n  rm <ID>        drop one entry from the ledger (the worktree is left alone)\n  title <text>   name the session you are in (empty text clears it)\n  sidebar        launch the sidebar that clings to iTerm2 (Agent Proctor.app)\n  --version      print the version\n\nIt neither creates nor cleans up worktrees itself. It shows what is there, and\n`skill worktree` hands your agent the procedure for the rest.";
 
 "cli.unknown_command" = "unknown command: %@";
 "cli.outside_repo" = "Not in a git repository, so every session is listed";
 "cli.outside_repo.worktrees" = "Not in a git repository, so every repository is listed";
 /* %1$@ は台帳から外した ID、%2$@ は残した worktree の場所 */
 "cli.removed" = "Dropped from the ledger: %1$@ (%2$@ is left as it is)";
+/* %1$@ は名前を付けた台帳の ID、%2$@ は付けた名前 */
+"cli.title.set" = "Named %1$@: %2$@";
+/* %@ は名前を外した台帳の ID */
+"cli.title.cleared" = "Cleared the name of %@";
 
 /* 引数が足りないときに「何が要るか」として差し込む言葉 */
 "cli.arg.session_id" = "a session ID";
 "cli.arg.status" = "a status (%@)";
 "cli.arg.start_or_stop" = "start or stop";
+"cli.arg.title" = "a name for this session";
 
 "cli.error.missing_argument" = "%@ is required";
 /* %1$@ は受け付ける状態の一覧、%2$@ は渡された値 */
@@ -65,6 +72,10 @@
 
 "cli.skill.hint" = "Read one with: proctor skill <name>";
 "cli.setup.hint" = "Read one with: proctor setup <agent>";
+
+/* 名前の無いセッションに囁く本文。UserPromptSubmit のたびに会話へ注がれるので、
+   **短く保つこと**。長い分だけ本題の場所が減る */
+"cli.hint.unnamed_session" = "This session has no name in agent-proctor yet. Once the work is clear, run: proctor title \"<a few words>\". Name the work, not the conversation. You will not be asked again once it has one.";
 
 /* 同梱の手順書。proctor skill ls に出る */
 "skill.worktree.title" = "Creating and cleaning up git worktrees";

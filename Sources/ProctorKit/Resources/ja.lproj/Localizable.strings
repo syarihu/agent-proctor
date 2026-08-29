@@ -23,21 +23,28 @@
 "error.ledger.lock_failed" = "ロックを取得できません: %@";
 "error.ledger.ambiguous_id" = "ID が曖昧です: %@";
 "error.ledger.not_found" = "タスクが見つかりません: %@";
+/* proctor title を、どのセッションか分からないところから叩かれたとき */
+"error.session.unidentified" = "どのセッションか分かりません。エージェントのセッションの中から実行するか、PROCTOR_ID で対象を指してください";
 "error.task_id.exhausted" = "ID を採番できません";
 
 /* proctor --help。行の並びがそのまま画面に出る */
-"cli.usage" = "使い方: proctor <コマンド> [オプション]\n\nworktree で働くコーディングエージェントを見張り、手が挙がったら知らせる。\n\n  ls             動いているエージェントの一覧\n                   --all              全リポジトリを対象にする\n                   --json             JSON で出す (AI・サイドバー向け)\n  worktree ls    worktree の一覧 (動いていないものも出る)\n                   --all              全リポジトリを対象にする\n                   --json             JSON で出す (AI 向け)\n  skill [名前]   作業中の手順をエージェントに読ませる (名前なしで一覧)\n  setup [相手]   proctor の繋ぎ方を出す (名前なしで一覧)\n  attach <ID>    そのセッションのエージェント (claude / agy / codex) を開く (続きから)\n  rm <ID>        台帳から1件外す (worktree には触らない)\n  sidebar        iTerm2 に吸着するサイドバー (Agent Proctor.app) を起動する\n  --version      版を表示する\n\n自分で worktree を作ったり片付けたりはしない。あるものを見せるところまでで、\nその先の手順は `skill worktree` がエージェントに渡す。";
+"cli.usage" = "使い方: proctor <コマンド> [オプション]\n\nworktree で働くコーディングエージェントを見張り、手が挙がったら知らせる。\n\n  ls             動いているエージェントの一覧\n                   --all              全リポジトリを対象にする\n                   --json             JSON で出す (AI・サイドバー向け)\n  worktree ls    worktree の一覧 (動いていないものも出る)\n                   --all              全リポジトリを対象にする\n                   --json             JSON で出す (AI 向け)\n  skill [名前]   作業中の手順をエージェントに読ませる (名前なしで一覧)\n  setup [相手]   proctor の繋ぎ方を出す (名前なしで一覧)\n  attach <ID>    そのセッションのエージェント (claude / agy / codex) を開く (続きから)\n  rm <ID>        台帳から1件外す (worktree には触らない)\n  title <名前>   いま動いているセッションに名前を付ける (空文字で外す)\n  sidebar        iTerm2 に吸着するサイドバー (Agent Proctor.app) を起動する\n  --version      版を表示する\n\n自分で worktree を作ったり片付けたりはしない。あるものを見せるところまでで、\nその先の手順は `skill worktree` がエージェントに渡す。";
 
 "cli.unknown_command" = "知らないコマンドです: %@";
 "cli.outside_repo" = "git リポジトリの外なので、すべてのセッションを表示します";
 "cli.outside_repo.worktrees" = "git リポジトリの外なので、すべてのリポジトリを表示します";
 /* %1$@ は台帳から外した ID、%2$@ は残した worktree の場所 */
 "cli.removed" = "台帳から外しました: %1$@ (%2$@ はそのまま)";
+/* %1$@ は名前を付けた台帳の ID、%2$@ は付けた名前 */
+"cli.title.set" = "名前を付けました: %1$@ → %2$@";
+/* %@ は名前を外した台帳の ID */
+"cli.title.cleared" = "名前を外しました: %@";
 
 /* 引数が足りないときに「何が要るか」として差し込む言葉 */
 "cli.arg.session_id" = "セッションID";
 "cli.arg.status" = "状態 (%@)";
 "cli.arg.start_or_stop" = "start か stop";
+"cli.arg.title" = "セッションに付ける名前";
 
 "cli.error.missing_argument" = "%@ を指定してください";
 /* %1$@ は受け付ける状態の一覧、%2$@ は渡された値 */
@@ -65,6 +72,10 @@
 
 "cli.skill.hint" = "読むには: proctor skill <名前>";
 "cli.setup.hint" = "読むには: proctor setup <相手>";
+
+/* 名前の無いセッションに囁く本文。UserPromptSubmit のたびに会話へ注がれるので、
+   **短く保つこと**。長い分だけ本題の場所が減る */
+"cli.hint.unnamed_session" = "このセッションには agent-proctor 上の名前がまだありません。作業内容が固まったら proctor title \"<短い名前>\" を実行してください。会話ではなく作業を指す数語にします。一度付ければもう訊きません。";
 
 /* 同梱の手順書。proctor skill ls に出る */
 "skill.worktree.title" = "git worktree を作る・片付ける";

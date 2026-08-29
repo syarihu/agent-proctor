@@ -98,15 +98,43 @@ public enum RecordHookEvent {
         }
     }
 
+    /// touch が何をしたか。
+    ///
+    /// **状態だけでは足りなくなった。** UserPromptSubmit のとき、その行にまだ
+    /// 名前が無ければ「付けてほしい」と囁く (`NameSession.namingHint`) ので、
+    /// 台帳を見なければ分からない事実をここに載せて持ち帰る。
+    /// 呼ぶ側で台帳を読み直す形にすると、いま書いた値とずれる (書いた直後に
+    /// 別のフックが同じ行を触りうる)
+    public struct Outcome {
+        /// **実際に記録した状態**。届いた状態とは限らない (今までの戻り値と同じ意味)
+        public let status: String
+        /// この行にまだ名前 (`title`) が無いか。
+        /// 行が無いとき (git の外・登録しなかった・消した) は false
+        public let unnamed: Bool
+
+        public init(status: String, unnamed: Bool) {
+            self.status = status
+            self.unnamed = unnamed
+        }
+    }
+
+    /// その行にまだ名前が無いか。空文字は「無い」に寄せる
+    /// (`tab_title` に空文字が来たときの扱いと揃える)
+    private static func isUnnamed(_ task: TaskRecord) -> Bool {
+        (task.title ?? "").isEmpty
+    }
+
     /// 状態を書き込む。知らないセッションなら新しく登録する。
     ///
-    /// - Returns: **実際に記録した状態**。呼び出し側 (タブの色を変える hooks など) が
-    ///   台帳と食い違わないように、届いた状態そのままとは限らない値を返す。
+    /// - Returns: **実際に記録した状態**と、その行に名前があるかどうか (`Outcome`)。
+    ///   呼び出し側 (タブの色を変える hooks など) が台帳と食い違わないように、
+    ///   届いた状態そのままとは限らない値を返す。
     ///   記録しなかったとき (git の外など) は届いた状態をそのまま返す
     @discardableResult
-    public static func touch(status: String, payload raw: HookPayload) throws -> String {
+    public static func touch(status: String, payload raw: HookPayload) throws -> Outcome {
         let top = GitClient.toplevel(from: raw.workingDirectory)
-        guard !top.isEmpty else { return status }  // git の外での実行は追いかけない
+        // git の外での実行は追いかけない。行が無いので囁く相手もいない
+        guard !top.isEmpty else { return Outcome(status: status, unnamed: false) }
 
         let now = Int(Date().timeIntervalSince1970)
 
@@ -152,19 +180,26 @@ public enum RecordHookEvent {
                 // 支度が無いのは、ロックを取る前には居たのに今は居ない場合
                 // (入れ違いで `clear` が来た・アプリが片付けた)。
                 // その回は捨てる。次のフックで登録し直される
-                try enroll(&ledger, draft: draft, top: top, agentKey: payload.agentKey)
-                return status
+                let enrolled = try enroll(&ledger, draft: draft, top: top,
+                                          agentKey: payload.agentKey)
+                // **登録したその回にも囁く。** 依頼文を受け取った直後は、名前を
+                // 付ける材料がいちばん揃っているとき。ここを飛ばすと、1ターンで
+                // 終わるセッションは一度も訊かれないまま消える。
+                // 条件を「その行に名前が無いこと」1つに保ちたいので、例外も作らない
+                return Outcome(status: status,
+                               unnamed: enrolled.map { isUnnamed($0) } ?? false)
             }
 
             if status == "clear" {
                 if let subID = payload.subagentID {
                     removeSubagent(&ledger.tasks[index], id: subID, now: now)
                     settleHold(&ledger.tasks[index], now: now)
-                    return status
+                    return .init(status: status, unnamed: isUnnamed(ledger.tasks[index]))
                 }
                 // セッションが終わったら一覧から消す
                 ledger.tasks.remove(at: index)
-                return status
+                // 行ごと消えたので、名前が無いも何もない
+                return .init(status: status, unnamed: false)
             }
 
             // 「もう待っていない」の合図。**確認待ちを降ろすためだけに使う。**
@@ -178,10 +213,12 @@ public enum RecordHookEvent {
                 // 開いている最中に子が暇になっただけ、という組み合わせがある
                 guard payload.subagentID == nil,
                       ledger.tasks[index].status == TaskStatus.waiting else {
-                    return ledger.tasks[index].status
+                    return .init(status: ledger.tasks[index].status,
+                                 unnamed: isUnnamed(ledger.tasks[index]))
                 }
                 // 降ろし方は人が押したときと同じところを通す (理由はそちら)
-                return ClearAttention.standDown(&ledger.tasks[index])
+                let stood = ClearAttention.standDown(&ledger.tasks[index])
+                return .init(status: stood, unnamed: isUnnamed(ledger.tasks[index]))
             }
 
             // **既に居るセッションを idle で塗り替えない。**
@@ -198,7 +235,8 @@ public enum RecordHookEvent {
                 // 前に出ていた権限確認はもう画面に無い。状態を塗り替えない方針は
                 // そのままなので、確認待ちのまま残ることはある (それは別の話)
                 ledger.tasks[index].request = nil
-                return ledger.tasks[index].status
+                return .init(status: ledger.tasks[index].status,
+                             unnamed: isUnnamed(ledger.tasks[index]))
             }
 
             // 子から届いた出来事 (PostToolUse / Stop 等) の場合。
@@ -211,7 +249,8 @@ public enum RecordHookEvent {
                     applySubagents(&ledger.tasks[index], payload: payload,
                                    status: status, now: now)
                 }
-                return ledger.tasks[index].status
+                return .init(status: ledger.tasks[index].status,
+                             unnamed: isUnnamed(ledger.tasks[index]))
             }
 
             // **子がまだ走っているなら「終わった」とは書かない。**
@@ -351,7 +390,9 @@ public enum RecordHookEvent {
                 // あちらの掃除は SubagentStop (と subagentTTL) が引き受ける
                 ledger.tasks[index].subagents = 0
             }
-            return recorded
+            // 名前があるかを見るのは**`tab_title` を映したあと**。この回に名前が
+            // 付いたなら、その場で囁くのはもう余計
+            return .init(status: recorded, unnamed: isUnnamed(ledger.tasks[index]))
         }
     }
 
@@ -703,9 +744,14 @@ public enum RecordHookEvent {
     ///
     /// やるのは採番と追加だけ。外から材料を持ち込む形にしてあるのは、
     /// ロックを握っている時間を数ミリ秒に抑えるため。
+    ///
+    /// - Returns: 載せた記録。載せなかったら nil。**採番のあとの姿を返す** ——
+    ///   呼ぶ側は「この回に何が生まれたか」をここでしか知れない
+    ///   (ロックの外の draft は ID がまだ空)
+    @discardableResult
     private static func enroll(_ ledger: inout LedgerFile, draft: TaskRecord?,
-                               top: String, agentKey: String) throws {
-        guard var record = draft else { return }
+                               top: String, agentKey: String) throws -> TaskRecord? {
+        guard var record = draft else { return nil }
         record.id = try TaskID.unique(
             base: TaskID.slugify(URL(fileURLWithPath: top).lastPathComponent),
             taken: ledger.tasks)
@@ -713,6 +759,7 @@ public enum RecordHookEvent {
         if let limits = record.rateLimits {
             ledger.agentRateLimits[agentKey] = limits
         }
+        return record
     }
 
     /// 記録を**いま動いているプロセスとタブに結び直す**。状態には触らない。

@@ -136,6 +136,7 @@ proctor skill [name]    # print a procedure for your agent to follow (no name li
 proctor setup [agent]   # print how to wire proctor up (no name lists the agents)
 proctor attach <id>     # open the agent (claude / agy / codex) for that session, resuming it
 proctor rm <id>         # drop one row from the ledger (the worktree is left alone)
+proctor title <text>    # name the session you are in (empty text clears it)
 proctor sidebar         # launch the sidebar app
 proctor --version       # print the version
 ```
