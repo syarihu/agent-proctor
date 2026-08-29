@@ -32,9 +32,11 @@ directories for the same piece of work.
 
 ## Where a worktree goes
 
-Conventions live in `~/.config/proctor/config.json`. **They do not live inside the
-repository.** How you slice worktrees is your own business, not the repository's, so
-nothing is added to the checkout of somebody who does not use proctor.
+Conventions live in `~/.config/proctor/config.json`. **That is where a new one goes;
+it does not go inside the repository.** How you slice worktrees is your own business,
+not the repository's, so nothing is added to the checkout of somebody who does not use
+proctor. A `.proctor.json` at the root of a repository is still read, but it is the
+override for a team that shares a convention — see the order below.
 
 ```json
 {
@@ -56,8 +58,11 @@ nothing is added to the checkout of somebody who does not use proctor.
 
 The top level holds the defaults for every repository; `repositories` overrides them
 one repository at a time. Its keys are the remote origin flattened to
-`<host>/<owner>/<name>` — read `git remote get-url origin` and drop the trailing
-`.git`. **The checkout path is not the key, because where a repository is cloned
+`<host>/<owner>/<name>`. `git remote get-url origin` comes back in more than one
+shape — scp-style (`git@github.com:owner/repo.git`) as well as a URL (`ssh://…`,
+`https://…`) — so read the host, the owner and the name out of it and join them with
+`/` rather than trimming the end; the `.git` goes.
+**The checkout path is not the key, because where a repository is cloned
 differs from person to person**, and from inside a worktree it is not even the path
 of the main checkout.
 

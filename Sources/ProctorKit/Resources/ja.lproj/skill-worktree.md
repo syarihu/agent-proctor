@@ -27,9 +27,11 @@ proctor worktree ls --json     # 同じ内容を読み取り向けに
 
 ## どこに作るか
 
-規約は `~/.config/proctor/config.json` に書く。**リポジトリの中には置かない。**
-worktree の切り方は使う人の都合であって、そのリポジトリの持ち物ではないので、
-proctor を使っていない人のリポジトリにファイルを増やさない。
+規約は `~/.config/proctor/config.json` に書く。**新しく書くならここで、
+リポジトリの中には置かない。** worktree の切り方は使う人の都合であって、
+そのリポジトリの持ち物ではないので、proctor を使っていない人のリポジトリに
+ファイルを増やさない。リポジトリ直下の `.proctor.json` も読むが、あれは
+チームで規約を共有したいときの上書き（下の「鍵ごとに、次の順で」）。
 
 ```json
 {
@@ -50,8 +52,11 @@ proctor を使っていない人のリポジトリにファイルを増やさな
 | `copyFiles` | gitignore されていて worktree に付いてこないファイル。本体からコピーする。無いと最初のビルドで即死する類（`local.properties` など）。リポジトリごとに違うので、たいてい `repositories` の下に書く |
 
 トップレベルが全リポジトリの既定で、`repositories` がリポジトリごとの上書き。
-鍵は remote origin を `<ホスト>/<持ち主>/<名前>` に均したもの
-（`git remote get-url origin` を読み、末尾の `.git` は落とす）。
+鍵は remote origin を `<ホスト>/<持ち主>/<名前>` に均したもの。
+`git remote get-url origin` が返す書き方は1つではない（scp 風の
+`git@github.com:owner/repo.git`、URL の `ssh://…` や `https://…`）ので、
+末尾を削るのではなく、ホスト・持ち主・名前を読み取って `/` で繋ぐ
+（`.git` は落とす）。
 **置き場所のパスを鍵にしないのは、どこに clone するかが人それぞれだから。**
 worktree の中で走っているときは本体のパスとも離れているので、なおさら当てにならない。
 
