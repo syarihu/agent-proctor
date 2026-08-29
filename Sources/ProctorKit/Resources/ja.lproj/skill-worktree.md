@@ -17,6 +17,17 @@ proctor worktree ls --json     # 同じ内容を読み取り向けに
 最後のコミットからどれだけ経ったかが返る。`isRemovable` は「誰も使っておらず、
 未コミットの変更が無く、取り込み済みで、鍵も掛かっていない」ときだけ true になる。
 
+**バイナリは、行が1行も動かなくても「未コミットの変更」に数える。** `.png` が何行
+変わったかは git には言えないので、そういうファイルは `added`/`removed` ではなく
+`diff.binary`（端末では `~N`）に1個ずつ数える。他の変更と同じように `isRemovable` を
+false にするので、書き換えたバイナリしか無い worktree は「空」ではない。
+
+**行が1行も動かない変更もある。** 純粋なリネームやモード変更（`chmod +x`）は
+足し上げるものが無いのでバッジも出ないが、git が報告したファイルは
+`diff.changedFiles` に数えてあり、`isRemovable` はそちらを見ている。手で判断する
+ときは `added`/`removed` ではなく `changedFiles` と `untracked` を読むこと。
+DIFF 欄が空でも、worktree が空とは限らない。
+
 **`diff` が意味を持つのは `diffKnown` が true のときだけ。** worktree を読めなかったときも
 0 が並ぶので、`isRemovable` はそういうものを弾いている。この旗ではなく**手で判断する**
 （下の 2 の経路）ときは、`diffKnown`・`sessions`・`isLocked`・`isMain`・`isBare`・`isPrunable`

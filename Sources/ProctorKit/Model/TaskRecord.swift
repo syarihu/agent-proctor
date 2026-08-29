@@ -170,12 +170,32 @@ public struct DiffCounts: Codable, Equatable {
     public var added: Int
     public var removed: Int
     public var untracked: Int
+    /// 行では数えられなかったファイルの数 (バイナリ)。
+    ///
+    /// **行数と別に持つ。** バイナリの差分は「何行変わったか」を言えないので、
+    /// 行数に混ぜると 0 になり、変更があったこと自体が消える
+    public var binary: Int
+    /// 変わったファイルの総数。**画面には出さない。「空か」を決めるためだけに持つ。**
+    ///
+    /// 行数もバイナリの印も出ない変更があるため (純粋なリネーム・モード変更は
+    /// numstat で `0 0 パス`)。そこまで数字で語ろうとすると記号が増えるだけなので、
+    /// 「変わったかどうか」だけをここで受け止める
+    public var changedFiles: Int
 
-    public init(added: Int = 0, removed: Int = 0, untracked: Int = 0) {
+    public init(added: Int = 0, removed: Int = 0, untracked: Int = 0,
+                binary: Int = 0, changedFiles: Int = 0) {
         self.added = added
         self.removed = removed
         self.untracked = untracked
+        self.binary = binary
+        self.changedFiles = changedFiles
     }
 
-    public var isEmpty: Bool { added == 0 && removed == 0 && untracked == 0 }
+    /// **見るのは総数と未追跡の2つだけ。** added・removed・binary は
+    /// 「numstat が行を出したファイル」から数えたものなので、どれかが 0 でなければ
+    /// `changedFiles` も必ず 0 でない。逆は成り立たない (リネームやモード変更は
+    /// 総数にしか出ない) ので、条件を重ねるのではなく総数のほうを見る。
+    /// これを見落とすと、画像や成果物やリネームしか無い worktree が
+    /// 「変更なし」になり、`CollectedWorktree.isRemovable` で片付けの候補に並ぶ
+    public var isEmpty: Bool { changedFiles == 0 && untracked == 0 }
 }

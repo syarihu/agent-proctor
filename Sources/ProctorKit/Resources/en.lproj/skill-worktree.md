@@ -20,6 +20,18 @@ whether its branch is already merged, and how long it has been since its last co
 `isRemovable` is true when nothing is running there, nothing is uncommitted, the
 branch is merged, and it is not locked.
 
+**A binary file counts as uncommitted work even though no line does.** git cannot
+say how many lines of a `.png` changed, so those files are counted one by one in
+`diff.binary` (`~N` in the terminal) instead of in `added`/`removed`. They keep
+`isRemovable` false like any other change; a worktree holding nothing but an
+edited binary is *not* empty.
+
+**Some changes move no lines at all.** A pure rename or a mode change (`chmod +x`)
+has nothing to add up, so it shows no badge — but `diff.changedFiles` counts every
+file git reported, and that is what `isRemovable` looks at. When you judge by hand,
+read `changedFiles` and `untracked`, not `added`/`removed`: an empty DIFF column
+does not mean an empty worktree.
+
 **`diff` only means anything when `diffKnown` is true.** When proctor could not
 read the worktree it reports zeros, which is why `isRemovable` refuses those. If
 you ever judge a worktree by hand instead of by that flag — step 2 below — check

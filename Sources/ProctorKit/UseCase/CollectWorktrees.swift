@@ -173,8 +173,9 @@ public enum CollectWorktrees {
     /// 片方が空だっただけの場所が「変更なし」として片付けの候補に並ぶ
     static func diff(at worktree: String) -> DiffCounts? {
         guard let lines = GitClient.changedLines(worktree, since: "HEAD"),
-              let untracked = GitClient.untrackedFiles(worktree) else { return nil }
+              let untracked = GitClient.untrackedCount(worktree) else { return nil }
         return DiffCounts(added: lines.added, removed: lines.removed,
-                          untracked: untracked.count)
+                          untracked: untracked, binary: lines.binary,
+                          changedFiles: lines.files)
     }
 }

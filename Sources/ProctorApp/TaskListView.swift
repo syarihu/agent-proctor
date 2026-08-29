@@ -519,6 +519,9 @@ private struct WorktreeRow: View {
                         if worktree.diff.untracked > 0 {
                             Text("?\(worktree.diff.untracked)").foregroundStyle(Palette.untracked)
                         }
+                        if worktree.diff.binary > 0 {
+                            Text("~\(worktree.diff.binary)").foregroundStyle(Palette.binary)
+                        }
                     }
                 }
                 .font(.system(size: base * 0.7).monospacedDigit())
@@ -831,6 +834,9 @@ private struct TaskRow: View {
             if task.diff.untracked > 0 {
                 DiffBadge(prefix: "?", count: task.diff.untracked, color: Palette.untracked)
             }
+            if task.diff.binary > 0 {
+                DiffBadge(prefix: "~", count: task.diff.binary, color: Palette.binary)
+            }
         }
         .font(.system(size: base * 0.8).monospacedDigit())
     }
@@ -1090,6 +1096,9 @@ enum Palette {
     static let added = Color(red: 0.298, green: 0.686, blue: 0.314)     // #4caf50
     static let removed = Color(red: 0.937, green: 0.325, blue: 0.314)   // #ef5350
     static let untracked = Color(red: 0.161, green: 0.714, blue: 0.965) // #29b6f6
+    /// 行で数えられなかったファイル (バイナリ)。追加とも削除とも言えないので、
+    /// 緑でも赤でもない色を当てる
+    static let binary = Color(red: 1.0, green: 0.655, blue: 0.149)      // #ffa726
     static let spinner = Color(red: 0.310, green: 0.765, blue: 0.969)   // #4fc3f7
     /// いま触っているツールの行。主役はセッション名なので、
     /// 読めるが目を引かない程度に落とす

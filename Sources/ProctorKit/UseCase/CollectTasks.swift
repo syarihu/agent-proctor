@@ -106,6 +106,9 @@ public enum CollectTasks {
     /// 新規ファイルは git diff に出ないため untracked として別に数える。
     /// エージェントの成果はファイル追加であることが多く、ここが漏れると
     /// 「何もしていない」ように見えてしまう。
+    ///
+    /// バイナリも行では数えられないので、件数として別に持つ。
+    /// 行数に混ぜると 0 になり、同じく「何もしていない」に見える。
     public static func diff(for record: TaskRecord) -> DiffCounts {
         // 聞けなかったときは 0 のまま出す。**ここは行に添える数字**で、
         // 消してよいかの判断には使わない (それは CollectWorktrees の仕事で、
@@ -114,7 +117,9 @@ public enum CollectTasks {
         return DiffCounts(
             added: lines?.added ?? 0,
             removed: lines?.removed ?? 0,
-            untracked: GitClient.untrackedFiles(record.worktree)?.count ?? 0)
+            untracked: GitClient.untrackedCount(record.worktree) ?? 0,
+            binary: lines?.binary ?? 0,
+            changedFiles: lines?.files ?? 0)
     }
 
     /// まだ人が見ていないもの。**サイドバーの最上部に新着として出す分**。
