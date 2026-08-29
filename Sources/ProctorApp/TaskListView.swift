@@ -656,8 +656,10 @@ private struct TaskRow: View {
     /// 閉じるボタンの上にいるか。行のホバーとは別に持つ (色を変えるため)
     @State private var closeHovering = false
 
-    /// 終わったあと、そのタブを見たもの
-    private var isSeen: Bool { task.displayStatus == TaskStatus.seen }
+    /// 見終わったものは役目を終えたので引いて背景に馴染ませる。消さずに残すのは、
+    /// 何をやったかを後から辿れるようにするため。
+    /// ただし今開いているタブは、引いた分を打ち消して居場所が埋もれないようにする
+    private var isDimmed: Bool { task.displayStatus == TaskStatus.seen && !isCurrent }
 
     var body: some View {
         HStack(alignment: .top, spacing: base * 0.4) {
@@ -765,16 +767,16 @@ private struct TaskRow: View {
                     .padding(.top, base * 0.1)
                 }
             }
+            // 見終わったものは役目を終えたので本文を引いて背景に馴染ませる。消さずに残すのは、
+            // 何をやったかを後から辿れるようにするため。
+            // ただし今開いているタブは、引いた分を打ち消して居場所が埋もれないようにする
+            .opacity(isDimmed ? 0.45 : 1)
         }
         .padding(.horizontal, base * 0.4)
         .padding(.vertical, base * 0.5)
         .frame(maxWidth: .infinity, alignment: .leading)
         // 重ねて置く。行の中に並べると、出入りのたびに幅が変わって文字がずれる
         .overlay(alignment: .topTrailing) { closeButton }
-        // 見終わったものは役目を終えたので引いて背景に馴染ませる。消さずに残すのは、
-        // 何をやったかを後から辿れるようにするため。
-        // ただし今開いているタブは、引いた分を打ち消して居場所が埋もれないようにする
-        .opacity(isSeen && !isCurrent ? 0.45 : 1)
         .background(
             ZStack {
                 // いま見ているタブ。状態の色とぶつからないよう、
@@ -885,7 +887,11 @@ private struct TaskRow: View {
     }
 
     /// 実行中は回っているリング、確認待ちはゆっくり明滅、完了時はシュッと描かれるチェックマーク。
-    /// 見終わったもの (確認済み) は静かな ✔ に置き換える
+    /// 見終わったもの (確認済み) は静かな ✔ に置き換える。
+    ///
+    /// **まだ片付けていないもの (attentionStatus が done) は印の色を緑で残し、薄くしない。**
+    /// タブ選択の有無に関わらず緑を濃く保つことで「見たが未完了」であることが確実に分かる。
+    /// 片付けたあとは、他の文字と同様に薄く (isDimmed) して背景に馴染ませる
     @ViewBuilder
     private var mark: some View {
         switch task.displayStatus {
@@ -896,6 +902,11 @@ private struct TaskRow: View {
         case TaskStatus.done:
             // まだ見ていない完了。タイトルと同じ色にして、印と名前で色がちぐはぐにならないようにする
             AnimatedCheckmark(size: base, color: Palette.done)
+        case TaskStatus.seen:
+            Text(TaskStatus.mark(task.displayStatus))
+                .font(.system(size: base))
+                .foregroundStyle(task.attentionStatus == TaskStatus.done ? Palette.done : Palette.fg)
+                .opacity(task.attentionStatus == TaskStatus.done ? 1 : (isDimmed ? 0.45 : 1))
         default:
             Text(TaskStatus.mark(task.displayStatus)).font(.system(size: base))
         }
