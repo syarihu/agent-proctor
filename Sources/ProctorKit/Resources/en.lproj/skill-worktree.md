@@ -32,13 +32,19 @@ directories for the same piece of work.
 
 ## Where a worktree goes
 
-Conventions live in `.proctor.json` at the root of the repository:
+Conventions live in `~/.config/proctor/config.json`. **They do not live inside the
+repository.** How you slice worktrees is your own business, not the repository's, so
+nothing is added to the checkout of somebody who does not use proctor.
 
 ```json
 {
   "worktreeBase": ".claude/worktrees",
   "branchPattern": "{user}/{name}",
-  "copyFiles": ["local.properties"]
+  "repositories": {
+    "github.com/syarihu/agent-proctor": {
+      "copyFiles": ["local.properties"]
+    }
+  }
 }
 ```
 
@@ -46,12 +52,28 @@ Conventions live in `.proctor.json` at the root of the repository:
 | --- | --- |
 | `worktreeBase` | Where worktrees are created, relative to the repository root (an absolute path also works) |
 | `branchPattern` | How branches are named. `{name}` is the slug of what the work is called; `{user}` is the git user; `{issue}` is an issue number when there is one |
-| `copyFiles` | Files that are gitignored and therefore do not come along — copy them in from the main checkout. Without them the build can die on the first command |
+| `copyFiles` | Files that are gitignored and therefore do not come along — copy them in from the main checkout. Without them the build can die on the first command. These differ per repository, so they usually belong under `repositories` |
 
-**If the file is missing, do not invent a convention silently.** Look at the existing
+The top level holds the defaults for every repository; `repositories` overrides them
+one repository at a time. Its keys are the remote origin flattened to
+`<host>/<owner>/<name>` — read `git remote get-url origin` and drop the trailing
+`.git`. **The checkout path is not the key, because where a repository is cloned
+differs from person to person**, and from inside a worktree it is not even the path
+of the main checkout.
+
+For each key, take the first of these that defines it:
+
+1. `.proctor.json` at the root of the repository — when it exists it wins over
+   everything. It is the way out for a team that wants to share a convention; most
+   repositories do not have one.
+2. The entry for this repository's origin under `repositories` in
+   `~/.config/proctor/config.json`.
+3. The top level of that same file.
+
+**If none of them says, do not invent a convention silently.** Look at the existing
 worktrees (`proctor worktree ls --json`) and at the branch names in `git branch`,
-propose what you inferred, and write `.proctor.json` only after the person agrees.
-Ask them once whether it should be committed or gitignored; both are reasonable.
+propose what you inferred, and add it to `~/.config/proctor/config.json` only after
+the person agrees.
 
 ## Creating one
 
