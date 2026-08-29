@@ -61,7 +61,7 @@ one repository at a time. Its keys are the remote origin flattened to
 `<host>/<owner>/<name>`. `git remote get-url origin` comes back in more than one
 shape — scp-style (`git@github.com:owner/repo.git`) as well as a URL (`ssh://…`,
 `https://…`) — so read the host, the owner and the name out of it and join them with
-`/` rather than trimming the end; the `.git` goes.
+`/` rather than trimming the end, dropping the trailing `.git`.
 **The checkout path is not the key, because where a repository is cloned
 differs from person to person**, and from inside a worktree it is not even the path
 of the main checkout.
@@ -75,7 +75,7 @@ For each key, take the first of these that defines it:
    `~/.config/proctor/config.json`.
 3. The top level of that same file.
 
-**If none of them says, do not invent a convention silently.** Look at the existing
+**If none of them defines it, do not invent a convention silently.** Look at the existing
 worktrees (`proctor worktree ls --json`) and at the branch names in `git branch`,
 propose what you inferred, and add it to `~/.config/proctor/config.json` only after
 the person agrees.
