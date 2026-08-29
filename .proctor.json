@@ -1,4 +1,0 @@
-{
-  "worktreeBase": ".claude/worktrees",
-  "branchPattern": "{name}"
-}

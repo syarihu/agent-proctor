@@ -27,13 +27,21 @@ proctor worktree ls --json     # 同じ内容を読み取り向けに
 
 ## どこに作るか
 
-規約はリポジトリ直下の `.proctor.json` に書く。
+規約は `~/.config/proctor/config.json` に書く。**新しく書くならここで、
+リポジトリの中には置かない。** worktree の切り方は使う人の都合であって、
+そのリポジトリの持ち物ではないので、proctor を使っていない人のリポジトリに
+ファイルを増やさない。リポジトリ直下の `.proctor.json` も読むが、あれは
+チームで規約を共有したいときの上書き（下の「鍵ごとに、次の順で」）。
 
 ```json
 {
   "worktreeBase": ".claude/worktrees",
   "branchPattern": "{user}/{name}",
-  "copyFiles": ["local.properties"]
+  "repositories": {
+    "github.com/syarihu/agent-proctor": {
+      "copyFiles": ["local.properties"]
+    }
+  }
 }
 ```
 
@@ -41,12 +49,27 @@ proctor worktree ls --json     # 同じ内容を読み取り向けに
 | --- | --- |
 | `worktreeBase` | worktree を作る場所。リポジトリ root からの相対（絶対パスでもよい） |
 | `branchPattern` | ブランチ名の形。`{name}` は作業名のスラグ、`{user}` は git のユーザー、`{issue}` は issue 番号（あるとき） |
-| `copyFiles` | gitignore されていて worktree に付いてこないファイル。本体からコピーする。無いと最初のビルドで即死する類（`local.properties` など） |
+| `copyFiles` | gitignore されていて worktree に付いてこないファイル。本体からコピーする。無いと最初のビルドで即死する類（`local.properties` など）。リポジトリごとに違うので、たいてい `repositories` の下に書く |
 
-**ファイルが無いとき、規約を黙って決めないこと。** 既存の worktree
+トップレベルが全リポジトリの既定で、`repositories` がリポジトリごとの上書き。
+鍵は remote origin を `<ホスト>/<持ち主>/<名前>` に均したもの。
+`git remote get-url origin` が返す書き方は1つではない（scp 風の
+`git@github.com:owner/repo.git`、URL の `ssh://…` や `https://…`）ので、
+末尾を削るのではなく、ホスト・持ち主・名前を読み取って `/` で繋ぐ
+（`.git` は落とす）。
+**置き場所のパスを鍵にしないのは、どこに clone するかが人それぞれだから。**
+worktree の中で走っているときは本体のパスとも離れているので、なおさら当てにならない。
+
+鍵ごとに、次の順で最初に見つかったものを使う。
+
+1. リポジトリ直下の `.proctor.json`（**あれば**すべてに勝つ。チームで規約を共有したい
+   ときのための逃げ道で、置いていないのが普通）
+2. `~/.config/proctor/config.json` の `repositories` の、そのリポジトリの origin の項
+3. 同じファイルのトップレベル
+
+**どこにも書かれていないとき、規約を黙って決めないこと。** 既存の worktree
 （`proctor worktree ls --json`）と `git branch` のブランチ名を見て、読み取った規約を提案し、
-**人が同意してから** `.proctor.json` を書く。コミットするか gitignore するかも一度聞く
-（どちらも妥当なので、こちらで決めない）。
+**人が同意してから** `~/.config/proctor/config.json` に書き足す。
 
 ## 作る
 
