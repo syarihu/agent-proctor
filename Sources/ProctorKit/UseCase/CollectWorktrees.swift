@@ -175,6 +175,7 @@ public enum CollectWorktrees {
         guard let lines = GitClient.changedLines(worktree, since: "HEAD"),
               let untracked = GitClient.untrackedCount(worktree) else { return nil }
         return DiffCounts(added: lines.added, removed: lines.removed,
-                          untracked: untracked, binary: lines.binary)
+                          untracked: untracked, binary: lines.binary,
+                          changedFiles: lines.files)
     }
 }

@@ -33,6 +33,11 @@ enum Terminal {
     }
 
     /// 差分を人向けの1セルに整形する。
+    ///
+    /// **`changedFiles` には記号を当てない。** `~` はバイナリの意味で決まっていて、
+    /// リネームやモード変更をそこに混ぜると記号の意味がぼやける。行が動かない変更は
+    /// 「空欄のまま、消してよいとは言わない」で足りる (判断は `DiffCounts.isEmpty`
+    /// が持っていて、こちらはその判断を映すだけ)
     static func diff(_ counts: DiffCounts) -> String {
         var parts: [String] = []
         if counts.added > 0 { parts.append(color("32", "+\(counts.added)")) }

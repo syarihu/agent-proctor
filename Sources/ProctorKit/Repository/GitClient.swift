@@ -203,8 +203,15 @@ public enum GitClient {
         return out.isEmpty ? 0 : out.utf8.reduce(1) { $1 == UInt8(ascii: "\n") ? $0 + 1 : $0 }
     }
 
-    /// 追加行数・削除行数と、行では数えられなかったファイルの数。
-    /// point からの差分を数える。聞けなければ nil
+    /// 追加行数・削除行数、行では数えられなかったファイルの数、
+    /// そして変わったファイルの総数。point からの差分を数える。聞けなければ nil
+    ///
+    /// **`files` を別に返すのは、行数もバイナリの印も出ない変更があるため。**
+    /// 純粋なリネームは `0<TAB>0<TAB>old => new`、モード変更 (chmod +x) も
+    /// `0<TAB>0<TAB>path` で出る。行数だけを見ると全部 0 なので「変更なし」と
+    /// 見分けが付かず、バイナリのときと同じ経路で `isRemovable` が
+    /// 「消してよい」と言い出す。**numstat が行を出した = そのファイルは変わった**
+    /// と読み替えて、行数が語れないぶんを総数で受け止める
     ///
     /// **`--shortstat` ではなく `--numstat` を使う。** shortstat はバイナリの変更を
     /// `1 file changed, 0 insertions(+), 0 deletions(-)` と報告するので、
@@ -215,11 +222,17 @@ public enum GitClient {
     /// numstat ならバイナリは `-<TAB>-<TAB>パス` で出るので、その場で見分けられる。
     /// 速さも変わらない (実測 numstat 18ミリ秒、shortstat 20ミリ秒)
     public static func changedLines(_ worktree: String, since point: String)
-        -> (added: Int, removed: Int, binary: Int)? {
+        -> (added: Int, removed: Int, binary: Int, files: Int)? {
         let (ok, out) = capture(worktree, "diff", "--numstat", point)
         guard ok else { return nil }
-        var added = 0, removed = 0, binary = 0
+        var added = 0, removed = 0, binary = 0, files = 0
         for line in out.split(separator: "\n") {
+            // **読めなかった行も1件として数える。** タブが足りない行は numstat の
+            // 形になっていないが、git がその行を出した以上ファイルは変わっている。
+            // 読めないことを「変わっていない」に倒すと、まさにここで塞いだ
+            // 「変更が無いように見えて消される」を作り直すことになる。
+            // 数える位置を guard より前に置いてあるのはそのため
+            files += 1
             // **タブは先頭2つしか見ない。** 3つ目から先はパスの一部で、
             // パスにタブが入っていても (git は quotePath で括るが、
             // core.quotePath を切っている置き方もある) 数え違えないようにする
@@ -234,6 +247,6 @@ public enum GitClient {
             added += Int(insertions) ?? 0
             removed += Int(deletions) ?? 0
         }
-        return (added, removed, binary)
+        return (added, removed, binary, files)
     }
 }

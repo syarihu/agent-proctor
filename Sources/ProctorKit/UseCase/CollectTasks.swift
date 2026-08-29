@@ -118,7 +118,8 @@ public enum CollectTasks {
             added: lines?.added ?? 0,
             removed: lines?.removed ?? 0,
             untracked: GitClient.untrackedCount(record.worktree) ?? 0,
-            binary: lines?.binary ?? 0)
+            binary: lines?.binary ?? 0,
+            changedFiles: lines?.files ?? 0)
     }
 
     /// まだ人が見ていないもの。**サイドバーの最上部に新着として出す分**。
