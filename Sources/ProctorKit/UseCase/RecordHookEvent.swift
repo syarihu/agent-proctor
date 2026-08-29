@@ -745,9 +745,9 @@ public enum RecordHookEvent {
     /// やるのは採番と追加だけ。外から材料を持ち込む形にしてあるのは、
     /// ロックを握っている時間を数ミリ秒に抑えるため。
     ///
-    /// - Returns: 載せた記録。載せなかったら nil。**採番のあとの姿を返す** ——
-    ///   呼ぶ側は「この回に何が生まれたか」をここでしか知れない
-    ///   (ロックの外の draft は ID がまだ空)
+    /// - Returns: 載せた記録。載せなかったら nil。
+    ///   **登録したその回に名前が付いているかを、呼ぶ側が知るために返す**
+    ///   (ロックの中で台帳を引き直させないため)
     @discardableResult
     private static func enroll(_ ledger: inout LedgerFile, draft: TaskRecord?,
                                top: String, agentKey: String) throws -> TaskRecord? {

@@ -11,12 +11,9 @@ import ProctorKit
 /// (伝えたい中身を決めるのは `NameSession.namingHint`)。
 ///
 /// 組み立てに `compactJSON` を通す理由は2つ。文字列の逃がし方を手で書かないため
-/// (本文には引用符も改行も入りうる) と、**改行を入れないため**。フックの stdout は
-/// 行単位で拾われることがあり、整形すると先頭の `{` だけを掴まれて壊れた JSON に見える。
+/// (本文には引用符も改行も入りうる) と、改行を入れないため (理由は `compactJSON`)。
 ///
-/// イベント名は綴らずに `HookPayload` から引く。**Claude Code はここが
-/// 実際のイベント名と一致しない JSON を黙って捨てる**ので、写し間違えると
-/// 何のエラーも出ないまま囁きだけが届かなくなる
+/// イベント名は綴らずに `HookPayload.userPromptSubmitEvent` から引く (理由はそちら)
 private func namingHookJSON(_ context: String) -> String {
     (try? compactJSON(["hookSpecificOutput": [
         "hookEventName": HookPayload.userPromptSubmitEvent,

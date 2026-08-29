@@ -154,7 +154,7 @@ public struct HookPayload {
         (box["hook_event_name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 
-    /// 人が何か送ってターンが始まったときのイベント名。
+    /// ターンの始まりを告げるフックのイベント名。
     ///
     /// **この綴りのリテラルを持つのはここだけにする。** 乗っているのは2つ ——
     /// 届いた payload を見分ける `isUserPromptSubmit` と、Claude Code へ返す
@@ -163,7 +163,10 @@ public struct HookPayload {
     /// 囁きが静かに届かなくなるだけになる。だから外にも見せる
     public static let userPromptSubmitEvent = "UserPromptSubmit"
 
-    /// 人が何か送ってターンが始まったフックか。
+    /// ターンの始まりを告げるフックか。**人が打ったとは限らない** ——
+    /// 誰が送ったかは `promptSource` を見る。
+    /// 本文の有無で見る `isTurnStart` と違い、こちらはイベント名だけを見る
+    /// (`hook_event_name` を送ってこない相手では常に false)
     public var isUserPromptSubmit: Bool {
         hookEventName == HookPayload.userPromptSubmitEvent
     }

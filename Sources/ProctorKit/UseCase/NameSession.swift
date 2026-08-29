@@ -32,16 +32,14 @@ public enum NameSession {
     ///
     /// 下2つは `findTask` に対応物が無い**受け皿**で、当たった行が hooks の
     /// 書いている行と同じである保証は無い (どちらもセッションではなく、
-    /// セッションが載っている入れ物を指す鍵なので、開き直しや使い回しで
-    /// 2件以上に当たりうる)。だから `newest` を通して、いちばん最近動いた行に賭ける。
+    /// セッションが載っている入れ物を指す鍵なので、2件以上に当たりうる)。
+    /// だから `newest` を通す (何が二重に当たるのかはそちら)。
     /// 引き当ては4鍵とも `newest` を通すが、2件以上に当たりうるのはこの下2つだけで、
     /// 上2つでは1件に決まる (揃えてあるのは、鍵ごとに書き方を変えないため)。
     ///
     /// 3. `ITERM_SESSION_ID` —— タブ。**自動で載る鍵としては、agy / codex で効く唯一のもの**
-    ///    (`PROCTOR_ID` を手で立てればあちらでも引けるが、それは人の手が要る)。
-    ///    同じタブでセッションを開き直した残骸に当たりうる
-    /// 4. `CLAUDE_PID` —— 上が全部外れたときの最後の受け皿。
-    ///    macOS は pid を使い回すので、別のプロセスの行に当たりうる
+    ///    (`PROCTOR_ID` を手で立てればあちらでも引けるが、それは人の手が要る)
+    /// 4. `CLAUDE_PID` —— 上が全部外れたときの最後の受け皿
     ///
     /// - Parameter environment: 差し替えられるようにしてあるのは試験のため
     /// - Returns: 引けなければ nil
@@ -74,9 +72,21 @@ public enum NameSession {
     ///
     /// 同じタブで開き直したセッションの残骸 (掃除は次のフックまで走らない) や、
     /// macOS が pid を使い回した結果として起きる。どちらかを選ばざるを得ないなら、
-    /// いま喋っているのは新しいほうなので、そちらに賭ける
+    /// いま喋っているのは新しいほうなので、そちらに賭ける。
+    ///
+    /// **`createdAt` まで見て全順序にするのは、賭ける向きが逆さまになるのを防ぐため。**
+    /// `updatedAt` は秒なので、2件が同じ値になることがある (開き直した直後は、
+    /// 古い行への最後のフックと新しい行の登録が同じ秒に入る)。`max(by:)` は
+    /// 同値のとき**先頭の要素を残す**ので、`updatedAt` だけで比べると、台帳に
+    /// 先に載っている古いほうが必ず勝つ —— いちばん避けたい行を的確に引き当てる。
+    /// `createdAt` は行が台帳に載った時刻なので、開き直した新しい行のほうが必ず大きい。
+    /// **ここを `updatedAt` だけに戻さないこと。**
+    ///
+    /// `createdAt` も同じなら、そこで止める。同じ秒に生まれて同じ秒に動いた2行は
+    /// もう見分ける手がかりが無く、`id` で決めても「若い名前のほう」を選ぶだけで
+    /// 新しさとは関係がない
     private static func newest(_ candidates: [TaskRecord]) -> TaskRecord? {
-        candidates.max { $0.updatedAt < $1.updatedAt }
+        candidates.max { ($0.updatedAt, $0.createdAt) < ($1.updatedAt, $1.createdAt) }
     }
 
     /// いま自分が居るセッションに名前を付ける。空文字なら外す。
@@ -88,10 +98,8 @@ public enum NameSession {
         // 空文字は「外す」。`tab_title` の扱いと揃えてある
         let value = trimmed.isEmpty ? nil : trimmed
 
-        // 引き当てはロックの外で済ませる (理由は LedgerStore.withLock)。
-        // **ロックの中で locate を呼んではいけない** —— 台帳を読み直すために
-        // もう一度ロックを取ると、flock は同一プロセスの別 fd 同士でもブロックするので
-        // そこで止まる
+        // 引き当てはロックの外で済ませる。ロックを握っている時間を短く保つため
+        // (`RecordHookEvent.enroll` が材料を外から持ち込む形にしているのと同じ理由)
         let snapshot = LedgerStore.tasks()
         guard let target = locate(in: snapshot) else {
             throw ProctorError(Localized.text("error.session.unidentified"))
@@ -124,8 +132,7 @@ public enum NameSession {
     /// - Parameter unnamed: その行にまだ名前が無いか (`RecordHookEvent.Outcome`)。
     ///   台帳を読み直さずに済むよう、書いた本人から持ち帰ってもらう
     public static func namingHint(payload: HookPayload, unnamed: Bool) -> String? {
-        // **UserPromptSubmit の stdout だけが会話に注がれる。** 他のイベントで
-        // 何か出しても、呼ぶ側がタブの色に使うだけで誰も読まない
+        // 他のイベントの stdout は、呼ぶ側がタブの色に使うだけで誰も読まない
         guard payload.isUserPromptSubmit else { return nil }
         // 子の手元で起きたことで親に囁かない (他の判定と揃える)。
         // 子は名前を付ける相手ではないし、付けたところで親の行に付く

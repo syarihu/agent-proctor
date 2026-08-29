@@ -470,6 +470,33 @@ PY
     payload t2 "$LAB/work" | env ITERM_SESSION_ID="w0t0p0:PROCTOR-BASELINE" "$BIN" _touch running
     $NAKED ITERM_SESSION_ID="w0t0p0:PROCTOR-BASELINE" "$BIN" title "タブから引いた名前"
 
+    # updatedAt は秒なので、開き直した直後は古い行と新しい行が同じ秒に並ぶ。
+    # そのとき max(by:) は先頭 (= 台帳に先に載っている古いほう) を残すので、
+    # updatedAt だけで比べていると賭ける向きが逆さまになる (理由は NameSession.newest)
+    say "同じ秒に並んだ2行では、あとから載ったほうに名前が付く"
+    # 同じタブ (itermSession) に2行。t5 が先に載った古い残骸で、t6 が開き直した行
+    payload t5 "$LAB/work" | env ITERM_SESSION_ID="w0t0p0:PROCTOR-TIE" "$BIN" _touch running
+    payload t6 "$LAB/work" | env ITERM_SESSION_ID="w0t0p0:PROCTOR-TIE" "$BIN" _touch running
+    # 秒を揃える。実際にこうなるのを待つわけにいかないので、台帳を直に仕込む
+    # (plant と同じ流儀)。updatedAt は同値、createdAt だけで前後が付く形にする
+    python3 - "$PROCTOR_STATE_DIR/state.json" <<'PY'
+import json, sys, time
+path = sys.argv[1]
+now = int(time.time())
+box = json.load(open(path))
+for task in box["tasks"]:
+    if task.get("sessionId") == "t5":      # 先に載った古い残骸
+        task["createdAt"], task["updatedAt"] = now - 100, now - 10
+    if task.get("sessionId") == "t6":      # あとから開き直した行
+        task["createdAt"], task["updatedAt"] = now - 50, now - 10
+json.dump(box, open(path, "w"), ensure_ascii=False)
+PY
+    $NAKED ITERM_SESSION_ID="w0t0p0:PROCTOR-TIE" "$BIN" title "同じ秒に並んだときの勝者"
+    echo "古い残骸 (t5): [$(field t5 title)]"
+    echo "開き直した行 (t6): [$(field t6 title)]"
+    payload t5 "$LAB/work" | "$BIN" _touch clear
+    payload t6 "$LAB/work" | "$BIN" _touch clear
+
     say "title (どの鍵も無ければ止まる)"
     $NAKED "$BIN" title "誰のものでもない名前"; echo "exit=$?"
 
