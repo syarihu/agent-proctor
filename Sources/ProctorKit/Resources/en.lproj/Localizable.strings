@@ -129,7 +129,7 @@
 "app.settings.unread" = "Clearing a notice";
 "app.settings.unread.on_open" = "When you visit its tab";
 "app.settings.unread.until_cleared" = "When you press its ✓";
-"app.settings.unread_footer" = "With “When you press its ✓”, a notice for a finished or failed session stays in the strip after you have looked at its tab, so “I have seen it, I will reply later” does not quietly become “dealt with”. It goes once that session moves again — sending it an instruction is enough — or once you press the ✓ on the notice.\nA waiting notice is not affected either way: it goes when you answer its prompt.";
+"app.settings.unread_footer" = "With “When you press its ✓”, a notice for a finished or failed session stays in the strip after you have looked at its tab, so “I have seen it, I will reply later” does not quietly become “dealt with”. It goes once that session moves again — sending it an instruction is enough — or once you press the ✓ on the notice.\nOnly the strip and the macOS notification stay: either way, the row in the list below turns ✔ as soon as you visit its tab.\nA waiting notice is not affected either way: it goes when you answer its prompt.";
 
 "app.settings.notify_section" = "Notifications";
 "app.settings.notify.waiting" = "When a session starts waiting for you";

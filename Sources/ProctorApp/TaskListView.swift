@@ -671,8 +671,10 @@ private struct TaskRow: View {
     /// 閉じるボタンの上にいるか。行のホバーとは別に持つ (色を変えるため)
     @State private var closeHovering = false
 
-    /// 終わったあと、そのタブを見たもの
-    private var isSeen: Bool { task.displayStatus == TaskStatus.seen }
+    /// 見終わったものは役目を終えたので引いて背景に馴染ませる。消さずに残すのは、
+    /// 何をやったかを後から辿れるようにするため。
+    /// ただし今開いているタブは、引いた分を打ち消して居場所が埋もれないようにする
+    private var isDimmed: Bool { task.displayStatus == TaskStatus.seen && !isCurrent }
 
     var body: some View {
         HStack(alignment: .top, spacing: base * 0.4) {
@@ -780,16 +782,16 @@ private struct TaskRow: View {
                     .padding(.top, base * 0.1)
                 }
             }
+            // 見終わったものは役目を終えたので本文を引いて背景に馴染ませる。消さずに残すのは、
+            // 何をやったかを後から辿れるようにするため。
+            // ただし今開いているタブは、引いた分を打ち消して居場所が埋もれないようにする
+            .opacity(isDimmed ? 0.45 : 1)
         }
         .padding(.horizontal, base * 0.4)
         .padding(.vertical, base * 0.5)
         .frame(maxWidth: .infinity, alignment: .leading)
         // 重ねて置く。行の中に並べると、出入りのたびに幅が変わって文字がずれる
         .overlay(alignment: .topTrailing) { closeButton }
-        // 見終わったものは役目を終えたので引いて背景に馴染ませる。消さずに残すのは、
-        // 何をやったかを後から辿れるようにするため。
-        // ただし今開いているタブは、引いた分を打ち消して居場所が埋もれないようにする
-        .opacity(isSeen && !isCurrent ? 0.45 : 1)
         .background(
             ZStack {
                 // いま見ているタブ。状態の色とぶつからないよう、
@@ -900,7 +902,11 @@ private struct TaskRow: View {
     }
 
     /// 実行中は回っているリング、確認待ちはゆっくり明滅、完了時はシュッと描かれるチェックマーク。
-    /// 見終わったもの (確認済み) は静かな ✔ に置き換える
+    /// 見終わったもの (確認済み) は静かな ✔ に置き換える。
+    ///
+    /// **まだ片付けていないもの (attentionStatus が done) は印の色を緑で残し、薄くしない。**
+    /// タブ選択の有無に関わらず緑を濃く保つことで「見たが未完了」であることが確実に分かる。
+    /// 片付けたあとは、他の文字と同様に薄く (isDimmed) して背景に馴染ませる
     @ViewBuilder
     private var mark: some View {
         switch task.displayStatus {
@@ -911,6 +917,11 @@ private struct TaskRow: View {
         case TaskStatus.done:
             // まだ見ていない完了。タイトルと同じ色にして、印と名前で色がちぐはぐにならないようにする
             AnimatedCheckmark(size: base, color: Palette.done)
+        case TaskStatus.seen:
+            Text(TaskStatus.mark(task.displayStatus))
+                .font(.system(size: base))
+                .foregroundStyle(task.attentionStatus == TaskStatus.done ? Palette.done : Palette.fg)
+                .opacity(task.attentionStatus == TaskStatus.done ? 1 : (isDimmed ? 0.45 : 1))
         default:
             Text(TaskStatus.mark(task.displayStatus)).font(.system(size: base))
         }
@@ -1359,7 +1370,7 @@ private struct AttentionInbox: View {
                 .padding(.vertical, base * 0.05)
                 .background(
                     Capsule().fill(
-                        Palette.status(tasks.first?.displayStatus ?? TaskStatus.waiting)
+                        Palette.status(tasks.first?.attentionStatus ?? TaskStatus.waiting)
                             .opacity(0.35)))
             Spacer(minLength: 0)
             // **溢れた分も含めて全部渡す。** 出ていた5行だけが消えて、
@@ -1475,7 +1486,7 @@ private struct InboxRow: View {
                 HStack(spacing: base * 0.35) {
                     Text(task.displayName)
                         .font(.system(size: base * 0.85, weight: .medium))
-                        .foregroundStyle(Palette.status(task.displayStatus))
+                        .foregroundStyle(Palette.status(task.attentionStatus))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     // どのリポジトリの話かは、セッション名だけでは分からないことがある。
@@ -1567,16 +1578,21 @@ private struct InboxRow: View {
     }
 
     /// 印は一覧の行と揃える。**同じ状態を上と下で違う記号にしない**
+    ///
+    /// ただし見るのは attentionStatus のほう。ここに並んでいるのは
+    /// **まだ片付けていないもの**で、タブを開いたからといって用が済んだ
+    /// わけではない。displayStatus で描くと、開いた行だけが済んだ顔 (✔) で
+    /// 居座り、片付ける当てのある行なのか見分けが付かなくなる
     @ViewBuilder
     private var mark: some View {
-        switch task.displayStatus {
+        switch task.attentionStatus {
         case TaskStatus.waiting:
-            Text(TaskStatus.mark(task.displayStatus))
+            Text(TaskStatus.mark(task.attentionStatus))
                 .font(.system(size: base * 0.85)).pulsing()
         case TaskStatus.done:
             AnimatedCheckmark(size: base * 0.85, color: Palette.done)
         default:
-            Text(TaskStatus.mark(task.displayStatus)).font(.system(size: base * 0.85))
+            Text(TaskStatus.mark(task.attentionStatus)).font(.system(size: base * 0.85))
         }
     }
 }

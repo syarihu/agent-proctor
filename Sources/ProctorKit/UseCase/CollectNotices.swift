@@ -74,15 +74,20 @@ public enum CollectNotices {
     ///
     /// **出す側と取り下げる側で同じ問いを通す。** 別々に書くと、片方だけが
     /// 「もう人の手は要らない」と判じたときに、出したまま下ろせない通知が残る。
-    /// 失敗がまさにそれで、`failed` は seenAt が付いても displayStatus が
+    /// 失敗がまさにそれで、`failed` は seenAt が付いても状態の名前が
     /// 変わらないため、状態を見比べるだけでは片が付いたことに気づけない
     /// (見たあとも通知センターに ✖ が居座る)。
+    ///
+    /// **見るのは attentionStatus で、displayStatus ではない。** あちらは
+    /// タブを開いた時点で完了を ✔ に畳むので、素直に使うと**開いただけで
+    /// 通知が下がる** —— それでは「見ただけで片付けたことにしない」という
+    /// 設定 (`MarkSessionSeen.Policy.untilCleared`) が通知の側で守られない。
     private static func noticeStatus(_ record: TaskRecord?,
                                      within allowed: Set<String>) -> String? {
         guard let record,
               TaskStatus.needsPerson(status: record.status, seenAt: record.seenAt)
         else { return nil }
-        let status = record.displayStatus
+        let status = record.attentionStatus
         return allowed.contains(status) ? status : nil
     }
 }

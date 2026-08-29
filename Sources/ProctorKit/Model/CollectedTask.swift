@@ -50,8 +50,11 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     public var request: String?
     /// 終わったターンが最後に言ったこと。台帳の値そのまま
     public var summary: String?
-    /// 終わったあと、そのタブを見た時刻
+    /// 終わったあと、もう知らせなくていいと決まった時刻
     public var seenAt: Int?
+    /// 終わったあと、そのタブを開いて中を見た時刻。
+    /// 一覧の行だけがこれを見る (要確認と通知は seenAt のほう)
+    public var openedAt: Int?
     /// 人が明示的に付けた名前 (タブのタイトルなど)
     public var title: String?
     public var name: String?
@@ -86,10 +89,15 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     /// 使われている作業場が「誰もいない」に見える**
     public var isItermManaged: Bool { !(itermSession ?? "").isEmpty }
 
-    /// 表示に使う状態。見たあとの完了は確認済みに畳む。
+    /// 一覧に出す状態。タブを開いたあとの完了は確認済みに畳む。
     /// 動いていた場所が消えていれば status のほうが先に missing になっている
     public var displayStatus: String {
-        TaskStatus.display(status: status, seenAt: seenAt)
+        TaskStatus.display(status: status, seenAt: seenAt, openedAt: openedAt)
+    }
+
+    /// 要確認と通知に出す状態。**開いただけでは畳まない** (`TaskStatus.attention`)
+    public var attentionStatus: String {
+        TaskStatus.attention(status: status, seenAt: seenAt)
     }
 
     /// いま出してよい活動。動いているあいだだけ返す。
@@ -185,6 +193,7 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         request = record.request
         summary = record.summary
         seenAt = record.seenAt
+        openedAt = record.openedAt
         title = record.title
         name = record.name
         model = record.model

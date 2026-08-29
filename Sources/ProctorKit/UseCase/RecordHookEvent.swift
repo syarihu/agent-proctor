@@ -290,9 +290,12 @@ public enum RecordHookEvent {
                 ledger.tasks[index].status = recorded
                 ledger.tasks[index].updatedAt = now
                 // また動き出したら「確認した」は無かったことにする。
-                // 次に終わったときは別の結果なので、改めて見てほしい
+                // 次に終わったときは別の結果なので、改めて見てほしい。
+                // **見た印 (openedAt) も一緒に落とす。** 残すと、次に終わったときに
+                // 一覧の行が最初から ✔ で出て、新しい結果が出たことに気づけない
                 if recorded == TaskStatus.running || recorded == TaskStatus.waiting {
                     ledger.tasks[index].seenAt = nil
+                    ledger.tasks[index].openedAt = nil
                 }
             }
             rebind(&ledger.tasks[index], payload: payload, moved: moved)

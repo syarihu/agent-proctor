@@ -67,6 +67,15 @@ public struct TaskRecord: Codable, Equatable {
     /// 設定で変わる (`MarkSessionSeen.Policy`)。開かずに片付けることもできるので、
     /// 見たかどうかとは一致しない
     public var seenAt: Int?
+    /// 終わったあと、**そのタブを開いて中を見た時刻**。まだなら nil。
+    /// seenAt と同じく、また動き出したら nil に戻す。
+    ///
+    /// **seenAt と別に持つ。** あちらは「もう知らせなくていい」という判断で、
+    /// こちらは「見た」という事実。設定を「完了ボタンを押したとき」にすると
+    /// 2つは離れ、**見たけれど返事はまだ**という状態ができる。一覧の行は
+    /// これを見て静かになり (開いたものに ✅ を出し続けても意味が無い)、
+    /// 要確認と通知は seenAt を見て残る (返事はまだ済んでいない)
+    public var openedAt: Int?
     /// 終わった子の墓標 (agent_id → 終わった時刻)。
     ///
     /// hooks は非同期に飛ぶので、`SubagentStop` のあとにその子の `PostToolUse` が
@@ -113,7 +122,7 @@ public struct TaskRecord: Codable, Equatable {
                 agent: String? = nil,
                 activity: String? = nil, request: String? = nil,
                 summary: String? = nil,
-                seenAt: Int? = nil,
+                seenAt: Int? = nil, openedAt: Int? = nil,
                 finishedSubagents: [String: Int]? = nil,
                 pendingStatus: String? = nil, title: String? = nil,
                 name: String? = nil, model: String? = nil,
@@ -138,6 +147,7 @@ public struct TaskRecord: Codable, Equatable {
         self.request = request
         self.summary = summary
         self.seenAt = seenAt
+        self.openedAt = openedAt
         self.finishedSubagents = finishedSubagents
         self.pendingStatus = pendingStatus
         self.title = title
@@ -155,9 +165,14 @@ public struct TaskRecord: Codable, Equatable {
     /// 空文字は「無い」と同じ扱いにする (空同士が一致してしまうため)
     public var isItermManaged: Bool { !(itermSession ?? "").isEmpty }
 
-    /// 表示に使う状態。見たあとの完了は確認済みに畳む
+    /// 一覧に出す状態。タブを開いたあとの完了は確認済みに畳む
     public var displayStatus: String {
-        TaskStatus.display(status: status, seenAt: seenAt)
+        TaskStatus.display(status: status, seenAt: seenAt, openedAt: openedAt)
+    }
+
+    /// 要確認と通知に出す状態。**開いただけでは畳まない** (`TaskStatus.attention`)
+    public var attentionStatus: String {
+        TaskStatus.attention(status: status, seenAt: seenAt)
     }
 
     /// 表示に使う見出し。人が付けた名前を先に、無ければセッション名、最後に ID。
