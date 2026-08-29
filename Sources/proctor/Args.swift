@@ -50,9 +50,18 @@ struct Args {
 
     /// 位置引数を1つ取り出す。無ければ何が要るかを添えて止める。
     /// what は呼ぶ側が訳したもの (語順が言語で変わるので、文にするのはここ)
+    ///
+    /// **足りないうえにフラグを拾っているときだけ、`--` のことを言う。**
+    /// `-` で始まる値はフラグとして飲まれるので、渡したのに「無い」と言われる。
+    /// 逃げ道を知らないとそこで詰むが、`proctor attach` のように
+    /// ID を忘れただけの場面で区切りの話をしても邪魔なだけなので、
+    /// **何かをフラグとして拾っている**ときに限って添える
     func require(_ index: Int, _ what: String) throws -> String {
         guard index < positional.count else {
-            throw ProctorError(Localized.text("cli.error.missing_argument", what))
+            let key = flags.isEmpty
+                ? "cli.error.missing_argument"
+                : "cli.error.missing_argument_after_flags"
+            throw ProctorError(Localized.text(key, what))
         }
         return positional[index]
     }

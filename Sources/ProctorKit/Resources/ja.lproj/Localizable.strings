@@ -47,6 +47,8 @@
 "cli.arg.title" = "セッションに付ける名前";
 
 "cli.error.missing_argument" = "%@ を指定してください";
+/* 足りないうえに何かをフラグとして拾っているとき。渡した値が飲まれた見込みがある */
+"cli.error.missing_argument_after_flags" = "%@ を指定してください。\"-\" で始まる値はフラグとして読まれるので、\"--\" の後ろに置いてください";
 /* %1$@ は受け付ける状態の一覧、%2$@ は渡された値 */
 "cli.error.invalid_status" = "状態は %1$@ のいずれかです: %2$@";
 "cli.error.invalid_subagent_action" = "start か stop を指定してください: %@";

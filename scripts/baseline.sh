@@ -453,9 +453,14 @@ PY
     $NAKED CLAUDE_CODE_SESSION_ID=t1 "$BIN" title -- "-h の扱いを直す"
     echo "title: [$(field t1 title)]"
 
-    say "title (-- が無ければ今までどおり止まる)"
+    # 区切りを知らずに詰まる人が出るので、フラグを拾っているときだけ言い添える。
+    # ID を忘れただけの `attach` に区切りの話を出しても邪魔なので、そちらでは黙る
+    say "title (-- が無ければ止まる。飲まれた見込みがあるので -- を案内する)"
     $NAKED CLAUDE_CODE_SESSION_ID=t1 "$BIN" title "-h の扱いを直す"; echo "exit=$?"
     echo "title: [$(field t1 title)]"
+
+    say "フラグを拾っていない不足では、区切りの話をしない"
+    $NAKED "$BIN" attach; echo "exit=$?"
 
     # `--` より前のフラグが今までどおり効くことは、この下から最後まで続く
     # `--json` 付きの節が全部そろって証明するので、ここでは見ない。

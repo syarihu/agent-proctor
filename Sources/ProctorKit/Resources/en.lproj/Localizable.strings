@@ -47,6 +47,8 @@
 "cli.arg.title" = "a name for this session";
 
 "cli.error.missing_argument" = "%@ is required";
+/* 足りないうえに何かをフラグとして拾っているとき。渡した値が飲まれた見込みがある */
+"cli.error.missing_argument_after_flags" = "%@ is required. A value starting with \"-\" is read as a flag — put it after \"--\" to pass it as text.";
 /* %1$@ は受け付ける状態の一覧、%2$@ は渡された値 */
 "cli.error.invalid_status" = "The status must be one of %1$@: %2$@";
 "cli.error.invalid_subagent_action" = "Specify start or stop: %@";
