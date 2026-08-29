@@ -7,6 +7,17 @@ import Combine
 /// 「手で開いた」と「まだ一度も触っていない」の区別が付かなくなる。
 /// 新しく現れた見出しは開いた状態で出したいので、記録が無い = 開く、にしておく。
 ///
+/// ただし**既定で畳んでおきたいものもある**ので、逆向きの集合 (`expanded`) も
+/// 持っている。どちらを読むかは呼ぶ側が決める。
+///
+/// **同じ鍵が2つの側を行き来する。** リポジトリの見出しは、セッションが
+/// 乗っているあいだは `collapsed` の側 (既定で開く)、セッションが無くなれば
+/// `expanded` の側 (既定で畳む) として読まれる。だから**片側を手で動かしたら、
+/// 逆側に残っている古い記録は捨てる**。残しておくと、側が入れ替わった瞬間に
+/// 何日も前の操作が今の操作を上書きして、畳んだはずのものが勝手に開く
+/// (逆も同じ)。捨てるのは同じ鍵の分だけで、`org:` や `wt:` の鍵は
+/// 前置きで名前空間が分かれているため、そもそも逆側には居ない。
+///
 /// 鍵はその見出しを一意に指す文字列で、`TaskGrouping` が組み立てる。
 /// リポジトリなら絶対パス、Organization なら `org:` を頭に付けたホストと持ち主。
 /// 見出しに出している名前を使わないのは、別の場所にある同名のリポジトリと
@@ -49,7 +60,9 @@ final class GroupFolding: ObservableObject {
         } else {
             expanded.insert(group)
         }
-        UserDefaults.standard.set(expanded.sorted(), forKey: Self.expandedKey)
+        write(expanded.sorted(), forKey: Self.expandedKey)
+        // 逆側に残っていた記録を捨てる (理由はこのクラスの説明)
+        forget(group, from: &collapsed, forKey: Self.key)
     }
 
     func toggle(_ group: String) {
@@ -58,8 +71,22 @@ final class GroupFolding: ObservableObject {
         } else {
             collapsed.insert(group)
         }
-        // 並べてから書く。Set の順は毎回変わるので、そのまま書くと
-        // 中身が同じでも defaults の値が動いて差分を追えない
-        UserDefaults.standard.set(collapsed.sorted(), forKey: Self.key)
+        write(collapsed.sorted(), forKey: Self.key)
+        forget(group, from: &expanded, forKey: Self.expandedKey)
+    }
+
+    /// 逆側から同じ鍵を落とす。**入っていなければ何もしない** ——
+    /// 書き込みは `objectWillChange` を飛ばすので、
+    /// 見出しを1つ畳むたびに一覧をもう一度組み直すことになる
+    private func forget(_ group: String, from side: inout Set<String>, forKey key: String) {
+        guard side.contains(group) else { return }
+        side.remove(group)
+        write(side.sorted(), forKey: key)
+    }
+
+    /// **並べてから書く。** Set の順は毎回変わるので、そのまま書くと
+    /// 中身が同じでも defaults の値が動いて差分を追えない
+    private func write(_ keys: [String], forKey key: String) {
+        UserDefaults.standard.set(keys, forKey: key)
     }
 }

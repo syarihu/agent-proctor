@@ -158,6 +158,9 @@
 /* %@ はその場所のパス */
 "app.worktree.open_help" = "Go there — the tab already in it, or a new one: %@";
 
+/* リポジトリの見出しの + 。%@ はリポジトリのパス */
+"app.repo.new_tab" = "Open a new tab here: %@";
+
 /* タブを開けなかったとき。%@ はセッションの名前 */
 "app.alert.open_failed.title" = "Could not open %@";
 "app.alert.open_failed.body" = "Check that iTerm2 is running and that automation is allowed.";
