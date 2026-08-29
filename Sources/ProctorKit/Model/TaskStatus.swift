@@ -132,9 +132,12 @@ public enum TaskStatus {
     ///
     /// **数えるのは attention のほう。** ここはメニューバーに出る「残り」で、
     /// 要確認のストリップと同じものを数えていないと、上と下で数が食い違う
-    /// (タブを開いた時点でメニューバーからは消えたのに、要確認には残る)
+    /// (タブを開いた時点でメニューバーからは消えたのに要確認には残る、あるいは
+    /// 失敗を片付けたのにメニューバーには残る、など)。
+    /// そのため `needsPerson` を通して「まだ人の手が要るもの」だけを数える
     public static func counts(_ tasks: [TaskRecord]) -> [(status: String, count: Int)] {
-        counts(displayStatuses: tasks.map(\.attentionStatus).filter { $0 != seen })
+        let actionable = tasks.filter { needsPerson(status: $0.status, seenAt: $0.seenAt) }
+        return counts(displayStatuses: actionable.map(\.attentionStatus))
     }
 
     /// 表示に使う状態そのものから数える。**渡されたものは全部数える。**
