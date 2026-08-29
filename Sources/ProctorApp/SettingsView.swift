@@ -131,6 +131,20 @@ struct SettingsView: View {
                 }
                 Toggle(Localized.text("app.settings.tab_numbers"),
                        isOn: $appearance.showTabNumbers)
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle(Localized.text("app.settings.count_changes"),
+                           isOn: $appearance.countChanges)
+                    // 何が起きるかは、切ってあるときだけ、そのトグルの真下に出す。
+                    // 節の下 (footer) にまとめると、どの項目の話か分からない
+                    // (上の「Organization でまとめる」と同じ扱い)。
+                    // 入れてあるときに出さないのは、これが今までどおりだから
+                    if !appearance.countChanges {
+                        Text(Localized.text("app.settings.count_changes.off"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 Toggle(Localized.text("app.settings.make_room"),
                        isOn: $appearance.makeRoomForSidebar)
             } header: {

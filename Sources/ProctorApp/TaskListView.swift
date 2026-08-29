@@ -544,7 +544,11 @@ private struct WorktreeSummaryRow: View {
                 .lineLimit(1)
 
             // 片付けられるものがあるときだけ数を添える。**0 を出さない。**
-            // 何も片付けられない日に「0」が並ぶと、見る意味の無い行になる
+            // 何も片付けられない日に「0」が並ぶと、見る意味の無い行になる。
+            //
+            // **数えていない回もここは黙る** (isRemovable が必ず false になる)。
+            // 断りを添えないのは、畳んだ見出しに要るのが「開く値打ちがあるか」
+            // だけだから。数えていないことは開いた先の行で分かる
             if removable > 0 {
                 Text(Localized.text("app.worktrees.removable", removable))
                     .font(.system(size: base * 0.75))
@@ -602,8 +606,19 @@ private struct WorktreeRow: View {
                     } else if worktree.isRemovable {
                         Text(Localized.text("app.worktree.removable"))
                             .foregroundStyle(Palette.done)
-                    } else if worktree.merged {
+                    } else if worktree.merged, worktree.diffKnown {
+                        // **数え切れていない回は、マージ済かどうかも言わない。**
+                        // この欄が答えているのは「片付けてよいか」で、数えていなければ
+                        // 答えられない。しかも `git branch --merged` は squash merge を
+                        // 見抜けず、fetch していなければ古く、**まだ1コミットも
+                        // していないブランチも数える** (先端が base と同じなので)。
+                        // 数えていれば未コミットの変更が横に出るので読み分けられるが、
+                        // 数えていなければ手掛かりが無い。
+                        //
+                        // 色は同じサイドバーで PR のマージに使っているものを借りる。
+                        // 地の色だと枝や時刻に沈んで、候補を探す目に引っ掛からない
                         Text(Localized.text("app.worktree.merged"))
+                            .foregroundStyle(Palette.prMerged)
                     }
 
                     if !worktree.diff.isEmpty {

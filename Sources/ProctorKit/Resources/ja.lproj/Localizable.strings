@@ -66,8 +66,8 @@
 /* proctor worktree ls の STATE 列。何をしてよい場所なのかが分かる言葉にする */
 "cli.worktree.state.sessions" = "使用中 (%d)";
 "cli.worktree.state.main" = "リポジトリ本体";
-"cli.worktree.state.removable" = "終わっている・消してよい";
-"cli.worktree.state.merged" = "マージ済み";
+"cli.worktree.state.removable" = "削除可能";
+"cli.worktree.state.merged" = "マージ済";
 "cli.worktree.state.idle" = "誰もいない";
 "cli.worktree.state.locked" = "ロック中";
 "cli.worktree.state.missing" = "実体なし";
@@ -115,6 +115,9 @@
 "app.settings.grouping.organization" = "Organization";
 "app.settings.grouping.needs_gh" = "Organization でまとめるには、持ち主を git の remote から、アイコンを GitHub CLI から読みます。gh を入れて「gh auth login」を済ませると選べるようになります。";
 "app.settings.tab_numbers" = "タブ番号 (⌘1〜⌘9) を出す";
+"app.settings.count_changes" = "ファイルの変更を数える";
+/* 切ってあるときだけ、トグルの真下に出す */
+"app.settings.count_changes.off" = "サイドバーがセッションと worktree ごとに git diff を起こすのをやめます。+/− の数字と、worktree が削除可能かどうかを表示しません。大きいリポジトリでは数えること自体が高くつくためで、遅いと分かった場合は切らなくても proctor が数え直す間隔を自分で伸ばします。「proctor ls」と「proctor worktree ls」はどちらでも数えます。";
 "app.settings.make_room" = "iTerm2 の幅を詰めて場所を空ける";
 "app.settings.sidebar_section" = "サイドバー";
 "app.settings.sidebar_footer" = "行の余白も文字の大きさに合わせて変わります。幅はサイドバーの左端をドラッグしても変えられます。\n「幅を詰めて場所を空ける」を入れておくと、iTerm2 が画面いっぱいのときにウィンドウの左端を右へ寄せて、サイドバーが重ならないようにします。サイドバーを隠すか終了すると元の幅に戻します。";
@@ -151,9 +154,9 @@
 
 /* セッションの乗っていない worktree。%d は件数 */
 "app.worktrees.summary" = "セッションがない worktree: %d";
-"app.worktrees.removable" = "· %d 片付けられる";
-"app.worktree.removable" = "終わっている";
-"app.worktree.merged" = "マージ済み";
+"app.worktrees.removable" = "· %d 削除可能";
+"app.worktree.removable" = "削除可能";
+"app.worktree.merged" = "マージ済";
 "app.worktree.locked" = "ロック中";
 /* %@ はその場所のパス */
 "app.worktree.open_help" = "そこへ行く。開いているタブがあればそのタブ: %@";
