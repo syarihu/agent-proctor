@@ -57,7 +57,7 @@ public enum TaskStatus {
     /// 開いて中を見たなら役目は終わっているので、片付けを待たずに ✔ にする。
     /// やることリスト側 (要確認・通知) は下の `attention` が別に見ているので、
     /// ここで畳んでも「まだ返事をしていない」という事実までは消えない
-    public static func display(status: String, seenAt: Int?, openedAt: Int?) -> String {
+    public static func display(status: String, seenAt: Int?, openedAt: Int? = nil) -> String {
         status == done && (seenAt != nil || openedAt != nil) ? seen : status
     }
 
