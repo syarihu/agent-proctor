@@ -340,6 +340,18 @@ PY
     "$BIN" ls --all
     "$BIN" worktree ls --all
 
+    # Claude Code の EnterWorktree は、セッションを開いたまま cwd だけ別の
+    # worktree へ移す。登録したときの場所を持ち続けると、移った先が
+    # 「誰もいない worktree」として並び (片付けの候補にすらなる)、
+    # ブランチも古いままなので PR も引けない
+    say "セッションが別の worktree へ移ったら、場所とブランチが付いていく"
+    payload s8 "$LAB/work" | "$BIN" _touch running
+    "$BIN" ls --all --json | grep -E '"(id|branch|worktree)" :'
+    payload s8 "$LAB/worktrees/merged" | "$BIN" _touch running
+    "$BIN" ls --all --json | grep -E '"(id|branch|worktree)" :'
+    "$BIN" worktree ls --all
+    payload s8 "$LAB/worktrees/merged" | "$BIN" _touch clear
+
     # 消してよいかの判断は、ここを踏み外すと**控えの無い仕事を捨てる**ことになる。
     # 鍵の掛かったものと実体を失ったものが候補から外れることを見ておく
     say "鍵を掛けた worktree と、実体を失った worktree"

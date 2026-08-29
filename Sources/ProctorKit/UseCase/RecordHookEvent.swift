@@ -122,11 +122,14 @@ public enum RecordHookEvent {
             ? draftRegistration(status: status, payload: payload, facts: facts,
                                 top: top, now: now)
             : nil
+        // 動いている場所が変わっていたら、引き直す材料をここで作る (理由は relocation)
+        let moved = known.flatMap { relocation(of: snapshot.tasks[$0], to: top) }
         // リポジトリ本体の場所。**ここで git を起こし直さない。**
         // 既に居るセッションなら台帳が答えを持っているし、初めてなら支度 (draft) を
         // 組み立てたときに引いている。hooks は際限なく飛んでくるので、
         // 分かっている答えのために毎回プロセスを起こすわけにいかない
-        let repo = known.map { snapshot.tasks[$0].repo } ?? draft?.repo
+        // (場所が変わった回だけは moved が引き直した答えを持っている)
+        let repo = moved?.repo ?? known.map { snapshot.tasks[$0].repo } ?? draft?.repo
 
         return try LedgerStore.withLock { ledger in
             if let repo { rememberRepo(&ledger, path: repo, now: now) }
@@ -192,7 +195,7 @@ public enum RecordHookEvent {
             // 「まだ台帳に居ないセッションが始まった」ときだけ。
             // ただし「誰がどこで動いているか」は入れ直す (理由は rebind)
             if status == TaskStatus.idle {
-                rebind(&ledger.tasks[index], payload: payload)
+                rebind(&ledger.tasks[index], payload: payload, moved: moved)
                 // **承認待ちの文だけは持ち越さない。** SessionStart が届いたのは
                 // セッションが開き直された (あるいは圧縮・clear された) ときなので、
                 // 前に出ていた権限確認はもう画面に無い。状態を塗り替えない方針は
@@ -253,7 +256,7 @@ public enum RecordHookEvent {
                     ledger.tasks[index].seenAt = nil
                 }
             }
-            rebind(&ledger.tasks[index], payload: payload)
+            rebind(&ledger.tasks[index], payload: payload, moved: moved)
             if let agent = payload.agent, ledger.tasks[index].agent != agent {
                 ledger.tasks[index].agent = agent
             }
@@ -715,12 +718,50 @@ public enum RecordHookEvent {
         }
     }
 
-    /// 記録を**いま動いているプロセスとタブに結び直す**。状態には触らない。
+    /// 動いている場所が変わったときに入れ直す3つ。
+    ///
+    /// セッションは同じまま cwd だけが別の worktree へ移ることがある
+    /// (Claude Code の `EnterWorktree` がまさにこれをする)。登録時の場所を
+    /// 持ち続けると、移った先の worktree は**誰も使っていない場所**として一覧に並び
+    /// (`isRemovable` の判断もそこを見るので、動いている仕事が片付けの候補に挙がる)、
+    /// ブランチも登録時のままなので PR も引けない。
+    ///
+    /// **ID は付け替えない。** あれは登録した場所から採った名前だが、
+    /// 人が呼ぶ名前であり、`PROCTOR_ID` として外にも出ているので、
+    /// 場所が変わったからといって別の名前になってはいけない。
+    struct Relocation {
+        var worktree: String
+        var repo: String
+        var branch: String
+    }
+
+    /// 場所が変わっていれば、入れ直す値を引く。**ロックの外で呼ぶこと**
+    /// (git を2回起こす)。
+    ///
+    /// 変わっていなければ git に触らずに nil を返す。hooks はツールのたびに
+    /// 飛んでくるので、動かない答えのために毎回プロセスを起こすわけにいかない。
+    static func relocation(of record: TaskRecord, to top: String) -> Relocation? {
+        guard record.worktree != top else { return nil }
+        let branch = GitClient.currentBranch(top)
+        return Relocation(worktree: top,
+                          repo: GitClient.mainWorktree(from: top) ?? top,
+                          branch: branch.isEmpty ? "-" : branch)
+    }
+
+    /// 記録を**いま動いているプロセスとタブと場所に結び直す**。状態には触らない。
     ///
     /// `--resume` は同じセッションIDのまま別のプロセス・別のタブで開き直すので、
     /// ここを入れ直さないと、死んだプロセスの記録として掃除されてしまう。
     /// 変わらなければ何も書かないので、台帳の更新時刻は動かない。
-    static func rebind(_ record: inout TaskRecord, payload: HookPayload) {
+    static func rebind(_ record: inout TaskRecord, payload: HookPayload,
+                       moved: Relocation? = nil) {
+        // 既に入っているなら書かない。ロックを取るまでの間に別のフックが
+        // 同じことを済ませていることがあり、書かなければ台帳の更新時刻も動かない
+        if let moved, record.worktree != moved.worktree {
+            record.worktree = moved.worktree
+            record.repo = moved.repo
+            record.branch = moved.branch
+        }
         if let session = payload.sessionID, record.sessionId != session {
             record.sessionId = session
         }
