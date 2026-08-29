@@ -36,9 +36,15 @@ public enum CollectWorktrees {
     ///   一覧を丸ごと置き換える側 (アプリ) は、これが立っていたら**前の値を残す**。
     ///   読めなかったことを「worktree が無い」として映すと、
     ///   何も起きていないのに行が消えたように見える
+    /// - Parameter repos: 台帳が覚えているリポジトリ。渡さなければここで読む。
+    ///   `tasks` と同じ分担で、既に読んであるなら渡す (アプリは同じ台帳を
+    ///   「一覧に残すか」の判断とも分け合うので、読むのは1回で済む)。
+    ///   **`run` のほうには足していない** —— 使うのはここを呼ぶアプリだけで、
+    ///   対称性のためだけの引数は「これは誰が使うのか」を探させることになる
     public static func runDetailed(repo: String? = nil, allRepos: Bool = false,
                                    withOrigin: Bool = false,
                                    tasks: [CollectedTask]? = nil,
+                                   repos: [String: Int]? = nil,
                                    also: [String] = [],
                                    now: Int = Int(Date().timeIntervalSince1970))
         -> (groups: [CollectedRepoWorktrees], incomplete: Bool) {
@@ -46,7 +52,7 @@ public enum CollectWorktrees {
 
         // 覚えているリポジトリと、いま動いているセッションのリポジトリを合わせる。
         // 台帳を覚えるより前から居座っているセッションがあっても取りこぼさない
-        var lastSeen = LedgerStore.repos()
+        var lastSeen = repos ?? LedgerStore.repos()
         for task in sessions where lastSeen[task.repo] == nil {
             lastSeen[task.repo] = task.updatedAt
         }
@@ -63,8 +69,11 @@ public enum CollectWorktrees {
             if targets.isEmpty { targets = [repo] }
         }
 
-        // 最後に見た順。同じ時刻ならパスで決着をつける
-        // (辞書の並びは実行のたびに変わるので、任せると順序が揺れる)
+        // 台帳の時刻の新しい順。同じ時刻ならパスで決着をつける
+        // (辞書の並びは実行のたびに変わるので、任せると順序が揺れる)。
+        // **「最後に見た順」とは限らない** —— この時刻は24時間に1回しか
+        // 書き直されないので (RecordHookEvent.repoMemoryRefresh)、
+        // 同じ日のうちに触った2つの順は入れ替わりうる
         let ordered = targets.sorted {
             let (a, b) = (lastSeen[$0] ?? 0, lastSeen[$1] ?? 0)
             return a != b ? a > b : $0 < $1

@@ -28,6 +28,13 @@ final class TaskStore: ObservableObject {
     /// リポジトリごとの worktree。セッションが終わっても残るものを見せるために持つ。
     /// 数えるのに git を起こすので、更新は自前の長い周期 (worktreeInterval) だけ
     @Published private(set) var worktrees: [CollectedRepoWorktrees] = []
+    /// セッションも worktree も無くなっても、一覧に残しておくリポジトリ。
+    ///
+    /// タブを閉じた瞬間に見出しごと消えると、さっきまで居た場所へ戻る道が
+    /// そこで切れる。残ったものは動きのあるものの下に落ちるだけなので、
+    /// 今どうなっているかの見通しは変わらない。
+    /// 誰を残すかを決めるのは `CollectRecentRepos`
+    @Published private(set) var keptRepos: Set<String> = []
     /// いま見ている iTerm2 のタブ。台帳には無い情報なので外から入れてもらう
     /// (聞きに行くのは FocusWatcher。ここは表示のために預かるだけ)
     @Published private(set) var focusedSession: String?
@@ -255,9 +262,15 @@ final class TaskStore: ObservableObject {
         CollectTasks.summarizedRateLimits(tasks, persisted: agentRateLimits)
     }
 
-    /// タブが開いているリポジトリだけに絞る。
+    /// 一覧に出すリポジトリだけに絞る。
     ///
-    /// 見分け方は2つ。どちらかに当たればそのリポジトリは「開いている」。
+    /// 残すのは、タブが開いているか、最近見た場所として残すと決めたもの
+    /// (`keep`)。**タブの有無だけでは足りない** —— それだけで絞ると、
+    /// タブを閉じた瞬間にリポジトリが一覧から消えて、さっきまで居た場所へ
+    /// 戻る道がそこで切れる。`keep` に入っていないリポジトリは、
+    /// 今までどおりタブが開いているときだけ出る。
+    ///
+    /// タブの見分け方は2つ。どちらかに当たればそのリポジトリは「開いている」。
     ///
     /// 1. タブの現在地が、そのリポジトリのどこかの worktree の中にある。
     ///    リポジトリ本体のパスで見ないのは、worktree を本体の外に置く流儀があるから
@@ -271,7 +284,8 @@ final class TaskStore: ObservableObject {
     nonisolated static func visible(
         _ groups: [CollectedRepoWorktrees],
         openTabs: [(session: String, directory: String)]?,
-        sessions: [CollectedTask]) -> [CollectedRepoWorktrees] {
+        sessions: [CollectedTask],
+        keep: Set<String> = []) -> [CollectedRepoWorktrees] {
         guard let openTabs else { return groups }
         let directories = openTabs.map(\.directory)
         let liveTabs = Set(openTabs.map(\.session))
@@ -281,7 +295,7 @@ final class TaskStore: ObservableObject {
             .map(\.worktree))
 
         return groups.filter { group in
-            group.worktrees.contains { worktree in
+            keep.contains(group.repo) || group.worktrees.contains { worktree in
                 occupied.contains(worktree.path)
                     || directories.contains {
                         $0 == worktree.path || $0.hasPrefix(worktree.path + "/")
@@ -345,9 +359,9 @@ final class TaskStore: ObservableObject {
         // 数えるのは別スレッドなので、メインで読める値はここで写しておく。
         // iTerm2 への問い合わせ (AppleScript) もメインスレッドからでないと通らない。
         //
-        // **タブが1つも開いていないリポジトリの worktree は出さない。** 台帳が
-        // 覚えているだけのリポジトリまで並べると、いま手を付けている場所が埋もれる。
-        // 全部見たいときは CLI (proctor worktree ls --all) がある
+        // **台帳が覚えているだけのリポジトリまでは並べない。** 出すのは、タブが
+        // 開いているものと、最近見たもの (visible の keep) だけ。全部見たいときは
+        // CLI (proctor worktree ls --all) がある
         let here = visited
         let openTabs = countWorktrees ? ItermBridge.openTabs(interactive: false) : nil
         // git の起動を待つ間 UI を止めない。数え終わったらメインに戻して差し替える
@@ -365,13 +379,30 @@ final class TaskStore: ObservableObject {
                                               withOrigin: true)
             // 読み切れなかった回は、そのまま映さずに前の値を残す。
             // git が一度答えなかっただけで行が消えると、何が起きたのか分からない
-            let outcome: (worktrees: [CollectedRepoWorktrees]?, incomplete: Bool) = {
-                guard countWorktrees else { return (nil, false) }
+            let outcome: (worktrees: [CollectedRepoWorktrees]?,
+                          kept: Set<String>?, incomplete: Bool) = {
+                // **台帳を読むのは worktree を数える回だけ。** 数えない回は
+                // visible を呼ばないので、残すかどうかの判断そのものが要らない。
+                // LedgerStore.repos() は台帳 JSON を丸ごとデコードするので、
+                // ここに置かずに毎回読むと、同じ Task.detached の中で
+                // CollectTasks.run が既に1回読んでいるぶんと合わせて、
+                // 10秒ごと (とツールが動くたび) にデコードが2回走ることになる
+                guard countWorktrees else { return (nil, nil, false) }
+                // 覚えているリポジトリはここで一度だけ読む。worktree の数え上げも
+                // 「一覧に残すか」の判断も同じものを見るので、それぞれに読ませると
+                // 同じ台帳を2回開くことになる
+                let ledgerRepos = LedgerStore.repos()
+                // 最後のタブを閉じても、しばらくは一覧に残しておくリポジトリ。
+                // 読んだ台帳を使い回すだけなので、ここでは何も起きない
+                let kept = CollectRecentRepos.run(repos: ledgerRepos)
                 let counted = CollectWorktrees.runDetailed(allRepos: true, withOrigin: true,
-                                                           tasks: everything, also: here)
-                guard !counted.incomplete else { return (nil, true) }
-                return (TaskStore.visible(counted.groups,
-                                          openTabs: openTabs, sessions: everything), false)
+                                                           tasks: everything,
+                                                           repos: ledgerRepos, also: here)
+                // worktree のほうが読めなくても、残す顔ぶれは分かっている。
+                // 据え置きの一覧に対しても効くので、そちらは映してよい
+                guard !counted.incomplete else { return (nil, kept, true) }
+                return (TaskStore.visible(counted.groups, openTabs: openTabs,
+                                          sessions: everything, keep: kept), kept, false)
             }()
             let collected = everything.filter(\.isItermManaged)
             await MainActor.run {
@@ -380,6 +411,10 @@ final class TaskStore: ObservableObject {
                 if let latest = outcome.worktrees, self.worktrees != latest {
                     self.worktrees = latest
                 }
+                // **変わっていないものは入れ直さない** (理由は reloadRecords と同じ)。
+                // 同じ値の代入でも objectWillChange が飛び、10秒ごとに
+                // 一覧がまるごと組み直される
+                if let kept = outcome.kept, self.keptRepos != kept { self.keptRepos = kept }
                 // 読めなかったぶんは次の周期を待たずに聞き直す
                 if outcome.incomplete { self.lastWorktreeCount = .distantPast }
                 if self.pendingRecount, self.collecting { self.recount() }

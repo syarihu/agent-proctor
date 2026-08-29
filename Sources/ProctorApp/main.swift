@@ -51,6 +51,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.store.forget(id: task.id)
             }, onOpenWorktree: { [weak self] worktree in
                 self?.open(worktree: worktree)
+            }, onNewTab: { [weak self] path, name in
+                self?.open(path: path, name: name, reusingTab: false)
             }, onClearAttention: { [weak self] tasks in
                 self?.store.clearAttention(ids: tasks.map(\.id))
             }))
@@ -145,26 +147,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// セッションの乗っていない worktree を開く。
-    ///
-    /// まず、その場所を開いているタブを探す (理由は ItermBridge.sessionID)。
-    /// 見つからなければ、そこへ移動した新しいタブを開く。
+    /// セッションの乗っていない worktree を開く
+    private func open(worktree: CollectedWorktree) {
+        open(path: worktree.path, name: worktree.name)
+    }
+
+    /// その場所を開く。
     ///
     /// **エージェントは起こさない** — 続きの会話が無い場所なので、
-    /// 何を始めるかは開いた人が決める
-    private func open(worktree: CollectedWorktree) {
+    /// 何を始めるかは開いた人が決める。
+    ///
+    /// 2つの入口を1つの関数にしてあるのは、**違うのが最初の一手だけ**だから。
+    /// 許可の待ち方も、失敗したときの伝え方も同じなので、分けて書くと
+    /// 片方だけ直る余地が生まれる。
+    ///
+    /// - Parameters:
+    ///   - name: 開けなかったときに出す名前。パスは長すぎてダイアログの
+    ///     見出しにならない
+    ///   - reusingTab: その場所を開いているタブがあればそこへ行く
+    ///     (理由は ItermBridge.sessionID)。**見出しの `+` では false。**
+    ///     あれは「ここでもう1枚」と言われているので、
+    ///     既にあるタブへ連れて行っては求められたことをしていない
+    private func open(path: String, name: String, reusingTab: Bool = true) {
         // 待つ理由は open(taskID:) と同じ
         Task { @MainActor in
             await ItermBridge.settlePermission()
 
-            if let session = ItermBridge.sessionID(inDirectory: worktree.path),
+            if reusingTab, let session = ItermBridge.sessionID(inDirectory: path),
                ItermBridge.focus(sessionID: session) {
                 return
             }
-            guard ItermBridge.openTab(inDirectory: worktree.path) else {
+            guard ItermBridge.openTab(inDirectory: path) else {
                 let alert = NSAlert()
-                alert.messageText = Localized.text("app.alert.open_failed.title",
-                                                   worktree.name)
+                alert.messageText = Localized.text("app.alert.open_failed.title", name)
                 alert.informativeText = Localized.text("app.alert.open_failed.body")
                 alert.alertStyle = .warning
                 alert.runModal()

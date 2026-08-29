@@ -65,12 +65,26 @@ struct PendingGroup: Identifiable {
 enum TaskGrouping {
     /// リポジトリごとにまとめる (これまでの見せ方)
     ///
-    /// - Parameter worktrees: セッションが乗っていない worktree。
-    ///   これが第2の入り口になる。タスクからだけ組み立てると、
-    ///   セッションが1つも無いリポジトリは見出しごと生まれず、
-    ///   いちばん放置されている作業場が出てこない
+    /// - Parameters:
+    ///   - worktrees: セッションが乗っていない worktree。
+    ///     これが第2の入り口になる。タスクからだけ組み立てると、
+    ///     セッションが1つも無いリポジトリは見出しごと生まれず、
+    ///     いちばん放置されている作業場が出てこない
+    ///   - keeping: セッションも worktree も無くても見出しを立てるリポジトリ。
+    ///     最近見た場所を一覧に残しておくための第3の入り口
+    ///     (誰が「最近」を決めるかは `CollectRecentRepos`)
+    ///
+    /// **並べ直しは要らない。** `recency` はタスクが1つも無ければ `.max` を返すので、
+    /// セッションの無いリポジトリは放っておいても下に落ちる。しかも `stable` は
+    /// 引き分けで入力順を保ち、渡される `worktrees` は
+    /// `CollectWorktrees.runDetailed` が台帳の時刻の新しい順に並べたものなので、
+    /// 落ちたものどうしの並びもそのまま引き継がれる。
+    /// **ただしその時刻は24時間に1回しか書き直されない**
+    /// (`RecordHookEvent.repoMemoryRefresh`) ので、同じ日のうちに触った
+    /// 2つの順は入れ替わりうる。毎回揺れるわけではないので、ここは直さない
     static func byRepository(_ tasks: [CollectedTask],
-                             worktrees: [CollectedRepoWorktrees] = []) -> [RepoGroup] {
+                             worktrees: [CollectedRepoWorktrees] = [],
+                             keeping: Set<String> = []) -> [RepoGroup] {
         var order: [String] = []
         var box: [String: RepoGroup] = [:]
         for task in tasks {
@@ -80,27 +94,38 @@ enum TaskGrouping {
             }
             box[task.repo]?.tasks.append(task)
         }
-        attach(worktrees, order: &order, box: &box)
+        attach(worktrees, keeping: keeping, order: &order, box: &box)
         return stable(order.compactMap { box[$0] }) { recency($0.tasks) }
+    }
+
+    /// セッションが1つも無いリポジトリが、**worktree だけで**見出しを持てるか。
+    ///
+    /// 中身の無い見出しを worktree の側から生やさないための門。これとは別に
+    /// 「最近見た」という理由でも見出しは立つ (`attach` の `keeping`) ので、
+    /// これが false でも一覧に出ないとは限らない
+    private static func standsAlone(_ group: CollectedRepoWorktrees) -> Bool {
+        !group.idle.isEmpty
     }
 
     /// 残っている worktree を、対応するリポジトリのまとまりに足す。
     /// まとまりがまだ無ければ (セッションが1つも無いリポジトリ) ここで作る。
     ///
-    /// **何も残っていないリポジトリの見出しは作らない。** 中身の無い見出しが
-    /// 並ぶと、一覧の意味が「今どうなっているか」から「どこを触ったか」に
-    /// すり替わってしまう
+    /// 作ってよいのは、worktree が残っているか (`standsAlone`)、
+    /// 最近見た場所として残すと決めたか (`keeping`) のどちらか。
+    /// **どちらでもないものの見出しは作らない** —— ずっと前に一度触ったきりの
+    /// リポジトリまで並ぶと、一覧の意味が「今どうなっているか」から
+    /// 「どこを触ったことがあるか」にすり替わってしまう
     private static func attach(_ worktrees: [CollectedRepoWorktrees],
+                               keeping: Set<String>,
                                order: inout [String],
                                box: inout [String: RepoGroup]) {
         for group in worktrees {
-            let idle = group.idle
             if box[group.repo] == nil {
-                guard !idle.isEmpty else { continue }
+                guard standsAlone(group) || keeping.contains(group.repo) else { continue }
                 order.append(group.repo)
                 box[group.repo] = RepoGroup(id: group.repo, name: group.repoName, tasks: [])
             }
-            box[group.repo]?.worktrees = idle
+            box[group.repo]?.worktrees = group.idle
         }
     }
 
@@ -110,15 +135,21 @@ enum TaskGrouping {
     /// しまうと、無関係なリポジトリが誰かの組織の下に並ぶ。** 別立てにすれば、
     /// remote が付いていないだけだと分かる。
     ///
-    /// - Parameter unknownTitle: 持ち主が読めないまとまりの見出し
+    /// - Parameters:
+    ///   - keeping: `byRepository` にそのまま渡す。**セッションの無い
+    ///     リポジトリしか居ない Organization の見出しが新しく生えることになるが、
+    ///     それでよい** —— 中身の空な見出しではなく、戻り先のリポジトリが
+    ///     入っている見出しなので、畳めば1行、開けば行き先が並ぶ
+    ///   - unknownTitle: 持ち主が読めないまとまりの見出し
     static func byOrganization(_ tasks: [CollectedTask],
                                worktrees: [CollectedRepoWorktrees] = [],
+                               keeping: Set<String> = [],
                                unknownTitle: String) -> [OrgGroup] {
         var order: [String] = []
         var box: [String: OrgGroup] = [:]
         // リポジトリ単位のまとまりは1か所で作る。持ち主で束ね直すのはそのあと。
         // 2通りに書くと、worktree が片方にしか出ないという食い違いが生まれる
-        let repos = byRepository(tasks, worktrees: worktrees)
+        let repos = byRepository(tasks, worktrees: worktrees, keeping: keeping)
         // 持ち主はタスク側にも worktree 側にも付いている。セッションが1つも
         // 無いリポジトリではタスクから引けないので、worktree のほうから拾う
         var origins: [String: RepoOrigin] = [:]

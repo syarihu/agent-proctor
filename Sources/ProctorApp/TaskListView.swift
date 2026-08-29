@@ -19,6 +19,8 @@ struct TaskListView: View {
     /// セッションの乗っていない worktree を押したとき。
     /// 戻る先のタブが無いので、そこへ移動した新しいタブを開く
     var onOpenWorktree: (CollectedWorktree) -> Void
+    /// リポジトリの見出しの `+` を押したとき。そのリポジトリで新しいタブを開く
+    var onNewTab: (_ path: String, _ name: String) -> Void
     /// 要確認から片付けるとき。渡した分だけ台帳の状態まで動く
     var onClearAttention: ([CollectedTask]) -> Void
 
@@ -127,6 +129,11 @@ struct TaskListView: View {
     ///   組織とその中身の間のほうが空いていると、どちらの子なのか分からなくなる**
     @ViewBuilder
     private func repoSection(_ group: RepoGroup, indent: CGFloat) -> some View {
+        let folded = isFolded(group)
+        // 開いても下に何も出ない見出し。**この機能でいちばん多い形**でもある
+        // (追加の worktree を持たない普通のリポジトリは、セッションが終われば
+        // tasks も worktrees も空になる)
+        let empty = group.tasks.isEmpty && group.worktrees.isEmpty
         // 1つしかないときも出す。畳む取っ手はここにしかないし、
         // どのリポジトリを見ているのかは1つでも知りたい
         RepoHeader(
@@ -134,11 +141,14 @@ struct TaskListView: View {
             repo: group.id,
             base: base,
             topSpacing: indent > 0 ? base * 0.15 : base * 0.3,
-            collapsed: folding.isCollapsed(group.id),
+            collapsed: folded,
+            foldable: !empty,
             tally: TaskStatus.counts(displayStatuses: group.tasks.map(\.displayStatus)),
-            onToggle: { toggle(group.id) })
+            worktrees: group.worktrees.count,
+            onToggle: { toggleRepo(group) },
+            onNewTab: { onNewTab(group.id, group.name) })
             .padding(.leading, indent)
-        if !folding.isCollapsed(group.id) {
+        if !folded {
             ForEach(group.tasks) { task in
                 TaskRow(task: task, base: base,
                         isCurrent: isCurrent(task),
@@ -187,6 +197,31 @@ struct TaskListView: View {
         return store.tabNumbers[session]
     }
 
+    /// リポジトリの見出しが畳まれているか。
+    ///
+    /// **セッションの有無で、`GroupFolding` のどちらの側を読むかを変える。**
+    /// あれは2つの側を持っていて、`isCollapsed` は記録が無ければ開いている、
+    /// `isExpanded` は記録が無ければ畳んでいる。動いているものは開いていてほしく、
+    /// 戻り道として残しているだけのものは畳んでおきたい —— 求める既定が
+    /// 逆なので、片方の側だけでは両方を言えない。
+    ///
+    /// **最後のセッションが終わった瞬間に、そのリポジトリは読む側が入れ替わる。**
+    /// つまり勝手に畳まれる。それが狙いどおりで、終わった場所が一覧の下に
+    /// 畳まれて沈み、動いているものだけが開いたまま残る
+    private func isFolded(_ group: RepoGroup) -> Bool {
+        group.tasks.isEmpty ? !folding.isExpanded(group.id) : folding.isCollapsed(group.id)
+    }
+
+    /// リポジトリの見出しの開け閉め。**読む側と動かす側を必ず揃える**
+    /// (ずれると、押しても閉じない・開かない見出しができる)
+    private func toggleRepo(_ group: RepoGroup) {
+        if group.tasks.isEmpty {
+            toggleExpanded(group.id)
+        } else {
+            toggle(group.id)
+        }
+    }
+
     /// 折りたたみの開け閉め。畳むと行が消えるので、動かして見せないと
     /// 何が起きたのか分からない (押した場所の下が急に詰まる)
     private func toggle(_ group: String) {
@@ -215,12 +250,13 @@ struct TaskListView: View {
     }
 
     private var repoGroups: [RepoGroup] {
-        TaskGrouping.byRepository(store.tasks, worktrees: store.worktrees)
+        TaskGrouping.byRepository(store.tasks, worktrees: store.worktrees,
+                                  keeping: store.keptRepos)
     }
 
     private var orgGroups: [OrgGroup] {
         TaskGrouping.byOrganization(
-            store.tasks, worktrees: store.worktrees,
+            store.tasks, worktrees: store.worktrees, keeping: store.keptRepos,
             unknownTitle: Localized.text("app.group.no_organization"))
     }
 
@@ -366,21 +402,40 @@ private struct RepoHeader: View {
     /// 前のまとまりとの間に空ける分。Organization の下では詰める
     let topSpacing: CGFloat
     let collapsed: Bool
+    /// 畳める見出しか。**中身が何も無いときは false。**
+    /// 開いても下に何も出ないので、取っ手を出すと壊れた取っ手に見える
+    let foldable: Bool
     /// 畳んでいるときに出す内訳。確認済みも含めて渡してもらう
     let tally: [(status: String, count: Int)]
+    /// セッションの乗っていない worktree の数。畳んでいるときだけ出す。
+    ///
+    /// **畳むと下の1行ごと隠れてしまう**ので、ここに出さないと
+    /// 「開いてみるまで残っているかどうか分からない」場所になる。
+    /// セッションの無いリポジトリは既定で畳まれるので、
+    /// いちばん worktree が溜まっている場所ほど見えなくなる
+    let worktrees: Int
     var onToggle: () -> Void
+    /// `+` を押したとき。ここで新しいタブを開く
+    var onNewTab: () -> Void
 
     @State private var hovering = false
+    @State private var plusHovering = false
 
     var body: some View {
         HStack(spacing: base * 0.3) {
-            // 三角は回して向きを変える。開閉のたびに別の記号に差し替えると、
-            // 同じ場所で形が飛んで見える
-            Image(systemName: "chevron.right")
-                .font(.system(size: base * 0.7, weight: .semibold))
-                .foregroundStyle(Palette.dim)
-                .rotationEffect(.degrees(collapsed ? 0 : 90))
-                .frame(width: base * 0.8)
+            if foldable {
+                // 三角は回して向きを変える。開閉のたびに別の記号に差し替えると、
+                // 同じ場所で形が飛んで見える
+                Image(systemName: "chevron.right")
+                    .font(.system(size: base * 0.7, weight: .semibold))
+                    .foregroundStyle(Palette.dim)
+                    .rotationEffect(.degrees(collapsed ? 0 : 90))
+                    .frame(width: base * 0.8)
+            } else {
+                // **幅は空けたままにする。** 三角ごと詰めると、この行だけ
+                // 名前の左端が他の見出しとずれて、段が崩れて見える
+                Color.clear.frame(width: base * 0.8, height: 1)
+            }
 
             // セッション名 (base) より一段だけ小さくする。見出しなので
             // 目に入る大きさは要るが、主役の名前より大きいと読む順が入れ替わる
@@ -398,10 +453,22 @@ private struct RepoHeader: View {
                         Text("\(TaskStatus.mark(entry.status))\(entry.count)")
                             .foregroundStyle(Palette.status(entry.status))
                     }
+                    // 状態の後ろに置く。**状態の印とは別の記号 (⌁) を使い、
+                    // 色も借りない** —— worktree は状態を持たない場所なので、
+                    // 状態の色を着せると「そういう状態のセッション」に読める
+                    // (WorktreeRow が同じ記号を同じ理由で使っている)
+                    if worktrees > 0 {
+                        Text("⌁\(worktrees)")
+                            .foregroundStyle(Palette.dim)
+                    }
                 }
                 .font(.system(size: base * 0.8).monospacedDigit())
                 .layoutPriority(1)
             }
+
+            // 内訳より外側 (いちばん右) に置く。内訳は畳んでいるときにだけ
+            // 出るので、内側に置くと畳むたびに + が左右へ動くことになる
+            newTabButton
         }
         .padding(.horizontal, base * 0.4)
         .padding(.vertical, base * 0.3)
@@ -411,11 +478,41 @@ private struct RepoHeader: View {
                 .fill(hovering ? Palette.hover : Color.clear))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .onTapGesture(perform: onToggle)
+        // 中身の無い見出しは押しても何も起きない。畳み方だけが動いて
+        // 見た目が変わらないと、効いたのかどうかが分からなくなる。
+        // 下地とツールチップは残す —— どこまでが1つの見出しかは要る情報だし、
+        // **この行では `+` が唯一の行き先**なので、行そのものは見えていてほしい
+        .onTapGesture { if foldable { onToggle() } }
         .help(repo)
         // グループを区切る余白。下地とタップ範囲の外に出しておく。
         // 内側に入れると、上だけ広く光って押せる範囲も上下でずれる
         .padding(.top, topSpacing)
+    }
+
+    /// ホバー中だけ出る「ここで新しいタブを開く」。
+    ///
+    /// 常に出していると、どの見出しも右端が記号で埋まる。`hovering` は
+    /// 見出し全体のものなので、`+` の上にいる間も外れず、出たまま押せる。
+    ///
+    /// **押しても畳み方は変わらない。** クリックは見出しと同じ `onTapGesture` で
+    /// 受けていて、**内側のタップが優先される**ので親の `onToggle` には届かない
+    /// (一覧の ✕ / ✔ と同じ作り)。**`Button` にはしない** —— サイドバーは
+    /// nonactivatingPanel なので、この方式でないと手前に出ていないときの
+    /// 1回目のクリックが吸われる
+    @ViewBuilder
+    private var newTabButton: some View {
+        Image(systemName: "plus")
+            .font(.system(size: base * 0.8, weight: .semibold))
+            .foregroundStyle(plusHovering ? Palette.fg : Palette.dim)
+            // 記号そのものは小さいので、当たり判定だけ広げて押しやすくする
+            .padding(base * 0.2)
+            .contentShape(Rectangle())
+            .onHover { plusHovering = $0 }
+            .onTapGesture(perform: onNewTab)
+            .help(Localized.text("app.repo.new_tab", repo))
+            .opacity(hovering ? 1 : 0)
+            .allowsHitTesting(hovering)
+            .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
 

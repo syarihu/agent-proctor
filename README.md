@@ -155,10 +155,20 @@ Rows sit under the repository they belong to, and those repositories sit under t
 account or organization that owns them, each heading carrying its avatar. Clicking
 a heading folds it away; the two levels fold independently, and the folds are
 remembered across restarts. A folded heading carries the tally of what is inside
-it (`⏳1 ▶2`), so a session waiting on you still shows while its group is closed.
+it (`⏳1 ▶2 ⌁2`), so a session waiting on you still shows while its group is closed.
+The last of those counts the worktrees with nobody in them; it is deliberately a
+different mark in no status colour, because a worktree has no status of its own.
 The owner comes from the git remote rather than from where the repository sits on
 disk, so it does not matter how you lay out your clones. Without `gh` installed
 and signed in, the sidebar groups by repository alone.
+
+A repository does not leave the list when its last session ends — it only sinks
+below the ones that are still moving, and comes back with its heading folded. What
+stays is what you were in over the last week; older ones show only while a tab is
+open in them. Pointing at a heading reveals a `+` that opens a new tab in that
+repository, which is the one-click way back to somewhere you have not been since
+yesterday; reaching a worktree you left behind takes three, since the heading and
+its worktree line both start folded.
 
 The menu bar carries the same tally, and its menu lists every session with the
 same marks. Picking one goes to that tab, exactly as clicking a row does.
