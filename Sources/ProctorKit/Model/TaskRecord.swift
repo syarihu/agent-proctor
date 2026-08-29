@@ -170,12 +170,21 @@ public struct DiffCounts: Codable, Equatable {
     public var added: Int
     public var removed: Int
     public var untracked: Int
+    /// 行では数えられなかったファイルの数 (バイナリ)。
+    ///
+    /// **行数と別に持つ。** バイナリの差分は「何行変わったか」を言えないので、
+    /// 行数に混ぜると 0 になり、変更があったこと自体が消える
+    public var binary: Int
 
-    public init(added: Int = 0, removed: Int = 0, untracked: Int = 0) {
+    public init(added: Int = 0, removed: Int = 0, untracked: Int = 0, binary: Int = 0) {
         self.added = added
         self.removed = removed
         self.untracked = untracked
+        self.binary = binary
     }
 
-    public var isEmpty: Bool { added == 0 && removed == 0 && untracked == 0 }
+    /// **バイナリの数もここに入れる。** これを見落とすと、画像や成果物しか
+    /// 変えていない worktree が「変更なし」になり、`CollectedWorktree.isRemovable`
+    /// で片付けの候補に並んでしまう
+    public var isEmpty: Bool { added == 0 && removed == 0 && untracked == 0 && binary == 0 }
 }

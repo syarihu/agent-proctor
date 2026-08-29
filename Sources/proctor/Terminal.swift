@@ -38,6 +38,9 @@ enum Terminal {
         if counts.added > 0 { parts.append(color("32", "+\(counts.added)")) }
         if counts.removed > 0 { parts.append(color("31", "-\(counts.removed)")) }
         if counts.untracked > 0 { parts.append(color("36", "?\(counts.untracked)")) }
+        // バイナリは行数を言えないので、数え方が違うことが分かる別の記号にする。
+        // `+`/`-` に混ぜると、何行変わったかを答えたように読めてしまう
+        if counts.binary > 0 { parts.append(color("33", "~\(counts.binary)")) }
         return parts.joined(separator: " ")
     }
 
