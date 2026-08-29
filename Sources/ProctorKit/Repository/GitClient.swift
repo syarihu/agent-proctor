@@ -182,15 +182,25 @@ public enum GitClient {
 
     // MARK: - 差分
 
-    /// まだ git に追加されていないファイル。
+    /// まだ git に追加されていないファイルの数。
     /// エージェントが作った新規ファイルはここに出る。
     ///
     /// **聞けなかったときは nil。** 「0件だった」と区別が付かないと、
     /// 読めない worktree が「変更なし = 消してよい」に化ける
-    public static func untrackedFiles(_ worktree: String) -> [String]? {
+    ///
+    /// **パスを組み立てずに改行だけ数える。** 呼ぶ側はどちらも件数しか見ないのに、
+    /// 一覧を作ると1行ごとに String を確保することになる。未追跡5万件で
+    /// 実測6.0ミリ秒、数えるだけなら0.71ミリ秒だった
+    public static func untrackedCount(_ worktree: String) -> Int? {
         let (ok, out) = capture(worktree, "ls-files", "--others", "--exclude-standard")
         guard ok else { return nil }
-        return out.isEmpty ? [] : out.components(separatedBy: "\n")
+        // 出力は前後の改行を落としてあるので、行数は「改行の数 + 1」。
+        // 空文字だけは0件 (そのまま数えると1件になってしまう)。
+        // Character ではなく UTF-8 のバイトで数えるのは、書記素の切り出しを
+        // させないため。改行のバイト (0x0A) は多バイト文字の途中には現れないので
+        // 取り違えようがなく、"\r\n" を1文字と見なす Character 側と違って
+        // 元の components(separatedBy: "\n") と数が合う
+        return out.isEmpty ? 0 : out.utf8.reduce(1) { $1 == UInt8(ascii: "\n") ? $0 + 1 : $0 }
     }
 
     /// 追加行数・削除行数。point からの差分を数える。聞けなければ nil

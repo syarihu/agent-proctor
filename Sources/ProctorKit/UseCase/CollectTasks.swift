@@ -114,7 +114,7 @@ public enum CollectTasks {
         return DiffCounts(
             added: lines?.added ?? 0,
             removed: lines?.removed ?? 0,
-            untracked: GitClient.untrackedFiles(record.worktree)?.count ?? 0)
+            untracked: GitClient.untrackedCount(record.worktree) ?? 0)
     }
 
     /// まだ人が見ていないもの。**サイドバーの最上部に新着として出す分**。

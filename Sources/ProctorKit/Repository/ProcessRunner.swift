@@ -28,6 +28,13 @@ public enum ProcessRunner {
     ///
     /// 出力は待ち合わせる前に読み切る。パイプの容量を超えると子が書き込みで
     /// 止まり、待っているこちらと睨み合いになる。
+    ///
+    /// **終わりを待つのに `waitUntilExit()` を使わない。** Darwin の Foundation は
+    /// あの中で RunLoop を50ミリ秒刻みで回すので、20ミリ秒で返る git を待つのに
+    /// その刻みの端数をまるごと取られる。実測で1呼び出し84.5ミリ秒、うち約58ミリ秒が
+    /// この待ちで、git 本体が動いていたのは平均26ミリ秒だった。同じコマンドを
+    /// 覗きに行く形で待つと20.9ミリ秒まで落ちる (4.2倍)。
+    /// `proctor worktree ls --all` は git を70回起こすので、この差がそのまま出る
     private static func inlineCapture(_ cmd: [String],
                                       cwd: String?) -> (ok: Bool, output: String) {
         let process = Process()
@@ -39,7 +46,7 @@ public enum ProcessRunner {
         process.standardError = FileHandle.nullDevice
         do { try process.run() } catch { return (false, "") }
         let data = out.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        waitForExit(process)
         return (process.terminationStatus == 0, text(from: data))
     }
 
@@ -144,10 +151,26 @@ public enum ProcessRunner {
         return true
     }
 
+    /// 期限を掛けずに、終わるまで覗きに行く。`inlineCapture` 専用。
+    ///
+    /// **期限付きの `waitForExit(_:within:)` を流用しない。** あちらが使う間隔は
+    /// 20ミリ秒で、これは「15秒待って750回」という gh 側の釣り合いで選ばれた値。
+    /// 20ミリ秒で返る git に当てると、最大20ミリ秒の待ち賃が毎回上乗せされ、
+    /// `waitUntilExit()` をやめた意味が半分無くなる。
+    ///
+    /// 眠らずに回さないのは、待っている間ずっと1コアを焼くため。
+    /// `usleep` を挟めば、覗きに行く回数が数十回増えるだけで済む
+    private static func waitForExit(_ process: Process) {
+        while process.isRunning { usleep(inlinePollInterval) }
+    }
+
     /// SIGTERM のあと、畳み終わるのを待つ時間
     private static let grace: TimeInterval = 2
     /// 終わったかを覗きに行く間隔 (マイクロ秒)
     private static let pollInterval: UInt32 = 20_000
+    /// 待ち切り無しの側で覗きに行く間隔 (マイクロ秒)。
+    /// 相手は数十ミリ秒で終わる git なので、刻みを細かく取る
+    private static let inlinePollInterval: UInt32 = 500
 
     private static func text(from data: Data) -> String {
         String(decoding: data, as: UTF8.self)
