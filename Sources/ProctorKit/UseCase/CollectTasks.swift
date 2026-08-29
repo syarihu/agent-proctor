@@ -129,9 +129,9 @@ public enum CollectTasks {
     ///
     /// **「未読」の線は台帳側 (MarkSessionSeen.needsMark) と揃える。** あちらが
     /// seenAt を打つ相手は done と failed なので、ここで別の線を引くと
-    /// タブを見ても消えない行ができてしまう。
+    /// ✓ を押しても消えない行ができてしまう。
     ///
-    /// done は seenAt が付くと displayStatus が seen に畳まれるので、それで足りる。
+    /// done は seenAt が付くと attentionStatus が seen に畳まれるので、それで足りる。
     /// failed は見たあとも failed のまま出す (見たからといって片付いたわけではない)
     /// ので、こちらは seenAt を直に見る。
     ///
@@ -157,9 +157,12 @@ public enum CollectTasks {
     }
 
     /// 状態の並び順を優先度として使う。**ここに独自の順を作らない** —
-    /// 一覧の内訳 (TaskStatus.counts) と違う順に並ぶと、上と下で緊急度が食い違う
+    /// 一覧の内訳 (TaskStatus.counts) と違う順に並ぶと、上と下で緊急度が食い違う。
+    ///
+    /// 見るのは attentionStatus。displayStatus はタブを開いた時点で完了を
+    /// seen に畳むので、それで並べると**開いた行だけが要確認の中で下がる**
     private static func priority(_ task: CollectedTask) -> Int {
-        TaskStatus.order.firstIndex(of: task.displayStatus) ?? TaskStatus.order.count
+        TaskStatus.order.firstIndex(of: task.attentionStatus) ?? TaskStatus.order.count
     }
 
     /// エージェントごとの最新レートリミット情報を集約する。

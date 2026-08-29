@@ -57,7 +57,10 @@ Visiting the tab is only the default. *Settings…* has a `Needs you` section
 where a notice for a finished or failed session can be made to stay until you
 clear it by hand, so having looked at something does not count as having
 replied to it. It then goes once that session moves again — sending it an
-instruction is enough — or once you press the ✓ on the notice.
+instruction is enough — or once you press the ✓ on the notice. Only the strip
+keeps it: the row in the list below turns ✔ the moment you visit its tab, so
+the list stays a picture of where things are and the strip stays the list of
+what is left to do.
 
 When you are not looking at the sidebar at all, macOS says it for you: a
 notification goes out the moment a session starts waiting for you, finishes, or

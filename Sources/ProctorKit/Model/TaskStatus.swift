@@ -17,7 +17,7 @@ public enum TaskStatus {
     public static let failed = "failed"
     public static let missing = "missing"
     /// 終わったあと、そのタブを見たもの。**台帳には書かれない**。
-    /// 見たかどうかは seenAt という別の事実で、状態遷移とは独立に決まる。
+    /// 見たかどうかは openedAt / seenAt という別の事実で、状態遷移とは独立に決まる。
     /// 表示のときだけ done を畳んでここに寄せる (display を参照)
     public static let seen = "seen"
 
@@ -46,28 +46,47 @@ public enum TaskStatus {
     /// 一覧に出したい順。数の要約もこの順に並べる
     public static let order = [waiting, running, done, seen, failed, missing, idle]
 
-    /// 表示に使う状態。台帳の status とは別で、完了は見たかどうかで分ける。
+    /// 一覧に出す状態。台帳の status とは別で、完了は見たかどうかで分ける。
     ///
     /// 畳むのは done だけ。失敗は見たあとも失敗のまま出す
     /// (見たからといって、片付いたわけではないため)。
-    /// seenAt そのものは done と failed の両方に付く。
-    public static func display(status: String, seenAt: Int?) -> String {
+    /// openedAt / seenAt そのものは done と failed の両方に付く。
+    ///
+    /// **タブを開いた (openedAt) だけでも畳む。** 一覧に並んでいるのは
+    /// 「どこで何が動いているか」で、そこに出る ✅ は「まだ中を見ていない」の印。
+    /// 開いて中を見たなら役目は終わっているので、片付けを待たずに ✔ にする。
+    /// やることリスト側 (要確認・通知) は下の `attention` が別に見ているので、
+    /// ここで畳んでも「まだ返事をしていない」という事実までは消えない
+    public static func display(status: String, seenAt: Int?, openedAt: Int?) -> String {
+        status == done && (seenAt != nil || openedAt != nil) ? seen : status
+    }
+
+    /// 要確認と通知に出す状態。**開いただけでは畳まない。**
+    ///
+    /// 降ろすのは「もう知らせなくていい」と決まったとき (seenAt) だけ。
+    /// ここでも openedAt を見ると、とりあえずタブを覗いた時点でやることリストから
+    /// 消えてしまい、返事をしないまま置いていったものに後から気づけない
+    /// (それを避けるための `MarkSessionSeen.Policy.untilCleared`)
+    public static func attention(status: String, seenAt: Int?) -> String {
         status == done && seenAt != nil ? seen : status
     }
 
-    /// まだ人の手が要るか。確認待ちと、まだ見ていない完了・失敗。
+    /// まだ人の手が要るか。確認待ちと、まだ片付けていない完了・失敗。
+    ///
+    /// **見るのは attention のほうで、display ではない。** 開いただけで
+    /// 人の手が要らなくなるわけではないので、ここに openedAt は入らない。
     ///
     /// **seenAt の効き方が状態で違うので、線引きはここに1本だけ引く。**
-    /// done は seenAt が付けば display が seen に畳むのでそれで足りるが、
+    /// done は seenAt が付けば attention が seen に畳むのでそれで足りるが、
     /// failed は見たあとも failed のまま出す (見たからといって片付いたわけでは
     /// ないため)。この違いを使う側それぞれに書かせると、片方だけ直したときに
-    /// **タブを見ても消えないもの**ができる (サイドバーの新着からは消えたのに
+    /// **✓ を押しても消えないもの**ができる (サイドバーの新着からは消えたのに
     /// 通知センターには残る、など)。
     ///
     /// 動いていた場所が消えたもの (missing) は入れない。そこへ戻っても
     /// 見るものが無く、急かしたところで片付けられない。
     public static func needsPerson(status: String, seenAt: Int?) -> Bool {
-        switch display(status: status, seenAt: seenAt) {
+        switch attention(status: status, seenAt: seenAt) {
         case waiting, done: return true
         case failed: return seenAt == nil
         default: return false
@@ -107,11 +126,15 @@ public enum TaskStatus {
 
     /// 状態ごとの件数。メニューバーの要約などで使う。
     ///
-    /// **確認済みは数えない。** ここに出したいのは「まだ手を付けていないもの」で、
+    /// **確認済みは数えない。** ここに出したいのは「まだ片付けていないもの」で、
     /// 見終わったものまで数えると、片付けても数字が減らない。
-    /// 逆に「中に何件あるか」を出したい側は、下の displayStatuses 版を直に呼ぶ
+    /// 逆に「中に何件あるか」を出したい側は、下の displayStatuses 版を直に呼ぶ。
+    ///
+    /// **数えるのは attention のほう。** ここはメニューバーに出る「残り」で、
+    /// 要確認のストリップと同じものを数えていないと、上と下で数が食い違う
+    /// (タブを開いた時点でメニューバーからは消えたのに、要確認には残る)
     public static func counts(_ tasks: [TaskRecord]) -> [(status: String, count: Int)] {
-        counts(displayStatuses: tasks.map(\.displayStatus).filter { $0 != seen })
+        counts(displayStatuses: tasks.map(\.attentionStatus).filter { $0 != seen })
     }
 
     /// 表示に使う状態そのものから数える。**渡されたものは全部数える。**

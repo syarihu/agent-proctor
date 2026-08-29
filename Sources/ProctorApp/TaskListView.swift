@@ -1344,7 +1344,7 @@ private struct AttentionInbox: View {
                 .padding(.vertical, base * 0.05)
                 .background(
                     Capsule().fill(
-                        Palette.status(tasks.first?.displayStatus ?? TaskStatus.waiting)
+                        Palette.status(tasks.first?.attentionStatus ?? TaskStatus.waiting)
                             .opacity(0.35)))
             Spacer(minLength: 0)
             // **溢れた分も含めて全部渡す。** 出ていた5行だけが消えて、
@@ -1460,7 +1460,7 @@ private struct InboxRow: View {
                 HStack(spacing: base * 0.35) {
                     Text(task.displayName)
                         .font(.system(size: base * 0.85, weight: .medium))
-                        .foregroundStyle(Palette.status(task.displayStatus))
+                        .foregroundStyle(Palette.status(task.attentionStatus))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     // どのリポジトリの話かは、セッション名だけでは分からないことがある。
@@ -1552,16 +1552,21 @@ private struct InboxRow: View {
     }
 
     /// 印は一覧の行と揃える。**同じ状態を上と下で違う記号にしない**
+    ///
+    /// ただし見るのは attentionStatus のほう。ここに並んでいるのは
+    /// **まだ片付けていないもの**で、タブを開いたからといって用が済んだ
+    /// わけではない。displayStatus で描くと、開いた行だけが済んだ顔 (✔) で
+    /// 居座り、片付ける当てのある行なのか見分けが付かなくなる
     @ViewBuilder
     private var mark: some View {
-        switch task.displayStatus {
+        switch task.attentionStatus {
         case TaskStatus.waiting:
-            Text(TaskStatus.mark(task.displayStatus))
+            Text(TaskStatus.mark(task.attentionStatus))
                 .font(.system(size: base * 0.85)).pulsing()
         case TaskStatus.done:
             AnimatedCheckmark(size: base * 0.85, color: Palette.done)
         default:
-            Text(TaskStatus.mark(task.displayStatus)).font(.system(size: base * 0.85))
+            Text(TaskStatus.mark(task.attentionStatus)).font(.system(size: base * 0.85))
         }
     }
 }
