@@ -4,6 +4,23 @@ import ProctorKit
 /// hooks と statusline から呼ばれるコマンド。人が打つものではない。
 /// 判断は UseCase 側が持ち、ここは受け渡しだけにする。
 
+/// UserPromptSubmit のフックが「会話に一言足す」ときの返し方。
+///
+/// **View の仕事なので Kit には持たせない。** これは Claude Code という
+/// 特定の相手との約束事の形であって、proctor が何を伝えたいかの話ではない
+/// (伝えたい中身を決めるのは `NameSession.namingHint`)。
+///
+/// 組み立てに `compactJSON` を通す理由は2つ。文字列の逃がし方を手で書かないため
+/// (本文には引用符も改行も入りうる) と、改行を入れないため (理由は `compactJSON`)。
+///
+/// イベント名は綴らずに `HookPayload.userPromptSubmitEvent` から引く (理由はそちら)
+private func namingHookJSON(_ context: String) -> String {
+    (try? compactJSON(["hookSpecificOutput": [
+        "hookEventName": HookPayload.userPromptSubmitEvent,
+        "additionalContext": context,
+    ]])) ?? "{}"
+}
+
 /// 記録した状態を stdout に返す。呼び出し側が「結局どうなったか」を使えるようにする
 /// (タブの色を変えるなど)。判断をシェル側に写すと、片方だけ直したときに食い違う。
 func cmdTouch(_ args: Args) throws -> Int32 {
@@ -46,7 +63,21 @@ func cmdTouch(_ args: Args) throws -> Int32 {
     //
     // 記録しなかった場合 (git の外など) は届いた状態がそのまま返る。
     // Antigravity (agy) の hooks.json から呼ばれる場合は --json で空 JSON を返す
-    func emit(_ value: String) {
+    func emit(status value: String, hint: String?) {
+        // 囁きがあるのは UserPromptSubmit のときだけ (`NameSession.namingHint`)。
+        // **`--json` でも囁きを優先する** ——「状態の文字列を出さない」という
+        // `--json` の約束は、JSON を出すことで守られている
+        if let hint {
+            print(namingHookJSON(hint))
+            return
+        }
+        // **UserPromptSubmit の素の stdout は、そのまま会話の文脈に注ぎ込まれる。**
+        // ここで状態を返すと、毎ターン "running" の一語が会話に混ざる。
+        // このイベントで喋ってよいのは上の囁きだけなので、それが無いなら黙る
+        if payload.isUserPromptSubmit {
+            if args.has("--json") { print("{}") }
+            return
+        }
         // **指示はそのまま返さない。** settled は「もう待っていない」の合図で、
         // 状態ではない。台帳に映せなかったとき (git の外・まだ載っていない・
         // 書けなかった) にそのまま返すと、タブの色を決める側に
@@ -57,16 +88,18 @@ func cmdTouch(_ args: Args) throws -> Int32 {
         }
         print(args.has("--json") ? "{}" : value)
     }
-    let recorded: String
+    let outcome: RecordHookEvent.Outcome
     do {
-        recorded = try RecordHookEvent.touch(status: status, payload: payload)
+        outcome = try RecordHookEvent.touch(status: status, payload: payload)
     } catch {
         // 台帳に書けなくても、このイベントが何を意味するかは伝える。
-        // 黙って落ちると、呼び出し側はタブの色を決められない
-        emit(status)
+        // 黙って落ちると、呼び出し側はタブの色を決められない。
+        // 囁きは台帳を見ないと決められないので、書けなかった回は出さない
+        emit(status: status, hint: nil)
         throw error
     }
-    emit(recorded)
+    emit(status: outcome.status,
+         hint: NameSession.namingHint(payload: payload, unnamed: outcome.unnamed))
     return 0
 }
 

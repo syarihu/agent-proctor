@@ -128,6 +128,7 @@ proctor skill [名前]    # 作業中の手順をエージェントに読ませ�
 proctor setup [相手]    # proctor の繋ぎ方を出す（名前なしで一覧）
 proctor attach <ID>     # そのセッションのエージェント (claude / agy / codex) を開く（続きから）
 proctor rm <ID>         # 台帳から1件外す（worktree には触らない）
+proctor title <名前>    # いま動いているセッションに名前を付ける（空文字で外す）
 proctor sidebar         # サイドバー（アプリ）を起動する
 proctor --version       # 版を表示する
 ```

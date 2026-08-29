@@ -376,6 +376,160 @@ PY
     "$BIN" ls --all --json | grep '"status"'
     payload s9 "$LAB/work" | "$BIN" _touch clear
 
+    # --- ここから「セッションが自分で名前を付ける」経路
+    #
+    # **このスクリプトは Claude Code の中から走る。** つまり
+    # CLAUDE_CODE_SESSION_ID も ITERM_SESSION_ID も環境に載っている。
+    # title は環境変数から自分の行を引く仕組みなので、素で叩くと
+    # 「走らせた場所」によって当たる行が変わる。以下では必ず env を明示し、
+    # 「引けない」ことを見る節では 4つとも落とす
+    NAKED="env -u PROCTOR_ID -u CLAUDE_CODE_SESSION_ID -u ITERM_SESSION_ID -u CLAUDE_PID"
+
+    # 台帳の値を直に読む。**台帳のIDは採番されるので、こちらはセッションIDで引く**
+    # (時刻の類は scrub が伏せるので、比べるならここで取って結果だけ印字する)。
+    #
+    # 行が無いときは `<no row>` と言わせる。黙って空を返すと「欄が空」と
+    # 「行がそもそも登録されていない」が同じ出力になり、登録の経路が壊れても
+    # 気づけない
+    field() {
+        python3 - "$PROCTOR_STATE_DIR/state.json" "$1" "$2" <<'PY'
+import json, sys
+path, session, key = sys.argv[1], sys.argv[2], sys.argv[3]
+for task in json.load(open(path))["tasks"]:
+    if task.get("sessionId") == session:
+        print(task.get(key, ""))
+        break
+else:
+    print("<no row>")
+PY
+    }
+
+    # UserPromptSubmit の stdout はそのまま会話の文脈に注ぎ込まれる。
+    # 名前が無いあいだはそこで名付けを頼み、状態の文字列 (running) は出さない
+    say "UserPromptSubmit: 名前の無いセッションに囁く (登録された初回でも出る)"
+    payload t1 "$LAB/work" ',"hook_event_name":"UserPromptSubmit","source":"user","prompt":"台帳を直したい"' \
+        | "$BIN" _touch running
+
+    say "title (CLAUDE_CODE_SESSION_ID から自分の行を引く)"
+    $NAKED CLAUDE_CODE_SESSION_ID=t1 "$BIN" title "台帳の名付けを直す"
+    "$BIN" ls --all --json | grep '"title"'
+
+    say "名前が付いたら囁かないし、状態も出さない"
+    OUT=$(payload t1 "$LAB/work" ',"hook_event_name":"UserPromptSubmit","source":"user","prompt":"続き"' \
+        | "$BIN" _touch running)
+    echo "出力: [$OUT]"
+
+    # `--json` の約束は「状態の文字列を出さない」ことで、囁きはそれを破らない
+    # (JSON を出しているので約束は守られている)。名前が付いていれば {} だけ
+    say "--json: 名前が付いていれば {} だけ"
+    OUT=$(payload t1 "$LAB/work" ',"hook_event_name":"UserPromptSubmit","source":"user","prompt":"続き"' \
+        | "$BIN" _touch running --json)
+    echo "出力: [$OUT]"
+
+    say "同じ名前をもう一度付けても台帳を触らない / 改名しても経過が 0 に戻らない"
+    M1=$(stat -f %Fm "$PROCTOR_STATE_DIR/state.json")
+    $NAKED CLAUDE_CODE_SESSION_ID=t1 "$BIN" title "台帳の名付けを直す"
+    M2=$(stat -f %Fm "$PROCTOR_STATE_DIR/state.json")
+    [ "$M1" = "$M2" ] && echo "mtime: 動かない" || echo "mtime: 動いた"
+    U1=$(field t1 updatedAt)
+    $NAKED CLAUDE_CODE_SESSION_ID=t1 "$BIN" title "名付けの入口を作る"
+    U2=$(field t1 updatedAt)
+    [ "$U1" = "$U2" ] && echo "updatedAt: 動かない" || echo "updatedAt: 動いた"
+
+    say "空文字で名前を外す"
+    $NAKED CLAUDE_CODE_SESSION_ID=t1 "$BIN" title ""
+    echo "title: [$(field t1 title)]"
+
+    say "--json でも囁きを優先する (名前なし)"
+    payload t1 "$LAB/work" ',"hook_event_name":"UserPromptSubmit","source":"user","prompt":"続き"' \
+        | "$BIN" _touch running --json
+
+    say "title (名前を渡していない)"
+    $NAKED "$BIN" title; echo "exit=$?"
+
+    # 子が帰ってきたときの task notification も、自動継続も、人が打ったのと
+    # 同じ UserPromptSubmit として届く。source で分けないと、そのたびに囁く
+    #
+    # **この下2節は t1 に名前が無い状態でしか意味を持たない** (前の「空文字で
+    # 名前を外す」がそれを作っている)。名前があると namingHint は source も
+    # agent_id も見ずに nil を返すので、判定を丸ごと消しても素通りしてしまう。
+    # 節を前へ動かさないこと
+    say "source が user でなければ囁かない (system)"
+    OUT=$(payload t1 "$LAB/work" ',"hook_event_name":"UserPromptSubmit","source":"system","prompt":"<task-notification>…"' \
+        | "$BIN" _touch running)
+    echo "出力: [$OUT]"
+
+    say "子の手元で起きたことでは親に囁かない (agent_id 付き)"
+    OUT=$(payload t1 "$LAB/work" ',"hook_event_name":"UserPromptSubmit","source":"user","agent_id":"t9","prompt":"子の依頼"' \
+        | "$BIN" _touch running)
+    echo "出力: [$OUT]"
+
+    # agy / codex は CLAUDE_CODE_SESSION_ID を渡してこない。
+    # あちらで自分の行を引ける鍵はタブの guid だけになる
+    say "title (ITERM_SESSION_ID だけでも引ける)"
+    payload t2 "$LAB/work" | env ITERM_SESSION_ID="w0t0p0:PROCTOR-BASELINE" "$BIN" _touch running
+    $NAKED ITERM_SESSION_ID="w0t0p0:PROCTOR-BASELINE" "$BIN" title "タブから引いた名前"
+
+    # updatedAt は秒なので、開き直した直後は古い行と新しい行が同じ秒に並ぶ。
+    # そのとき max(by:) は先頭 (= 台帳に先に載っている古いほう) を残すので、
+    # updatedAt だけで比べていると賭ける向きが逆さまになる (理由は NameSession.newest)
+    say "同じ秒に並んだ2行では、あとから載ったほうに名前が付く"
+    # 同じタブ (itermSession) に2行。t5 が先に載った古い残骸で、t6 が開き直した行
+    payload t5 "$LAB/work" | env ITERM_SESSION_ID="w0t0p0:PROCTOR-TIE" "$BIN" _touch running
+    payload t6 "$LAB/work" | env ITERM_SESSION_ID="w0t0p0:PROCTOR-TIE" "$BIN" _touch running
+    # 秒を揃える。実際にこうなるのを待つわけにいかないので、台帳を直に仕込む
+    # (plant と同じ流儀)。updatedAt は同値、createdAt だけで前後が付く形にする
+    python3 - "$PROCTOR_STATE_DIR/state.json" <<'PY'
+import json, sys, time
+path = sys.argv[1]
+now = int(time.time())
+box = json.load(open(path))
+for task in box["tasks"]:
+    if task.get("sessionId") == "t5":      # 先に載った古い残骸
+        task["createdAt"], task["updatedAt"] = now - 100, now - 10
+    if task.get("sessionId") == "t6":      # あとから開き直した行
+        task["createdAt"], task["updatedAt"] = now - 50, now - 10
+json.dump(box, open(path, "w"), ensure_ascii=False)
+PY
+    $NAKED ITERM_SESSION_ID="w0t0p0:PROCTOR-TIE" "$BIN" title "同じ秒に並んだときの勝者"
+    echo "古い残骸 (t5): [$(field t5 title)]"
+    echo "開き直した行 (t6): [$(field t6 title)]"
+    payload t5 "$LAB/work" | "$BIN" _touch clear
+    payload t6 "$LAB/work" | "$BIN" _touch clear
+
+    say "title (どの鍵も無ければ止まる)"
+    $NAKED "$BIN" title "誰のものでもない名前"; echo "exit=$?"
+
+    say "hook_event_name の無い payload では今までどおり状態が出る"
+    payload t1 "$LAB/work" | "$BIN" _touch running
+
+    # Notification の title は通知の見出しであってセッション名ではない。
+    # 拾うと「Claude Code」や権限確認の文言が行の名前として居座る
+    say "Notification の title はセッション名にしない"
+    payload t3 "$LAB/work" ',"hook_event_name":"Notification","notification_type":"permission_prompt","title":"Claude Code"' \
+        | "$BIN" _touch notification
+    echo "name: [$(field t3 name)]"
+
+    # **これが agy / codex の経路。** あちらは hook_event_name を送ってこないので、
+    # title を飛ばす判定に一度も掛からない。あちらの title は本当にセッション名なので、
+    # 一律に外してはいけない
+    say "hook_event_name を送ってこない相手の title はセッション名になる"
+    payload t4 "$LAB/work" ',"title":"agy が付けたセッション名"' | "$BIN" _touch running
+    echo "name: [$(field t4 name)]"
+
+    # 同じ鍵を Claude Code の別のイベントで見る。飛ばすのは Notification の
+    # ときだけなので、他のイベントで届いた title は今までどおり拾う
+    say "Claude Code でも Notification 以外の title は拾う"
+    payload t3 "$LAB/work" ',"hook_event_name":"Stop","title":"人が付けたタブの名前"' | "$BIN" _touch done
+    echo "name: [$(field t3 name)]"
+
+    # 開いたセッションは節の中で畳む。残すと最後の ls に並んで、
+    # どの節の話なのか分からなくなる
+    payload t1 "$LAB/work" | "$BIN" _touch clear
+    payload t2 "$LAB/work" | "$BIN" _touch clear
+    payload t3 "$LAB/work" | "$BIN" _touch clear
+    payload t4 "$LAB/work" | "$BIN" _touch clear
+
     say "skill ls"
     "$BIN" skill ls
     "$BIN" skill ls --json

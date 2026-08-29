@@ -141,6 +141,47 @@ public struct HookPayload {
         (box["notification_type"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 
+    /// どのフックが呼んだか ("UserPromptSubmit" / "Notification" / "Stop" など)。
+    ///
+    /// **Claude Code は全イベントに載せてくる。** agy / codex は送ってこないので
+    /// nil になる。だからこれを見て分ける処理は、必ず「載っていないほう」を
+    /// 今までどおりの道に落とすこと。
+    ///
+    /// 状態の文字列 (running / done) では足りない場面のために持つ。
+    /// あちらは呼ぶ側が hooks.json に書いた解釈で、同じ `running` が
+    /// UserPromptSubmit からも PostToolUse からも届く
+    public var hookEventName: String? {
+        (box["hook_event_name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// ターンの始まりを告げるフックのイベント名。
+    ///
+    /// **この綴りのリテラルを持つのはここだけにする。** 乗っているのは2つ ——
+    /// 届いた payload を見分ける `isUserPromptSubmit` と、Claude Code へ返す
+    /// `hookSpecificOutput.hookEventName` (CLI 側の `namingHookJSON`)。
+    /// **後者は一致しないと黙って捨てられる**ので、打ち間違えても型は何も言わず、
+    /// 囁きが静かに届かなくなるだけになる。だから外にも見せる
+    public static let userPromptSubmitEvent = "UserPromptSubmit"
+
+    /// ターンの始まりを告げるフックか。**人が打ったとは限らない** ——
+    /// 誰が送ったかは `promptSource` を見る。
+    /// 本文の有無で見る `isTurnStart` と違い、こちらはイベント名だけを見る
+    /// (`hook_event_name` を送ってこない相手では常に false)
+    public var isUserPromptSubmit: Bool {
+        hookEventName == HookPayload.userPromptSubmitEvent
+    }
+
+    /// そのプロンプトを誰が送ってきたか (`source`)。
+    ///
+    /// Claude Code が載せてくるのは
+    /// `"user"` | `"sdk"` | `"system"` | `"loop_wakeup"` | `"schedule_wakeup"` |
+    /// `"poll_event"` のいずれか。**人が打ったのかどうかはここでしか分からない** ——
+    /// 子が帰ってきたときの task notification も、自動継続も、
+    /// 人が打ったのと同じ UserPromptSubmit として届く
+    public var promptSource: String? {
+        (box["source"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
     /// ターンの始まり (UserPromptSubmit)。人が何か打った直後だけ真になる。
     /// 空のプロンプトは数えない (前のターンの活動を消してしまうため)
     public var isTurnStart: Bool {
@@ -426,6 +467,14 @@ public struct HookPayload {
 
     public var sessionName: String? {
         for key in ["session_name", "title", "session_title", "preview"] {
+            // **`Notification` の `title` は通知の見出しであってセッション名ではない。**
+            // 拾うと「Claude Code」や権限確認の文言がそのまま行の名前として居座り、
+            // 次に statusline が来るまで直らない。
+            //
+            // `hook_event_name` を送ってこないエージェント (agy / codex) は
+            // ここを素通りする。あちらの `title` は本当にセッション名なので、
+            // 一律に外してはいけない
+            if key == "title", hookEventName == "Notification" { continue }
             if let value = box[key] as? String {
                 let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty { return trimmed }

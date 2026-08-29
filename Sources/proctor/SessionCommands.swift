@@ -88,6 +88,22 @@ func cmdRm(_ args: Args) throws -> Int32 {
     return 0
 }
 
+/// いま自分が動いているセッションに名前を付ける。
+///
+/// **どのセッションかを引数で受けない。** 誰の行かは環境変数から特定する
+/// (理由は `NameSession.locate`)。
+func cmdTitle(_ args: Args) throws -> Int32 {
+    // 先に `require` を通すのは、**引数なしと空文字を分ける**ため。
+    // 前者は打ち間違いなので止め、後者は「名前を外す」という指示として通す
+    _ = try args.require(0, Localized.text("cli.arg.title"))
+    // 引用符を忘れた呼び方 (`proctor title 台帳を直す`) でも通るように繋ぐ
+    let text = args.positional.joined(separator: " ")
+    let task = try NameSession.run(title: text)
+    print(task.title.map { Localized.text("cli.title.set", task.id, $0) }
+        ?? Localized.text("cli.title.cleared", task.id))
+    return 0
+}
+
 /// iTerm2 の左側に吸着するサイドバー (Agent Proctor.app) を起動する。
 ///
 /// 描画も iTerm2 との連携もアプリ側が持つので、ここは起動して渡すだけ。

@@ -13,6 +13,22 @@ func prettyJSON<T: Encodable>(_ value: T) throws -> String {
     return String(decoding: try encoder.encode(value), as: UTF8.self)
 }
 
+/// 改行を含まない1行の JSON。**フックの返事はこちらで書く。**
+///
+/// 人が読む出力 (`--json`) は `prettyJSON` の整形のままでよいが、**フックの stdout を
+/// 読む側は行単位で拾うことがある**。`{` で始まる最初の1行だけを見て JSON として
+/// 解釈する実装は珍しくなく、そこへ整形済みの JSON を渡すと `{` だけを掴まれて
+/// 「JSON のようだが壊れている」と言われる。1行に畳んでおけば、行で切る相手にも丸ごと渡る。
+///
+/// 整形のほうが読みやすいのは確かだが、これを読むのは人ではなくエージェントの
+/// 実行環境なので、読みやすさより確実に届くことを取る
+func compactJSON<T: Encodable>(_ value: T) throws -> String {
+    let encoder = JSONEncoder()
+    // 並びを固定する理由は prettyJSON と同じ (Swift の辞書は実行のたびに並びが変わる)
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    return String(decoding: try encoder.encode(value), as: UTF8.self)
+}
+
 let argv = Array(CommandLine.arguments.dropFirst())
 guard let command = argv.first else {
     print(usage)
@@ -41,6 +57,7 @@ do {
     case "setup": code = try cmdSetup(parsed)
     case "attach": code = try cmdAttach(parsed)
     case "rm": code = try cmdRm(parsed)
+    case "title": code = try cmdTitle(parsed)
     case "sidebar": code = try cmdSidebar(parsed)
     // hooks 専用。人が打つものではないのでヘルプには出さない
     case "_touch": code = try cmdTouch(parsed)

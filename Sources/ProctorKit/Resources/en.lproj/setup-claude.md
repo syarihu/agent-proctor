@@ -61,6 +61,14 @@ and `/clear` as well, so proctor uses `idle` **only to register a session it has
 never seen** — an `idle` for a session already on the list changes nothing, and a
 running session cannot be knocked back by it.
 
+Whatever a `UserPromptSubmit` hook writes to stdout is poured straight into the
+conversation, which is why proctor prints no status on this one event. The
+silence is kept for one thing: while that session still has no name in the
+sidebar, proctor uses the hook's JSON to ask that `proctor title "<name>"` be
+run. **Do not send this hook's stdout to `/dev/null`** — the request never
+arrives if you do. Every other event still returns the status it recorded, so
+nothing about tab colouring changes.
+
 ### Why each one is there (do not drop them)
 
 - **Why `PostToolUse` is included**: it is the only path that reports going back
@@ -112,6 +120,10 @@ running session cannot be knocked back by it.
   finish writing (and a missed `SubagentStop` leaves the subagent lingering in
   the list). Other events may be backgrounded with a trailing `&`, but keep
   these lifecycle events synchronous.
+- **Why `UserPromptSubmit` must be synchronous as well**: for a different
+  reason from the three above. Backgrounding it does not risk the write — it
+  means nobody reads the hook's stdout, so the request for a name never reaches
+  the conversation.
 
 ### statusLine
 
@@ -148,14 +160,22 @@ Once configured, open a new Claude Code session and run `proctor ls` to confirm
 that the session shows up in the list. If it does not, the configuration is not
 taking effect.
 
-`proctor _touch` prints the status it recorded to stdout. To check by hand
-(printing `waiting` is correct):
+`proctor _touch` prints the status it recorded to stdout (except on
+`UserPromptSubmit` — see above). To check by hand (printing `waiting` is
+correct):
 
     printf '{"session_id":"test","cwd":"'"$PWD"'","message":"needs your permission"}' | proctor _touch notification
 
 For the idle notification, printing nothing is the correct behaviour:
 
     printf '{"session_id":"test","cwd":"'"$PWD"'","message":"Claude is waiting for your input"}' | proctor _touch notification
+
+And for the request for a name:
+
+    printf '{"hook_event_name":"UserPromptSubmit","session_id":"test","cwd":"'"$PWD"'","prompt":"hi"}' | proctor _touch running
+
+If that session has no name yet, a `hookSpecificOutput` JSON comes out. Once it
+has one, printing nothing is the correct behaviour.
 
 ## Report back
 

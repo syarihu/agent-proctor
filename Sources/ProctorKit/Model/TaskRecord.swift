@@ -85,8 +85,15 @@ public struct TaskRecord: Codable, Equatable {
     /// (`ClearAttention.standDown`)。あちらは Stop が来ない相手なので、
     /// 最後の子が帰った時点で落ち着かせるにはここに預けるしかない
     public var pendingStatus: String?
-    /// 人が明示的に付けた名前 (端末のタブに付けたタイトルなど)。
-    /// エージェントが自分で付ける name より、こちらを先に出す
+    /// 「この作業はこれ」と決めて付けた名前。
+    ///
+    /// **書き手は2つある。** 人が端末のタブに付けたタイトル (`tab_title`) と、
+    /// セッション自身が付けた名前 (`proctor title` = `NameSession.run`)。
+    /// 同じ欄を共有していて、**後から来たほうが勝つ**。既定のフックは `tab_title` を
+    /// 送らないので今は衝突しないが、毎イベント送るフックを書くと、セッションが
+    /// 付けた名前はその次のイベントで静かに上書きされる。
+    ///
+    /// エージェントが自分で付ける `name` より、こちらを先に出す
     public var title: String?
 
     // ここから下は statusline だけが知っている情報。

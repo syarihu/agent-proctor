@@ -23,6 +23,13 @@ same label it uses for tool activity ("Bash: rm -rf build") and shows it as what
 the session is waiting on. Without those fields it falls back to `message`, which
 usually names the tool at best.
 
+proctor asks a session to name itself only when the payload carries
+`hook_event_name: "UserPromptSubmit"`. If you want that, put the key in, keep
+the hook synchronous, and have whatever calls it read the hook's stdout — the
+request comes out there, as the JSON Claude Code expects for that event. Without
+the key nothing changes: `_touch` keeps printing the status it recorded, as it
+always has.
+
 If your hook script already does something else with the same event — colouring
 the terminal tab, for instance — remember that stdin can only be read once. Read
 the JSON to completion first, then hand the same content to `proctor`.

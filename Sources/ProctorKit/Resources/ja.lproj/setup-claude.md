@@ -59,6 +59,13 @@ Claude Code は既定でそうするので、パイプなどを自分で足す�
 **まだ知らないセッションを登録するときにしか使いません**。既に一覧に居るセッションに
 `idle` が届いても何も変わらないので、動いているセッションが待機中に落ちることはありません。
 
+`UserPromptSubmit` フックが stdout に書いたものは、そのまま会話の文脈に注ぎ込まれます。
+だから proctor はこのイベントでだけ状態の文字列を出しません。空けてあるのは1つのことを
+言うためで、そのセッションにまだサイドバー上の名前が無いとき、
+`proctor title "<名前>"` を実行してほしいという依頼をフックの JSON で出します。
+**このフックの stdout を `/dev/null` に捨てないでください。** 捨てると依頼が届きません。
+他のイベントは今までどおり記録した状態を返すので、タブの色付けの配線には影響しません。
+
 ### それぞれの理由 (省くと壊れるので消さないでください)
 
 - **`PostToolUse` を入れる理由**: 権限確認で確認待ちになった後、承認して実行に戻ったことを
@@ -103,6 +110,9 @@ Claude Code は既定でそうするので、パイプなどを自分で足す�
   プロセスの終了に巻き込まれて書き終わる前に殺されることがあり、特に `SubagentStop` を
   取りこぼすとサブエージェントが一覧に居座る原因になります。他のイベントは末尾に `&` を付けて
   非同期にして構いませんが、これらのライフサイクルイベントは同期にしてください。
+- **`UserPromptSubmit` も同期で呼ぶ理由**: こちらは上の3つとは理由が違います。
+  バックグラウンドに投げても書き込みは危うくなりませんが、このフックの stdout を
+  誰も読まなくなるので、名前を付けてほしいという依頼が会話に届きません。
 
 ### statusLine
 
@@ -137,14 +147,21 @@ statusLine も同じです。既存のスクリプトに手を入れる必要が
 設定したら、新しい Claude Code のセッションを開いて `proctor ls` を実行し、
 そのセッションが一覧に出ることを確かめてください。出なければ設定が効いていません。
 
-`proctor _touch` は状態を stdout に返します。手で確かめるときは次のように叩けます
-(`waiting` と出れば正しい)。
+`proctor _touch` は状態を stdout に返します (`UserPromptSubmit` を除く。上を見てください)。
+手で確かめるときは次のように叩けます (`waiting` と出れば正しい)。
 
     printf '{"session_id":"test","cwd":"'"$PWD"'","message":"needs your permission"}' | proctor _touch notification
 
 アイドル通知のほうは何も出ないのが正しい挙動です。
 
     printf '{"session_id":"test","cwd":"'"$PWD"'","message":"Claude is waiting for your input"}' | proctor _touch notification
+
+名前を付けてほしいという依頼のほうは、次のように叩けます。
+
+    printf '{"hook_event_name":"UserPromptSubmit","session_id":"test","cwd":"'"$PWD"'","prompt":"hi"}' | proctor _touch running
+
+まだ名前が無ければ `hookSpecificOutput` の JSON が出ます。名前が付いていれば
+何も出ないのが正しい挙動です。
 
 ## 変更した内容を最後に教えてください
 
