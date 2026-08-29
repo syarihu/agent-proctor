@@ -51,10 +51,9 @@ public enum MarkSessionSeen {
 
         // 変化が無いときにロックを取らないよう、先に読んで確かめる。
         // 同じタブを見続けている間ずっとロックを奪い合っても仕方がない
-        let targets = LedgerStore.tasks().filter {
+        guard LedgerStore.tasks().contains(where: {
             needsMark($0, session: session, policy: policy)
-        }
-        guard !targets.isEmpty else { return false }
+        }) else { return false }
 
         let now = Int(Date().timeIntervalSince1970)
         try LedgerStore.withLock { ledger in
