@@ -447,13 +447,29 @@ PY
     say "title (名前を渡していない)"
     $NAKED "$BIN" title; echo "exit=$?"
 
+    # `-` で始まる名前は、区切りが無いとフラグとして飲まれる。
+    # 「渡しているのに渡していないと言われる」ので、`--` で逃がせるようにしてある
+    say "title (ハイフンで始まる名前は -- の後ろなら通る)"
+    $NAKED CLAUDE_CODE_SESSION_ID=t1 "$BIN" title -- "-h の扱いを直す"
+    echo "title: [$(field t1 title)]"
+
+    say "title (-- が無ければ今までどおり止まる)"
+    $NAKED CLAUDE_CODE_SESSION_ID=t1 "$BIN" title "-h の扱いを直す"; echo "exit=$?"
+    echo "title: [$(field t1 title)]"
+
+    # `--` より前のフラグが今までどおり効くことは、この下から最後まで続く
+    # `--json` 付きの節が全部そろって証明するので、ここでは見ない。
+    #
+    # **付けた名前はここで外す。** 下の2節は t1 に名前が無い前提で立っている
+    $NAKED CLAUDE_CODE_SESSION_ID=t1 "$BIN" title "" >/dev/null
+
     # 子が帰ってきたときの task notification も、自動継続も、人が打ったのと
     # 同じ UserPromptSubmit として届く。source で分けないと、そのたびに囁く
     #
-    # **この下2節は t1 に名前が無い状態でしか意味を持たない** (前の「空文字で
-    # 名前を外す」がそれを作っている)。名前があると namingHint は source も
-    # agent_id も見ずに nil を返すので、判定を丸ごと消しても素通りしてしまう。
-    # 節を前へ動かさないこと
+    # **この下2節は t1 に名前が無い状態でしか意味を持たない** (直前の節が
+    # 付けた名前を外して、その状態を作っている)。名前があると namingHint は
+    # source も agent_id も見ずに nil を返すので、判定を丸ごと消しても
+    # 素通りしてしまう。節を前へ動かさないこと
     say "source が user でなければ囁かない (system)"
     OUT=$(payload t1 "$LAB/work" ',"hook_event_name":"UserPromptSubmit","source":"system","prompt":"<task-notification>…"' \
         | "$BIN" _touch running)

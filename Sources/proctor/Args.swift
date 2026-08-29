@@ -9,9 +9,23 @@ struct Args {
     private(set) var positional: [String] = []
     private var flags: Set<String> = []
 
+    /// **`--` から先はフラグを探さない。** それより前は今までどおり、
+    /// `-` で始まるものをフラグとして拾う。
+    ///
+    /// 置いたのは `title` のため。あれは人が書いた自由な文を受ける唯一のコマンドで、
+    /// その文が `-` で始まると丸ごとフラグとして飲まれ、位置引数が空になる。
+    /// 出るのは「名前を指定してください」——**渡しているのに、渡していないと言われる**。
+    /// 逃げ道が無いと、その名前は付けられないままになる。
+    ///
+    /// `--` そのものは捨てる。区切りであって中身ではない。
     init(_ argv: [String]) {
+        var sawSeparator = false
         for token in argv {
-            if token.hasPrefix("-"), token != "-" {
+            if !sawSeparator, token == "--" {
+                sawSeparator = true
+                continue
+            }
+            if !sawSeparator, token.hasPrefix("-"), token != "-" {
                 flags.insert(token)
             } else {
                 positional.append(token)
