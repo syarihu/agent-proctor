@@ -20,15 +20,17 @@ public final class WorktreeWatcher {
 
     deinit { stop() }
 
-    /// 変化があったときに呼ばれる。**呼ばれるのは専用のキューの上**なので、
-    /// 受け取る側がメインへ渡し直すこと。
+    /// まだ誰も引き取っていない印があるか。**印は落とさない。**
     ///
-    /// 押し出す形にしてあるのは、**数え直しを待たせないため**。周期で
-    /// `takeChanged` を覗きに来る作りだと、編集してから画面に出るまでが
-    /// その周期 (伸びていれば数分) になる。渡すのは今回変わったぶんだけで、
-    /// 印は落とさない —— 何を数え直すかは、受け取った側が `takeChanged` で
-    /// まとめて決める
-    public var onChange: ((Set<String>) -> Void)?
+    /// 「数え直す値打ちがあるか」を決めるのに、呼ぶ側が自前の旗を持たずに
+    /// 済むようにしてある。旗を立てて回す形にすると、旗を立てる報せと
+    /// 印を引き取る `takeChanged` が別々のスレッドから来るので、
+    /// **引き取った直後に旗だけが立ち、空振りの数え直しが1回入る**
+    public var hasChanged: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !changed.isEmpty
+    }
 
     /// 見張る場所を入れ替える。同じ顔ぶれなら何もしない
     /// (張り替えは畳んで作り直すことなので、その間のイベントが落ちる)。
@@ -112,11 +114,7 @@ public final class WorktreeWatcher {
             }
         }
         changed.formUnion(touched)
-        let notify = onChange
         lock.unlock()
-        // **ロックを離してから知らせる。** 受け取る側が何をするかはこちらの
-        // 与り知らぬところで、そこから `takeChanged` を呼ばれたら噛み合う
-        if !touched.isEmpty { notify?(touched) }
     }
 
     private func start(_ paths: [String]) {

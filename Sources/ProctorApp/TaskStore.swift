@@ -72,13 +72,6 @@ final class TaskStore: ObservableObject {
     /// ファイルが変わった場所を教えてくれる見張り。
     /// **数え直すかどうかは決めない** —— それは `worthRecounting` と `CountChanges` の役目
     private let watcher = WorktreeWatcher()
-    /// 見張りから変化の報せが届いたか。
-    ///
-    /// **受けてすぐには数え直さない。** 印を立てるだけにして、実際に走るのは
-    /// 周期が来たとき (`tick`)。こうすると数え直しの頻度の上限が今までと
-    /// 変わらないので、**編集し続けている間に git が今より増えることが起きない**。
-    /// 遅いリポジトリで間隔が伸びている (`PaceRecounts`) のもそのまま効く
-    private var sawFileChanges = false
     /// 最後に覚えた差分を全部捨てた時刻
     private var lastForgetAll = Date.distantPast
     /// 覚えた差分を全部捨てる間隔。**見張りの取りこぼしに対する保険**
@@ -151,11 +144,6 @@ final class TaskStore: ObservableObject {
         pollTimer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) {
             [weak self] _ in
             Task { @MainActor in self?.tick() }
-        }
-        // 報せは FSEvents の専用キューから来る。ここで受け取ってメインへ渡し直す。
-        // どこが変わったかは見ない —— 数え直す側が `takeChanged` でまとめて拾う
-        watcher.onChange = { [weak self] _ in
-            Task { @MainActor in self?.sawFileChanges = true }
         }
     }
 
@@ -308,9 +296,13 @@ final class TaskStore: ObservableObject {
     /// worktree の数だけ git を起こすのと同じことだった。
     ///
     /// ただし報せが来ないことは「変わっていない」の証にならないので、
-    /// 保険の全走査 (`forgetAllInterval`) の番が来たら変化に関わらず数える
+    /// 保険の全走査 (`forgetAllInterval`) の番が来たら変化に関わらず数える。
+    ///
+    /// **見張りに直接聞く。** 報せを受けて自前の旗を立てる形にすると、
+    /// 旗が立つのと印を引き取るのが別のスレッドから来るので、
+    /// 引き取った直後に旗だけが残って空振りの数え直しが1回入る
     private var worthRecounting: Bool {
-        sawFileChanges
+        watcher.hasChanged
             || Date().timeIntervalSince(lastForgetAll) >= forgetAllInterval
     }
 
@@ -482,7 +474,6 @@ final class TaskStore: ObservableObject {
         // **git を起こす前に、変わった場所の印を読む。** 覚えた数字を捨てておかないと、
         // このあと数える側 (CountChanges) が古い答えをそのまま返す。
         // 計測区間の外に置いてあるのは、印を読むのは数える費用ではないため
-        sawFileChanges = false
         if now.timeIntervalSince(lastForgetAll) >= forgetAllInterval {
             lastForgetAll = now
             _ = watcher.takeChanged()
