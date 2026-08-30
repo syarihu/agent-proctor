@@ -336,4 +336,87 @@ public enum AntigravityMetadataReader {
         }
         return ids
     }
+
+    // MARK: - 5. Approval Probe
+
+    /// 承認待ちのステップに付く status。**Antigravity の内部 enum の番号**
+    /// (`CORTEX_STEP_STATUS_WAITING`)。
+    ///
+    /// **宣言順と番号が一致しない。** 実物は PENDING=1 RUNNING=2 DONE=3 …
+    /// GENERATING=8 WAITING=9 と飛ぶので、名前の並びから数えると外れる。
+    /// 引き直すときは agy のバイナリに埋まっている protobuf の descriptor を解く
+    /// (`\x12<長さ>\x0a<長さ>CORTEX_STEP_STATUS_<名前>\x10<番号>` を拾う)。
+    ///
+    /// 公開された口ではないので、向こうが振り直せば黙って効かなくなる。
+    /// 気づけるのは「許可待ちなのに ⏳ が出ない」という形だけ
+    private static let waitingStepStatus = 9
+
+    /// 会話の記録が積まれる場所。
+    ///
+    /// **見張る側に渡すためだけに公開している。** 置き場を知っているのは
+    /// ここ (Repository) だけにしておきたいので、パスを組み立てさせない。
+    /// **中を並べてはいけない** (理由は下の `isAwaitingApproval`)
+    public static var conversationsDirectory: String {
+        (cliHome as NSString).appendingPathComponent("conversations")
+    }
+
+    /// その会話が、いま人の承認を待って止まっているか。
+    ///
+    /// **Antigravity には「訊いている」を知らせるフックが無い。** 送ってくるのは
+    /// PreToolUse / PostToolUse / PreInvocation / PostInvocation / Stop の5つだけで、
+    /// しかも PreToolUse は許可の判定より**前**に走る (あれの stdout の `decision` が
+    /// 人に訊くかどうかを決める入力そのもの)。断られたときもフックは飛ばない。
+    /// つまり挙げる合図も降ろす合図もフックからは来ないので、
+    /// あちらが書いている会話の記録を直接見るしかない。
+    ///
+    /// **置き場を走査してはいけない。** タイトルの自動生成のような裏方が、
+    /// 2ステップだけの短命な会話を次々作る。見に行くのは台帳に載っている
+    /// conversationId だけにすること。
+    ///
+    /// 末尾のステップではなく status で引くのは、裏で走っている仕事が
+    /// 後ろに積まれても手の挙がっているステップを見落とさないため
+    /// (`idx_steps_status` があるので、どちらでも値段は変わらない)。
+    ///
+    /// **読めなかったときは nil。「待っていない」と一緒にしてはいけない。**
+    ///
+    /// この DB は WAL なので、読むだけでも `-shm` が要る。ところが agy は
+    /// **待たせている最中にも記録を畳んで閉じる**ことがあり、その一瞬だけ
+    /// `-shm` も `-wal` も消える。読み取り専用では作れないので、開くこと自体が失敗する。
+    ///
+    /// ここで false を返すと、**挙がっていた手が勝手に降りる** ——
+    /// 権限確認が出たままなのに ⏳ が消え、次に確かめるまで戻らない。
+    /// 実際にそれが起きたので、答えを3つに分けてある。
+    /// 読めた結果だけが答えで、読めなかったのは**何も言っていない**。
+    ///
+    /// (`immutable=1` を付ければ `-shm` 無しでも開けるが、あれは `-wal` を
+    /// まるごと無視する。書かれたばかりの手が `-wal` の中に居ると見落とすので、
+    /// 「読めない」を「待っていない」に化けさせる元の間違いをやり直すことになる。)
+    ///
+    /// - Returns: 待っているなら true、待っていないなら false、**分からなければ nil**
+    public static func isAwaitingApproval(conversationID: String) -> Bool? {
+        guard !conversationID.isEmpty else { return nil }
+        let dbPath = (conversationsDirectory as NSString)
+            .appendingPathComponent("\(conversationID).db")
+
+        // **開けなくても取っ手は返る。** 閉じずに戻ると、開けない会話を
+        // 何度も叩くこの道では取っ手が積み上がる。
+        // だから defer を張ってから開けたかどうかを見る
+        var db: OpaquePointer?
+        let opened = sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil)
+        defer { sqlite3_close(db) }
+        guard opened == SQLITE_OK else { return nil }
+
+        var stmt: OpaquePointer?
+        let sql = "SELECT 1 FROM steps WHERE status = ? LIMIT 1;"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+
+        sqlite3_bind_int(stmt, 1, Int32(waitingStepStatus))
+        switch sqlite3_step(stmt) {
+        case SQLITE_ROW: return true
+        case SQLITE_DONE: return false
+        // 読んでいる最中に畳まれた・壊れていた。**言い切らない**
+        default: return nil
+        }
+    }
 }

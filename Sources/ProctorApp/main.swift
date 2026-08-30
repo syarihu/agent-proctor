@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var avatars: OrgAvatarStore!
     private var pullRequests: PullRequestStore!
     private var reaper: Reaper!
+    private var approvals: ApprovalWatcher!
     private var focus: FocusWatcher!
     private var settings: SettingsWindow!
     private var notices: NoticeSettings!
@@ -105,6 +106,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBar.onOpenSettings = { [weak self] in self?.settings.show() }
 
         reaper = Reaper { [weak self] in self?.store.refreshNow() }
+        // agy の許可待ちだけはフックが運んでこないので、こちらから見に行く
+        // (理由は ApprovalWatcher)。書いたのは自分なので、台帳の更新時刻を待たずに映す
+        approvals = ApprovalWatcher(store: store) { [weak self] in self?.store.refreshNow() }
         focus = FocusWatcher(
             onFocus: { [weak self] session in self?.store.setFocused(session) },
             // エージェントが動いていない場所も一覧に混ぜたいので、現在地も預ける

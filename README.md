@@ -115,6 +115,14 @@ Installing it is not enough — the list stays empty. agent-proctor is a passive
 tool that reads a ledger and shows it; what writes to that ledger is your agent's
 hooks (Claude Code, Antigravity or Codex).
 
+Antigravity is the one exception, and only for one state. It has no hook for a
+permission prompt — it does not say when it starts asking you something, and does
+not say when the asking is over — so proctor reads that one thing out of
+Antigravity's own conversation record rather than waiting for a hook that never
+comes. Wiring the hooks up is still what puts the session on the list at all;
+this only fills the gap they cannot cover. Such a row does not say what it is
+waiting for, because that is not in the record while the prompt is still open.
+
 How to wire them up depends on your setup — existing hooks or a statusLine have to
 be merged rather than replaced — so instead of a procedure it is written as
 instructions for an AI to follow, and proctor prints them:
