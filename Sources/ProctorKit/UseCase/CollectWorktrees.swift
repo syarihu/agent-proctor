@@ -194,10 +194,11 @@ public enum CollectWorktrees {
     /// (見たいのは「まだ手元にしかない仕事」なので HEAD からの差分)。
     ///
     /// **どちらか一方でも聞けなかったら nil。** 半端に数えた値を返すと、
-    /// 片方が空だっただけの場所が「変更なし」として片付けの候補に並ぶ
+    /// 片方が空だっただけの場所が「変更なし」として片付けの候補に並ぶ。
+    /// 欠けたぶんを 0 で埋めるセッションの側 (`CollectTasks.diff`) とはそこが違う
     static func diff(at worktree: String) -> DiffCounts? {
-        guard let lines = GitClient.changedLines(worktree, since: "HEAD"),
-              let untracked = GitClient.untrackedCount(worktree) else { return nil }
+        let counted = CountChanges.run(worktree: worktree)
+        guard let lines = counted.lines, let untracked = counted.untracked else { return nil }
         return DiffCounts(added: lines.added, removed: lines.removed,
                           untracked: untracked, binary: lines.binary,
                           changedFiles: lines.files)

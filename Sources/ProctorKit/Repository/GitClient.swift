@@ -5,17 +5,63 @@ import Foundation
 /// proctor は worktree を作らないし消さないので、ここにあるのは
 /// 「今どうなっているか」を聞く操作だけ。リポジトリを書き換える操作は持たない。
 public enum GitClient {
+    /// すべての git に付ける前置き。
+    ///
+    /// **聞くだけのつもりで書かせないために `GIT_OPTIONAL_LOCKS=0` を渡す。**
+    /// `git diff` は stat キャッシュを新しくするために `index.lock` を取って
+    /// インデックスを書き戻す。proctor が覗く worktree は、まさにエージェントが
+    /// 自分で git を叩いている最中の場所なので、見張っているだけのこちらが
+    /// 向こうのロックを取り合うことになる。書き戻しは見張りも起こすので、
+    /// 数えた自分がその報せでまた数え直す形にもなる。
+    ///
+    /// **同じ意味の `--no-optional-locks` ではなく環境変数にしてある。**
+    /// あのフラグは git 2.15 からで、知らない git は `unknown option` で
+    /// 落ちる —— 前置きなので**全部の呼び出しが失敗して一覧が真っ白になる**。
+    /// 知らない環境変数のほうは、どの版も黙って無視する。
+    /// 走らせるのが `/usr/bin/env` なので、ここに置くだけで渡せる
+    private static let prefix = ["GIT_OPTIONAL_LOCKS=0", "git", "-C"]
+
     /// (成功したか, stdout)。失敗と「結果が空」を区別したいときに使う。
     public static func capture(_ repo: String, _ args: String...) -> (ok: Bool, output: String) {
-        ProcessRunner.capture(["git", "-C", repo] + args)
+        ProcessRunner.capture(prefix + [repo] + args)
     }
 
     /// 静かに聞く。答えが得られなければ空文字。
     public static func ask(_ repo: String, _ args: String...) -> String {
-        ProcessRunner.capture(["git", "-C", repo] + args).output
+        ProcessRunner.capture(prefix + [repo] + args).output
     }
 
     // MARK: - 場所
+
+    /// その worktree のためだけに git が使う置き場
+    /// (`<リポジトリ>/.git/worktrees/<名前>`)。リポジトリ本体なら nil。
+    ///
+    /// **コミットは作業ツリーの中では起きない。** 書かれるのはここと、
+    /// 共有の `objects`/`refs` のほうで、作業ツリーのファイルは1つも動かない。
+    /// 変化を見張る側 (`WorktreeWatcher`) は、作業ツリーとここの両方を見ないと
+    /// コミットに気づけず、空になったはずの差分を出し続けることになる。
+    ///
+    /// 連結 worktree の `.git` は `gitdir: <パス>` の1行だけのファイルで、
+    /// リポジトリ本体の `.git` はディレクトリ。この違いで見分ける。
+    /// **git は起こさない** —— 1行読めば分かる答えのために
+    /// `rev-parse --git-dir` を使うと、数え直しのたびに worktree の数だけ
+    /// プロセスが増える
+    public static func adminDirectory(of worktree: String) -> String? {
+        let dotGit = worktree + "/.git"
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: dotGit, isDirectory: &isDirectory),
+              !isDirectory.boolValue,
+              let text = try? String(contentsOfFile: dotGit, encoding: .utf8),
+              let line = text.split(separator: "\n").first,
+              line.hasPrefix("gitdir:") else { return nil }
+        // 改行ごと落とす。`.whitespaces` は空白とタブだけなので、
+        // CRLF で書かれていると `\r` が残り、その先が見つからなくなる
+        let path = line.dropFirst("gitdir:".count)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if path.isEmpty { return nil }
+        // 相対で書かれている置き方もある。その worktree から見た位置になる
+        return path.hasPrefix("/") ? path : worktree + "/" + path
+    }
 
     /// メイン worktree のパス。worktree の中から聞かれても本体を指す。
     ///
