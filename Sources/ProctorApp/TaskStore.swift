@@ -69,6 +69,25 @@ final class TaskStore: ObservableObject {
     private var lastModified: Date?
     private var lastRecount = Date.distantPast
     private var lastWorktreeCount = Date.distantPast
+    /// ファイルが変わった場所を教えてくれる見張り。
+    /// **数え直すかどうかは決めない** —— それは `worthRecounting` と `CountChanges` の役目
+    private let watcher = WorktreeWatcher()
+    /// 見張りから変化の報せが届いたか。
+    ///
+    /// **受けてすぐには数え直さない。** 印を立てるだけにして、実際に走るのは
+    /// 周期が来たとき (`tick`)。こうすると数え直しの頻度の上限が今までと
+    /// 変わらないので、**編集し続けている間に git が今より増えることが起きない**。
+    /// 遅いリポジトリで間隔が伸びている (`PaceRecounts`) のもそのまま効く
+    private var sawFileChanges = false
+    /// 最後に覚えた差分を全部捨てた時刻
+    private var lastForgetAll = Date.distantPast
+    /// 覚えた差分を全部捨てる間隔。**見張りの取りこぼしに対する保険**
+    /// (`WorktreeWatcher` は黙っていても「変わっていない」を意味しない)。
+    /// 報せだけを頼りにすると、落ちた1回のせいで数字が古いまま居座るので、
+    /// 5分に1回は全部数え直して帳尻を合わせる
+    private let forgetAllInterval: TimeInterval = 300
+    /// 最後に時刻由来の値だけを進めた時刻
+    private var lastElapsed = Date.distantPast
     /// 現在地を調べた結果。「git の外だった」も覚えるので Optional では持たない
     /// (Swift の辞書は nil の代入が削除になるため、覚えたつもりで毎回引き直しになる)
     private enum DirectoryOrigin {
@@ -133,6 +152,11 @@ final class TaskStore: ObservableObject {
             [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
+        // 報せは FSEvents の専用キューから来る。ここで受け取ってメインへ渡し直す。
+        // どこが変わったかは見ない —— 数え直す側が `takeChanged` でまとめて拾う
+        watcher.onChange = { [weak self] _ in
+            Task { @MainActor in self?.sawFileChanges = true }
+        }
     }
 
     deinit { pollTimer?.invalidate() }
@@ -146,7 +170,16 @@ final class TaskStore: ObservableObject {
     func setCollecting(_ on: Bool) {
         guard collecting != on else { return }
         collecting = on
-        if on { recount(reason: .urgent) }
+        if on {
+            // 見ていなかった間の変化は報せが来ていない。覚えた数字は全部捨てる
+            // (次の recount が forgetAll まで通る)
+            lastForgetAll = .distantPast
+            recount(reason: .urgent)
+        } else {
+            // 誰も見ていない一覧のために見張らない。畳むと覚えている場所も
+            // 消えるので、次に開いたときの watch はちゃんと張り直しになる
+            watcher.stop()
+        }
     }
 
     /// いま見ているタブが変わったときに呼ぶ。
@@ -268,6 +301,19 @@ final class TaskStore: ObservableObject {
         if collecting { recount(reason: .urgent) }
     }
 
+    /// 周期が来たときに、数え直す値打ちがあるか。
+    ///
+    /// **どこも変わっていないなら数え直さない。** コードが編集されない限り
+    /// 差分の数字は動かないので、それでも数えるのは同じ答えのために
+    /// worktree の数だけ git を起こすのと同じことだった。
+    ///
+    /// ただし報せが来ないことは「変わっていない」の証にならないので、
+    /// 保険の全走査 (`forgetAllInterval`) の番が来たら変化に関わらず数える
+    private var worthRecounting: Bool {
+        sawFileChanges
+            || Date().timeIntervalSince(lastForgetAll) >= forgetAllInterval
+    }
+
     private func tick() {
         let modified = LedgerStore.lastModified()
         let changed = modified != lastModified
@@ -291,8 +337,24 @@ final class TaskStore: ObservableObject {
             // 新しい行には持ち越せる差分が無く、周期を待つと数字が出ないままになる
             recount(reason: .urgent)
         } else if Date().timeIntervalSince(lastRecount) >= recountInterval {
-            recount(reason: .periodic)
+            if worthRecounting {
+                recount(reason: .periodic)
+            } else if Date().timeIntervalSince(lastElapsed) >= recountInterval {
+                refreshElapsed()
+            }
         }
+    }
+
+    /// git を起こさずに、**時刻から出る値だけ**を進める。
+    ///
+    /// 経過時間 (age / idle) はファイルが変わらなくても秒が進むだけで古びる。
+    /// 「どこも変わっていないから数え直さない」に巻き込むと、待たせている行の
+    /// 時間表示が最大 `forgetAllInterval` ぶん飛び飛びになる。
+    /// 間隔を数え直しと同じにしてあるのは、今までもその周期でしか動かなかったため
+    private func refreshElapsed() {
+        lastElapsed = Date()
+        guard let quick = CollectTasks.reapplied(tasks, records: records) else { return }
+        tasks = quick
     }
 
     /// 台帳の変化のうち、git を起動せずに映せる分を先に映す。
@@ -417,6 +479,18 @@ final class TaskStore: ObservableObject {
         pendingRecount = nil
         let now = Date()
         lastRecount = now
+        // **git を起こす前に、変わった場所の印を読む。** 覚えた数字を捨てておかないと、
+        // このあと数える側 (CountChanges) が古い答えをそのまま返す。
+        // 計測区間の外に置いてあるのは、印を読むのは数える費用ではないため
+        sawFileChanges = false
+        if now.timeIntervalSince(lastForgetAll) >= forgetAllInterval {
+            lastForgetAll = now
+            _ = watcher.takeChanged()
+            CountChanges.forgetAll()
+        } else {
+            CountChanges.invalidate(watcher.takeChanged())
+        }
+        watcher.watch(watchRoots())
         // worktree のほうは自分の間隔を持つ。**見送った回は前回の値をそのまま残す**
         // (nil を入れると、数え直しのたびに一覧から worktree の行が消えて生え直す)。
         //
@@ -581,5 +655,38 @@ final class TaskStore: ObservableObject {
                 if pending == .urgent, self.collecting { self.recount(reason: .urgent) }
             }
         }
+    }
+
+    /// 見張ってもらう場所 → **そこが動いたときに数え直す相手** (`CountChanges` の鍵)。
+    ///
+    /// 見るのは台帳が知っているリポジトリと居場所、それにいま並べている worktree。
+    /// **worktree と親のリポジトリを両方渡す。** worktree はたいてい
+    /// リポジトリの中 (`.claude/worktrees/X`) にあるので親だけでも報せは届くが、
+    /// 外に置く流儀もあるので両方入れる (重なりは長いほうから当てて捌かれる)。
+    ///
+    /// **連結 worktree だけは見張る場所が2つになる。** 作業ツリーと、git が
+    /// その worktree のために使う置き場 (`GitClient.adminDirectory`)。
+    /// 後者を外すと、コミットで空になったはずの worktree が古い数字を出し続ける。
+    /// どちらも同じ鍵に落とすので、どちらが動いてもその worktree を数え直す。
+    ///
+    /// リポジトリ本体の `.git` はここに足さない。本体そのものを見張っている
+    /// 時点でその中身も届くし、**共有の `objects`/`refs` は誰がコミットしても
+    /// 動く**ので、足しても足さなくても本体の鍵は落ちる。
+    ///
+    /// 実体の無いパスは渡さない。FSEvents に見張らせても報せは来ないので、
+    /// 顔ぶれを揺らして張り替えの口実になるだけ
+    private func watchRoots() -> [String: String] {
+        var roots: [String: String] = [:]
+        for repo in records.map(\.repo) { roots[repo] = repo }
+        for place in sessionPlaces { roots[place] = place }
+        for group in worktrees {
+            roots[group.repo] = group.repo
+            for worktree in group.worktrees { roots[worktree.path] = worktree.path }
+        }
+        for worktree in Set(roots.values) {
+            guard let admin = GitClient.adminDirectory(of: worktree) else { continue }
+            roots[admin] = worktree
+        }
+        return roots.filter { FileManager.default.fileExists(atPath: $0.key) }
     }
 }

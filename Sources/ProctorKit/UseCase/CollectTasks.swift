@@ -119,12 +119,16 @@ public enum CollectTasks {
     public static func diff(for record: TaskRecord) -> DiffCounts {
         // 聞けなかったときは 0 のまま出す。**ここは行に添える数字**で、
         // 消してよいかの判断には使わない (それは CollectWorktrees の仕事で、
-        // あちらは「数え切れたか」を持ち回している)
-        let lines = GitClient.changedLines(record.worktree, since: "HEAD")
+        // あちらは「数え切れたか」を持ち回している)。
+        //
+        // **行数と未追跡は別々に潰す。** コミットが1つも無いリポジトリでは
+        // `diff HEAD` だけが失敗するので、まとめて潰すと未追跡の数まで消える
+        let counted = CountChanges.run(worktree: record.worktree)
+        let lines = counted.lines
         return DiffCounts(
             added: lines?.added ?? 0,
             removed: lines?.removed ?? 0,
-            untracked: GitClient.untrackedCount(record.worktree) ?? 0,
+            untracked: counted.untracked ?? 0,
             binary: lines?.binary ?? 0,
             changedFiles: lines?.files ?? 0)
     }

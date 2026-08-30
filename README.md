@@ -222,14 +222,20 @@ conversation.
 
 The `+`/`-` on every row, and the diff column of the worktree list, come from
 `git diff --numstat` and `git ls-files --others`. Editing a file does not touch
-the ledger, so the sidebar has to count again on a timer to keep those numbers
-honest.
+the ledger, so the sidebar watches the repositories and worktrees it is showing
+and counts again only where something moved.
 
 In a large repository a single count takes seconds, and counting every ten
 seconds would leave git running the whole time. So proctor times each count and
 stretches the interval instead: the slower counting turns out to be, the longer
 it waits, until counting takes only a small slice of the time. A repository that
 answers straight away is left at the intervals it always had.
+
+Watching misses things. Events get coalesced, none arrive while the app is not
+running, and a worktree created between two sweeps is not being watched yet. So
+every five minutes proctor throws away every count it remembers and counts
+everything again: a number on screen is at most that far behind, and anything
+the watching does see is picked up on the next count.
 
 If you would rather not pay for it at all, turn off *Settings… → Sidebar → Count
 file changes*. Neither the `+`/`-` numbers nor whether a worktree can go is
