@@ -3,18 +3,10 @@ import Foundation
 import Model
 import UseCaseSession
 
-/// 何を知らせるか、どこまで知らせ続けるかの設定。
+/// 通知の配信条件および既読ポリシーの設定。
 ///
-/// 見た目の設定 (`Appearance`) とは分けてある。あちらはサイドバーの描き方で、
-/// こちらは**まだ手を付けていないものをどう扱うか**。同じ器に入れると、
-/// 「サイドバーの設定」を直すつもりで通知を止めてしまう。
-///
-/// 未読をいつ降ろすか (`seenPolicy`) もここに置く。通知と要確認のストリップは
-/// 同じ「まだ人の手が要るか」(`TaskStatus.needsPerson`) を見ているので、
-/// 降ろす合図だけ別の器に分けると、片方の設定を探して両方が動くことになる。
-///
-/// 既定は3つとも入り。通知そのものは macOS 側で許可されるまで出ないので、
-/// 入れておいても勝手に鳴り出すことはない (最初に許可を尋ねられる)。
+/// 外観設定（Appearance）とは責務を分離して管理する。
+/// 未読解除のタイミング（seenPolicy）も、未読バッジ等の表示判定と同一のドメイン関心事であるためここに集約する。
 @MainActor
 public final class NoticeSettings: ObservableObject {
     @Published public var onWaiting: Bool {
@@ -26,8 +18,7 @@ public final class NoticeSettings: ObservableObject {
     @Published public var onFailed: Bool {
         didSet { UserDefaults.standard.set(onFailed, forKey: Self.failedKey) }
     }
-    /// 未読をいつ降ろすか。**既定は今までどおりタブを開いた時点。**
-    /// 入れた覚えのない人の手元で振る舞いが変わらないようにする
+    /// 未読解除ポリシー（デフォルトはタブフォーカス時）
     @Published public var seenPolicy: MarkSessionSeen.Policy {
         didSet { UserDefaults.standard.set(seenPolicy.rawValue, forKey: Self.seenPolicyKey) }
     }

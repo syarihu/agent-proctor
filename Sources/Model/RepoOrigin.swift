@@ -1,22 +1,15 @@
 import Foundation
 
-/// git の remote URL から読み取った「どこの誰のリポジトリか」。
+/// git の remote URL から読み取ったリポジトリの識別情報。
 ///
-/// 一覧を Organization でまとめるときの鍵になる。
-///
-/// **置き場所のパス (`~/git/syarihu/…` の `syarihu`) を使わないのは、
-/// どこに clone するかが人それぞれだから。** 同じ組織のリポジトリを別の場所に
-/// 置いていれば別の組織として並ぶし、worktree を別のところに切っていれば
-/// 本体とも離れてしまう。remote URL なら、どこに置いてあっても同じ答えになる。
-/// (中身は文字列3つなので、スレッドを跨いで渡しても困らない。
-/// 表示側が別のスレッドへ持ち出すため `Sendable` を明示しておく)
+/// 一覧を Organization でまとめるときのキーになる。
+/// ローカルのクローン先パスに依存せず、常に一意な識別を行うために remote URL を基準にする。
 public struct RepoOrigin: Codable, Equatable, Sendable {
-    /// ホスト名 ("github.com")。アイコンを取りに行ってよい相手かの判断に使う
+    /// ホスト名 ("github.com")。アイコン取得対象かどうかの判定に使用する
     public var host: String
-    /// 持ち主。GitHub では user か organization の login 名。
-    /// グループが入れ子になる置き方 (GitLab) では "group/subgroup" になる
+    /// オーナー名。GitHub では user または organization の login 名
     public var owner: String
-    /// リポジトリ名 (末尾の ".git" は落としてある)
+    /// リポジトリ名 (末尾の ".git" は除外)
     public var name: String
 
     public init(host: String, owner: String, name: String) {
@@ -25,29 +18,15 @@ public struct RepoOrigin: Codable, Equatable, Sendable {
         self.name = name
     }
 
-    /// アイコンを引ける相手か。gh で引けるのは GitHub だけ
+    /// アイコン取得に対応しているか (GitHub のみ)
     public var isGitHub: Bool { host == "github.com" }
 
-    /// 折りたたみを覚えるための鍵。ホストまで含めるのは、別のホストに
-    /// 同じ名前の組織があったときに畳み方が連動してしまわないようにするため。
-    ///
-    /// **持ち主も小文字で並べる。** GitHub の login は大小を区別しないので、
-    /// `syarihu` と `Syarihu` を別の見出しに分けてしまうと、同じ人の
-    /// リポジトリが2つの組織に散る (見出しに出す名前のほうは原文を使う)
+    /// 折りたたみ状態を保持するためのキー。
+    /// ホスト名を含め、GitHub の login 名が大文字小文字を区別しない仕様に合わせてオーナー名を小文字化する。
     public var groupKey: String { "\(host)/\(owner.lowercased())" }
 
-    /// remote URL を読む。読めなければ nil。
-    ///
-    /// git が受け付ける書き方は3通りある。
-    ///
-    /// | 書き方 | 例 |
-    /// | --- | --- |
-    /// | scp 風 | `git@github.com:owner/repo.git` |
-    /// | URL | `ssh://git@github.com/owner/repo.git`, `https://github.com/owner/repo.git` |
-    /// | ローカルパス | `/srv/git/repo.git` |
-    ///
-    /// ローカルパスには持ち主がいないので nil を返す。持ち主が分からないものを
-    /// 無理に名付けると、無関係なリポジトリが1つの見出しの下に集まってしまう。
+    /// remote URL をパースする。パースできない場合は nil。
+    /// ローカルパスはオーナーが存在しないため nil を返す。
     public static func parse(_ remote: String) -> RepoOrigin? {
         let trimmed = remote.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -60,21 +39,15 @@ public struct RepoOrigin: Codable, Equatable, Sendable {
             authority = String(rest[..<slash])
             path = String(rest[rest.index(after: slash)...])
         } else if !trimmed.hasPrefix("/"), let colon = trimmed.firstIndex(of: ":") {
-            // scp 風。":" の手前がホスト、後ろがパス。
-            // 先頭が "/" のものを先に弾いておかないと、パスに ":" を含む
-            // ローカルリポジトリをホスト名として読んでしまう
+            // scp 形式。先頭が "/" のパスは除外する。
             authority = String(trimmed[..<colon])
             path = String(trimmed[trimmed.index(after: colon)...])
         } else {
             return nil  // ローカルパス
         }
 
-        // "git@" や "user:token@" を落とし、ポート番号も落とす。
-        // 認証情報を残すと、同じホストでも書き方の違いで別の組織に見える。
-        //
-        // **小文字に揃えるのは、ホスト名が大小を区別しないから。** 手で
-        // "GitHub.com" と打った remote があると、揃えていなければ `isGitHub` が
-        // 外れてアイコンが出ず、見出しも別の組織として分かれてしまう
+        // 認証情報やポート番号を除去し、ホスト名を小文字化する。
+        // ホスト名は大小を区別しないため、表記揺れによるグループの分離を防ぐ。
         var host = authority
         if let at = host.lastIndex(of: "@") { host = String(host[host.index(after: at)...]) }
         if let port = host.firstIndex(of: ":") { host = String(host[..<port]) }
@@ -82,18 +55,13 @@ public struct RepoOrigin: Codable, Equatable, Sendable {
         guard !host.isEmpty else { return nil }
 
         var segments = path.split(separator: "/").map(String.init)
-        // 持ち主とリポジトリ名で最低2つ。1つしか無いものは持ち主が居ない
         guard segments.count >= 2 else { return nil }
-        // **"." や ".." が混じったものは持ち主として扱わない。** 名前ではなく
-        // 場所を指す語なので、これを持ち主だと思って何かの鍵に使うと、
-        // 使った先で置き場の外に出る。ここで落としておく
+        // ディレクトリトラバーサル防止のため "." や ".." を含むものは除外する
         guard !segments.contains(where: { $0 == "." || $0 == ".." }) else { return nil }
         var name = segments.removeLast()
         if name.hasSuffix(".git") { name.removeLast(4) }
         let owner = segments.joined(separator: "/")
-        // 名前のほうは `.git` を剥がしたあとにもう一度見る。上の門は剥がす前の
-        // セグメントを見ているので、`.../...git` のような書き方だと
-        // **通り抜けたあとに "." や ".." が出来上がる**
+        // .git を剥がした後の名前もチェックする
         guard !owner.isEmpty, !name.isEmpty, name != ".", name != ".." else { return nil }
         return RepoOrigin(host: host, owner: owner, name: name)
     }

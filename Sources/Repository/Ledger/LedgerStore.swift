@@ -98,26 +98,15 @@ public enum LedgerStore {
         }
         defer { close(fd) }
 
-        // 待つのはカーネルに任せる。順番待ちに並べば空いた瞬間に起こしてもらえる。
-        //
-        // **諦める作りにしてはいけない。** 締め切りを付けて投げる形にすると、
-        // 混んだときに書き込みがそのまま失われる (hooks は出力を捨てているので
-        // 誰も気づけない)。実測ではフックを20本同時に撃つと8本が落ちた。
-        // セッションの登録や SubagentStop が落ちると、終わったものが一覧に居座る。
-        //
-        // 待ち時間を短く保つ責任は**ロックを取る側**にある。git の起動や
-        // タイトルの解決のような重い支度は、ここへ来る前に済ませること
+        // ロック取得はタイムアウトによる破棄を行わず待機する。
+        // 高負荷時にイベント書き込みがドロップし、完了・終了セッションが一覧に残留するのを防ぐため。
+        // ロック保持時間を短縮するため、重い事前処理はロック外で済ませてからここを呼ぶ。
         guard flock(fd, LOCK_EX) == 0 else {
             throw ProctorError(Localized.text("error.ledger.lock_failed", Paths.lockFile.path))
         }
 
         var ledger = read()
-        // **値で比べる。直列化して見比べない。** 字面での比較はここを
-        // 台帳2つぶんのエンコードで塞ぐ。いちばん短く保ちたい区間なのに、
-        // いちばん重いことをすることになる。
-        //
-        // 値の比較で代わりになるのは、`Double` を持つ型が1つも無いから
-        // (NaN のように「等しくないのに同じ字面になる」値が出ない)
+        // JSON シリアライズの負荷を避けるため、構造体の Equatable による値比較で変更有無を判定する
         let before = ledger
         let result = try body(&ledger)
         if before != ledger {
@@ -131,11 +120,8 @@ public enum LedgerStore {
     /// エージェントごとの最新レートリミット情報を返す
     public static func agentRateLimits() -> [String: AgentRateLimits] { read().agentRateLimits }
 
-    /// セッションを見たことのあるリポジトリ。
-    ///
-    /// **消えたパスをここでは落とさない。** 読むのは hooks も含めた全員で、
-    /// そのたびにパスの数だけファイルの有無を確かめることになる。
-    /// 実体があるかどうかは、どのみち中を見に行く側 (CollectWorktrees) が確かめる
+    /// セッションを観測したことのあるリポジトリ一覧。
+    /// I/O コストを避けるため、存在しなくなったパスのクリーンアップはここではなく CollectWorktrees 側で行う。
     public static func repos() -> [String: Int] { read().repos }
 
     /// 台帳が最後に変わった時刻。表示側が「数え直すべきか」を判断するのに使う

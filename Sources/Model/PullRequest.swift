@@ -6,12 +6,10 @@ import Foundation
 /// 詰め替えの表を挟むと、足したいものが増えるたびに2か所直すことになる。
 public struct PullRequestRef: Codable, Equatable, Sendable {
     public var number: Int
-    /// **gh が返した URL をそのまま持つ。自分で組み立てない。**
-    /// 組み立て方を写すと GitHub Enterprise のホストで嘘をつくし、
-    /// 写した時点で gh 側の答えと食い違いうる
+    /// gh が返した URL をそのまま保持する。
+    /// 独自に URL を組み立てると GitHub Enterprise 等で不整合を起こすため。
     public var url: String
-    /// "OPEN" / "MERGED" / "CLOSED"。**何色で出すかはここでは決めない**
-    /// (CLI は Terminal、アプリは Palette が持つ)
+    /// "OPEN" / "MERGED" / "CLOSED"。配色の責務は View 側が担う。
     public var state: String
     public var isDraft: Bool
     /// PR の見出し。番号だけでは何の PR か分からないので、
@@ -27,12 +25,10 @@ public struct PullRequestRef: Codable, Equatable, Sendable {
     }
 }
 
-/// PR を引いた結果。
+/// PR を取得した結果。
 ///
-/// **「無い」と「聞けなかった」を必ず分ける。** どちらも画面には何も出ないが、
-/// 覚えてよいのは前者だけ。混ぜると、gh が一時的に使えないだけの状態が
-/// 「この branch に PR は無い」として焼き付き、期限が切れるまで番号が出なくなる
-/// (前身の taskhub で、PATH に gh が居ないだけの環境で番号が消え続けた)。
+/// PR が存在しないことと、通信エラー等で取得できなかった状態を区別する。
+/// 取得失敗を非存在としてキャッシュしてしまうと、一時的な障害時に存在しないと誤認され続けるため。
 public enum PullRequestLookup: Equatable, Sendable {
     case found(PullRequestRef)
     /// この branch に PR は無い。gh はちゃんと答えた

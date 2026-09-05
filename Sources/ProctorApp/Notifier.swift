@@ -5,14 +5,8 @@ import Model
 import Resources
 import UserNotifications
 
-/// macOS の通知センターへの窓口。
-///
-/// 何を知らせるかは決めない (それは `CollectNotices`)。ここがやるのは
-/// 3つだけ。**許可を貰う・文面に組む・押されたら開く。**
-///
-/// 通知の identifier はセッションの id にしてある。macOS は同じ identifier の
-/// 通知を差し替えるので、1つのセッションについて通知センターに残るのは
-/// 常に最後の1件になる (確認待ち → 完了と続いても積み上がらない)。
+/// macOS 通知センターとの連携クラス。通知権限のリクエスト、通知の投稿・取り下げ、クリック時のハンドリングを行う。
+/// 同一セッションの通知は同一 identifier を使用して上書きし、通知センターへの重複蓄積を防ぐ。
 @MainActor
 final class Notifier: NSObject, UNUserNotificationCenterDelegate, NotificationPermissionAuthorizer {
     /// 通知が押されたときに呼ばれる。渡すのはセッションの id
@@ -20,15 +14,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, NotificationPe
 
     typealias Permission = NotificationPermissionStatus
 
-    /// userInfo に入れる鍵。押されたときにどのセッションかを引くのに使う。
-    /// 押されたことを受け取る口 (delegate) はメインの外から来るので nonisolated
+    /// 通知タップ時にタスクを特定するための userInfo キー
     private nonisolated static let taskKey = "task"
 
-    /// 通知センター。**バンドルの外では持たない。**
-    ///
-    /// `UNUserNotificationCenter.current()` はバンドルIDの無いプロセスから呼ぶと
-    /// Objective-C の例外で落ちる (Swift 側では捕まえられない)。
-    /// `swift run` で立ち上げたときがこれに当たるので、触る前に見分ける
+    /// 通知センターインスタンス。swift run などバンドル ID を持たないプロセスでのクラッシュを防ぐため nil 許容とする
     private let center: UNUserNotificationCenter?
 
     override init() {
@@ -37,25 +26,19 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, NotificationPe
         center?.delegate = self
     }
 
-    /// 許可を求めて、決まった状態を返す。
-    ///
-    /// すでに決まっていれば、macOS はダイアログを出さずにその答えを返す。
-    /// 断られたあとに呼んでも聞き直しにはならない (オートメーションと同じ)
+    /// 通知権限を要求し、現在の状態を返す
     func requestAuthorization() async -> Permission {
         guard let center else { return .unavailable }
         _ = try? await center.requestAuthorization(options: [.alert, .sound])
         return await permission()
     }
 
-    /// 起動時に呼ぶ。答えは待たない。
-    ///
-    /// **最初の1件が出るときに尋ねるのでは間に合わない** — 許可を尋ねている間に
-    /// 出した通知はどこにも残らず、いちばん知りたかった1件が黙って消える
+    /// 初回起動時に非同期で通知権限を要求する
     func requestAuthorizationIfNeeded() {
         Task { _ = await requestAuthorization() }
     }
 
-    /// いまの許可の状態を読む。設定画面から呼ぶ
+    /// 現在の通知権限ステータスを取得する
     func permission() async -> Permission {
         guard let center else { return .unavailable }
         let settings = await center.notificationSettings()
@@ -63,12 +46,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, NotificationPe
         case .authorized, .provisional: return .granted
         case .denied: return .denied
         case .notDetermined: return .undecided
-        // ephemeral (App Clip) など、この先増えるものは決めつけない
         @unknown default: return .denied
         }
     }
 
-    /// システム設定の通知のページを開く。断られたあとはここへ送るしかない
+    /// システム設定の通知画面を開く
     static func openSettings() {
         guard let url = URL(string:
             "x-apple.systempreferences:com.apple.Notifications-Settings.extension")
@@ -80,62 +62,54 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate, NotificationPe
         Self.openSettings()
     }
 
-    /// 決まったものを配る。取り下げも同じ口で受ける
+    /// 通知の投稿および取り下げを適用する
     func apply(_ changes: NoticeChanges) {
         guard let center, !changes.isEmpty else { return }
         if !changes.withdraw.isEmpty {
             center.removeDeliveredNotifications(withIdentifiers: changes.withdraw)
-            // まだ配られていない分も下ろす。配るのは即時 (trigger が nil) なので
-            // 普通は空だが、取り下げが追いついた瞬間に残っていると消し損ねる
+            // 配信待ち（pending）のリクエストも確実に削除する
             center.removePendingNotificationRequests(withIdentifiers: changes.withdraw)
         }
         for notice in changes.post {
             center.add(UNNotificationRequest(identifier: notice.taskID,
                                              content: content(for: notice),
-                                             // trigger が nil ならすぐ出る
                                              trigger: nil))
         }
     }
 
     private func content(for notice: TaskNotice) -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
-        // 題は作業の名前。太字で出るところに、いちばん見分けの付くものを置く
+        // タイトルにタスク表示名を設定する
         content.title = notice.name
-        // 副題に「何が起きたか」と居場所。一覧の記号をそのまま使うので、
-        // サイドバーで見慣れた ⏳ / ✅ / ✖ と字面が揃う
+        // サブタイトルに状態マーク・ラベル・リポジトリ・ブランチ情報を設定する
         content.subtitle = Localized.text(
             "app.notify.subtitle",
             "\(TaskStatus.mark(notice.status)) \(TaskStatus.label(notice.status))",
             notice.repoName, notice.branch)
-        // 本文は「何を待っているか」。無いときは空にしておく。
-        // 埋めるために状態をもう一度書くと、副題と同じ言葉が二度並ぶ
+        // 本文に詳細情報（承認要求内容等）を設定する
         content.body = notice.detail ?? ""
         content.sound = .default
         content.userInfo = [Notifier.taskKey: notice.taskID]
-        // 同じセッションの通知は通知センターで1つにまとまる
+        // 同一セッションの通知をグループ化する
         content.threadIdentifier = notice.taskID
         return content
     }
 
     // MARK: - UNUserNotificationCenterDelegate
 
-    /// 押されたとき。一覧の行を押したときと同じところへ連れて行く
+    /// 通知クリック時のハンドラ
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void) {
         let id = response.notification.request.content.userInfo[Notifier.taskKey] as? String
-        // 先に返しておく。タブを開くのは Apple Event の往復で、
-        // 待たせている間ずっと通知センターが押されたままになる
+        // タブ移動（AppleScript）完了待ちによる通知センターの応答遅延を防ぐため、先に完了ハンドラを呼ぶ
         completionHandler()
         guard let id else { return }
         Task { @MainActor in self.onOpen?(id) }
     }
 
-    /// 前面にいる間も出す。
-    ///
-    /// このアプリが前面なのは設定を開いているときくらいで、そこで黙られると
-    /// 設定を触っている間だけ通知が消える (試している最中がいちばん困る)
+    /// アプリがフォアグラウンドの場合もバナーとサウンドを表示する
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,

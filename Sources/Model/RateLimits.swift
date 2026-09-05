@@ -13,13 +13,8 @@ public struct RateLimitWindow: Codable, Equatable {
     }
 }
 
-/// エージェントのレートリミット情報。
-///
-/// 5時間枠 (five_hour) と 7日間枠 (seven_day) の使用状況。
-///
-/// Claude Code と Antigravity は statusline が送ってくる。Codex には
-/// statusline が無いので、あちらだけは hooks の経路で入ってくる
-/// (中身は Codex 自身が rollout に残した記録から拾ったもの)。
+/// エージェントのレートリミット使用状況（短期間枠・長期間枠）。
+/// Claude Code と Antigravity は statusline 経由、Codex はフックイベント経由で収集される。
 public struct AgentRateLimits: Codable, Equatable {
     public var fiveHour: RateLimitWindow?
     public var sevenDay: RateLimitWindow?

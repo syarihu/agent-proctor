@@ -2,31 +2,22 @@ import Foundation
 import RepositoryGitHub
 import Utility
 
-/// Organization のアバターアイコンを取得・管理する。
-///
-/// gh に聞くのも (`GitHubClient`)、置き場を出し入れするのも (`AvatarCache`) 向こうの仕事で、
-/// ここが持つのは「手元にあれば返し、無ければ gh から落とす」「失敗した相手のクールダウン」
-/// 「いつ聞き直すかの間隔」。
+/// Organization のアバターアイコンを取得・キャッシュ管理する。
+/// ローカルキャッシュが存在すれば返し、存在しない場合は GitHub からダウンロードする。
+/// 失敗時のクールダウンや再取得間隔の制御を担う。
 public enum FetchOrganizationAvatar {
-    /// 見出しに出すアイコンを1つ手に入れる。
-    ///
-    /// 手元にあればそれを返し、無ければ gh に聞いて落としてくる。
-    ///
-    /// - Returns: 画像ファイルの場所。手に入らなければ nil (呼ぶ側は代わりの絵を描く)
+    /// 指定されたオーナーのアバター画像ファイル URL を取得する。
+    /// - Returns: 画像ファイルのローカル URL。取得できない場合は nil
     public static func fetch(owner: String, host: String = "github.com") -> URL? {
         guard host == "github.com", !owner.isEmpty,
               let file = AvatarCache.file(for: owner) else { return nil }
         let age = AvatarCache.age(of: owner)
 
-        // 期限内のものがあれば、それで済ませる
         if let age, age < maxAge { return file }
-        // 少し前に失敗した相手には、しばらく聞きに行かない。取れない理由
-        // (ネットワークが無い・組織が private) は次の描き直しでも変わらないことが多く、
-        // 一覧を開くたびに gh が起きることになる
+        // 連続した外部コマンド実行・ネットワークアクセスを防ぐため、失敗直後はクールダウン期間を設ける
         guard !isCoolingDown(owner) else { return age == nil ? nil : file }
 
-        // 資格情報が無いときは相手固有の失敗（10分クールダウン）にしない。
-        // 可否の再確認間隔 (60秒) で速やかに復帰できるようにする
+        // 資格情報がない場合は個別エラー扱いにせず、全体の再確認間隔 (60秒) に委ねる
         guard CheckOrganizationAvailability.check() else {
             return age == nil ? nil : file
         }
@@ -34,28 +25,23 @@ public enum FetchOrganizationAvatar {
         guard let url = GitHubClient.avatarURL(owner: owner, host: host),
               GitHubClient.downloadAvatar(from: url, to: file) else {
             noteFailure(owner)
-            // 取り直せなくても、古いものが残っていればそれを出す。
-            // 一度出ていたアイコンが消えるほうが、少し古い絵より落ち着かない
+            // 再取得に失敗しても古いキャッシュが存在する場合はそれを優先して返し、表示のチラつきを防ぐ
             return age == nil ? nil : file
         }
         clearFailure(owner)
         return file
     }
 
-    /// 手元の1枚を捨てる。**読めなかったときに呼んでもらう。**
-    ///
-    /// 置き場は「いつ書かれたか」しか見ていないので、中身が壊れていても
-    /// 期限が切れるまで同じものを返し続ける。読めたかどうかを知っているのは
-    /// 画像を開いた側だけなので、捨てる合図はそちらから受ける。
-    /// 失敗の記録も一緒に消して、次にすぐ取り直せるようにする
+    /// キャッシュされたアイコンファイルを破棄する（画像読み込み失敗時に呼び出し）。
+    /// 失敗記録も同時にクリアし、次回の即時再取得を可能にする。
     public static func discard(owner: String) {
         AvatarCache.discard(owner)
         clearFailure(owner)
     }
 
-    /// 取り直すまでの間隔。組織のアイコンが差し替わっても1週間で追いつく
+    /// キャッシュの有効期間（7日間）
     static let maxAge: TimeInterval = 7 * 24 * 60 * 60
-    /// 取れなかった相手に聞き直すまでの間隔
+    /// 取得失敗時の再試行クールダウン時間（10分）
     private static let retryInterval: TimeInterval = 10 * 60
 
     private static func isCoolingDown(_ owner: String) -> Bool {

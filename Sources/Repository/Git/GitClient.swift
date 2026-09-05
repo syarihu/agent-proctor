@@ -7,20 +7,12 @@ import Utility
 /// proctor は worktree を作らないし消さないので、ここにあるのは
 /// 「今どうなっているか」を聞く操作だけ。リポジトリを書き換える操作は持たない。
 public enum GitClient {
-    /// すべての git に付ける前置き。
+    /// git コマンド実行時の共通プレフィックス。
     ///
-    /// **聞くだけのつもりで書かせないために `GIT_OPTIONAL_LOCKS=0` を渡す。**
-    /// `git diff` は stat キャッシュを新しくするために `index.lock` を取って
-    /// インデックスを書き戻す。proctor が覗く worktree は、まさにエージェントが
-    /// 自分で git を叩いている最中の場所なので、見張っているだけのこちらが
-    /// 向こうのロックを取り合うことになる。書き戻しは見張りも起こすので、
-    /// 数えた自分がその報せでまた数え直す形にもなる。
-    ///
-    /// **同じ意味の `--no-optional-locks` ではなく環境変数にしてある。**
-    /// あのフラグは git 2.15 からで、知らない git は `unknown option` で
-    /// 落ちる —— 前置きなので**全部の呼び出しが失敗して一覧が真っ白になる**。
-    /// 知らない環境変数のほうは、どの版も黙って無視する。
-    /// 走らせるのが `/usr/bin/env` なので、ここに置くだけで渡せる
+    /// `GIT_OPTIONAL_LOCKS=0`:
+    /// `git diff` 等が stat キャッシュ更新のために `index.lock` を取得してファイル書き込みを行うのを防ぐ。
+    /// エージェントが実行中の git 操作とのロック競合や、ファイル監視の不要な再帰トリガーを防止するため。
+    /// 古い git でも安全に無視されるよう、フラグではなく環境変数として設定する。
     private static let prefix = ["GIT_OPTIONAL_LOCKS=0", "git", "-C"]
 
     /// (成功したか, stdout)。失敗と「結果が空」を区別したいときに使う。
@@ -35,19 +27,13 @@ public enum GitClient {
 
     // MARK: - 場所
 
-    /// その worktree のためだけに git が使う置き場
-    /// (`<リポジトリ>/.git/worktrees/<名前>`)。リポジトリ本体なら nil。
+    /// worktree 専用の管理ディレクトリ (`<リポジトリ>/.git/worktrees/<名前>`)。メイン worktree の場合は nil。
     ///
-    /// **コミットは作業ツリーの中では起きない。** 書かれるのはここと、
-    /// 共有の `objects`/`refs` のほうで、作業ツリーのファイルは1つも動かない。
-    /// 変化を見張る側 (`WorktreeWatcher`) は、作業ツリーとここの両方を見ないと
-    /// コミットに気づけず、空になったはずの差分を出し続けることになる。
+    /// コミット操作は作業ツリー自体ではなく、この管理ディレクトリおよび共有 refs/objects に書き込まれるため、
+    /// コミット検知には作業ツリーとこの管理ディレクトリの両方を監視する必要がある。
     ///
-    /// 連結 worktree の `.git` は `gitdir: <パス>` の1行だけのファイルで、
-    /// リポジトリ本体の `.git` はディレクトリ。この違いで見分ける。
-    /// **git は起こさない** —— 1行読めば分かる答えのために
-    /// `rev-parse --git-dir` を使うと、数え直しのたびに worktree の数だけ
-    /// プロセスが増える
+    /// 連結 worktree の `.git` は `gitdir: <パス>` 形式のファイルであるため、
+    /// プロセス起動コストを避けるため git コマンドを介さず直接ファイルを読み取って判定する。
     public static func adminDirectory(of worktree: String) -> String? {
         let dotGit = worktree + "/.git"
         var isDirectory: ObjCBool = false
@@ -56,12 +42,10 @@ public enum GitClient {
               let text = try? String(contentsOfFile: dotGit, encoding: .utf8),
               let line = text.split(separator: "\n").first,
               line.hasPrefix("gitdir:") else { return nil }
-        // 改行ごと落とす。`.whitespaces` は空白とタブだけなので、
-        // CRLF で書かれていると `\r` が残り、その先が見つからなくなる
+        // CRLF の \r を含めてトリムする
         let path = line.dropFirst("gitdir:".count)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if path.isEmpty { return nil }
-        // 相対で書かれている置き方もある。その worktree から見た位置になる
         return path.hasPrefix("/") ? path : worktree + "/" + path
     }
 
@@ -76,9 +60,8 @@ public enum GitClient {
             ? URL(fileURLWithPath: output)
             : URL(fileURLWithPath: start).appendingPathComponent(output)
         let resolved = common.resolvingSymlinksInPath()
-        // ベアリポジトリでは共通の .git そのものが本体。親を返すと
-        // repo.git を置いてあるだけのディレクトリを指してしまい、
-        // そこで git を叩いても何も出てこない (worktree の一覧が空になる)
+        // ベアリポジトリでは共通の .git 自体をリポジトリルートとする。
+        // 親ディレクトリを返すと作業ツリー外の配置先ディレクトリを指してしまい、worktree 一覧等が取得できなくなるため。
         let (asked, bare) = capture(resolved.path, "rev-parse", "--is-bare-repository")
         if asked, bare == "true" { return resolved.path }
         return resolved.deletingLastPathComponent().path
@@ -128,10 +111,8 @@ public enum GitClient {
         // NUL 区切りで読む。素の --porcelain は1属性1行で出すので、
         // パスに改行が入っていると1件が2件に割れて別物になる。
         //
-        // -z は git 2.36 から。**旗を知らない git は、失敗するとは限らない。**
-        // 黙って無視して改行区切りのまま返されると、NUL で切っても全文が
-        // 1つのままになり、一覧まるごとを1つのパスとして読んでしまう。
-        // 区切りが本当に入っているかで見分けて、入っていなければ改行で読み直す
+        // -z (NUL区切り) を優先して使用する。パスに改行を含む場合の誤分割を防ぐため。
+        // 未対応の git バージョンでは改行区切りの porcelain 出力にフォールバックする。
         let (ok, output) = capture(repo, "worktree", "list", "--porcelain", "-z")
         if ok, output.contains("\0") { return parse(output, separator: "\0") }
 
@@ -189,14 +170,8 @@ public enum GitClient {
         return nil
     }
 
-    /// base に取り込まれ済みのブランチ名。
-    ///
-    /// worktree ごとに聞かない。1件ずつ `merge-base` を回すと worktree の数だけ
-    /// git が起きるが、答えはリポジトリ単位で一度に取れる。
-    ///
-    /// **squash merge は見抜けない。** GitHub で squash された PR は歴史が繋がらないので、
-    /// ここには出てこない。ローカルだけで証明できるのはここまでで、
-    /// 取りこぼしは PR の状態を見に行ける側 (skill) が補う
+    /// base にマージ済みのブランチ一覧を取得する。
+    /// squash merge されたものは履歴が連続しないため検知できない（PR側のステータス判定で補完する）。
     public static func mergedBranches(_ repo: String, into base: String) -> Set<String> {
         let (ok, output) = capture(repo, "branch", "--merged", base,
                                    "--format=%(refname:short)")
@@ -230,67 +205,33 @@ public enum GitClient {
 
     // MARK: - 差分
 
-    /// まだ git に追加されていないファイルの数。
-    /// エージェントが作った新規ファイルはここに出る。
-    ///
-    /// **聞けなかったときは nil。** 「0件だった」と区別が付かないと、
-    /// 読めない worktree が「変更なし = 消してよい」に化ける
-    ///
-    /// **パスを組み立てずに改行だけ数える。** 呼ぶ側はどちらも件数しか見ないのに、
-    /// 一覧を作ると1行ごとに String を確保することになる。未追跡5万件で
-    /// 実測6.0ミリ秒、数えるだけなら0.71ミリ秒だった
+    /// 未追跡 (untracked) ファイルの件数を取得する。
+    /// 取得失敗時に 0 ではなく nil を返すことで、未追跡ファイルの存在する worktree が誤ってクリーンとみなされるのを防ぐ。
+    /// 配列の生成を避けて改行数をカウントすることで高速化する。
     public static func untrackedCount(_ worktree: String) -> Int? {
         let (ok, out) = capture(worktree, "ls-files", "--others", "--exclude-standard")
         guard ok else { return nil }
-        // 出力は前後の改行を落としてあるので、行数は「改行の数 + 1」。
-        // 空文字だけは0件 (そのまま数えると1件になってしまう)。
-        // Character ではなく UTF-8 のバイトで数えるのは、書記素の切り出しを
-        // させないため。改行のバイト (0x0A) は多バイト文字の途中には現れないので
-        // 取り違えようがなく、"\r\n" を1文字と見なす Character 側と違って
-        // 元の components(separatedBy: "\n") と数が合う
         return out.isEmpty ? 0 : out.utf8.reduce(1) { $1 == UInt8(ascii: "\n") ? $0 + 1 : $0 }
     }
 
-    /// 追加行数・削除行数、行では数えられなかったファイルの数、
-    /// そして変わったファイルの総数。point からの差分を数える。聞けなければ nil
+    /// 差分行数（追加・削除・バイナリファイル数・変更ファイル総数）を集計する。取得失敗時は nil。
     ///
-    /// **`files` を別に返すのは、行数もバイナリの印も出ない変更があるため。**
-    /// 純粋なリネームは `0<TAB>0<TAB>old => new`、モード変更 (chmod +x) も
-    /// `0<TAB>0<TAB>path` で出る。行数だけを見ると全部 0 なので「変更なし」と
-    /// 見分けが付かず、バイナリのときと同じ経路で `isRemovable` が
-    /// 「消してよい」と言い出す。**numstat が行を出した = そのファイルは変わった**
-    /// と読み替えて、行数が語れないぶんを総数で受け止める
-    ///
-    /// **`--shortstat` ではなく `--numstat` を使う。** shortstat はバイナリの変更を
-    /// `1 file changed, 0 insertions(+), 0 deletions(-)` と報告するので、
-    /// 数だけ見ると「変更なし」と見分けが付かない。そうなると `DiffCounts.isEmpty` が
-    /// true になり、**未コミットのバイナリ変更しか無い worktree が
-    /// `CollectedWorktree.isRemovable` で「消してよい候補」に出る**。
-    /// worktree を消すのは控えのない仕事を捨てることなので、ここは取り違えられない。
-    /// numstat ならバイナリは `-<TAB>-<TAB>パス` で出るので、その場で見分けられる。
-    /// 速さも変わらない (実測 numstat 18ミリ秒、shortstat 20ミリ秒)
+    /// リネームや権限変更など行数が出ない差分や、バイナリ差分を漏れなく検知するため
+    /// `--shortstat` ではなく `--numstat` を用いて変更ファイル総数を集計する。
     public static func changedLines(_ worktree: String, since point: String)
         -> (added: Int, removed: Int, binary: Int, files: Int)? {
         let (ok, out) = capture(worktree, "diff", "--numstat", point)
         guard ok else { return nil }
         var added = 0, removed = 0, binary = 0, files = 0
         for line in out.split(separator: "\n") {
-            // **読めなかった行も1件として数える。** タブが足りない行は numstat の
-            // 形になっていないが、git がその行を出した以上ファイルは変わっている。
-            // 読めないことを「変わっていない」に倒すと、まさにここで塞いだ
-            // 「変更が無いように見えて消される」を作り直すことになる。
-            // 数える位置を guard より前に置いてあるのはそのため
+            // パース失敗時も行が出力された以上変更ありとしてカウントする
             files += 1
-            // **タブは先頭2つしか見ない。** 3つ目から先はパスの一部で、
-            // パスにタブが入っていても (git は quotePath で括るが、
-            // core.quotePath を切っている置き方もある) 数え違えないようにする
             guard let firstTab = line.firstIndex(of: "\t") else { continue }
             let tail = line[line.index(after: firstTab)...]
             guard let secondTab = tail.firstIndex(of: "\t") else { continue }
             let insertions = line[..<firstTab]
             let deletions = tail[..<secondTab]
-            // 行数の代わりに `-` が置かれているのがバイナリ。
-            // 何行変わったかは言えないので、代わりに何個変わったかを数える
+            // バイナリファイルは行数の代わりに "-" が出力される
             if insertions == "-" || deletions == "-" { binary += 1; continue }
             added += Int(insertions) ?? 0
             removed += Int(deletions) ?? 0

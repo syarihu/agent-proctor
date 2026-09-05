@@ -2,19 +2,12 @@ import Foundation
 import Model
 import RepositoryLedger
 
-/// 一覧から1件外す。
-///
-/// 掃除はプロセスの生死で自動的に回る (ReapClosedSessions・RecordHookEvent) ので、
-/// これは人が「もう見なくていい」と決めたときの入り口になる。
-///
-/// **消すのは記録だけで、worktree には触らない。** worktree を作らないのと同じ理由で、
-/// 片付けるのも proctor を呼ぶ側の仕事にしてある。
-///
-/// 生きているセッションを外しても止めはしない。次にフックが届いた時点で
-/// 知らないセッションとして登録し直されるので、消えたままにはならない。
+/// 台帳から指定されたセッション記録を削除する。
+/// worktree ディレクトリ自体の削除は行わず、台帳のレコードのみを削除する。
+/// 稼働中のセッションを削除した場合でも、次回フック受信時に新規セッションとして再登録される。
 public enum ForgetTask {
-    /// - Parameter id: 台帳のID。前方一致でも引ける (LedgerStore.find と同じ)
-    /// - Returns: 外した記録。呼ぶ側が「何を消したか」を伝えられるようにする
+    /// - Parameter id: 台帳のID（前方一致検索対応）
+    /// - Returns: 削除されたタスクレコード
     @discardableResult
     public static func forget(id: String) throws -> TaskRecord {
         let task = try LedgerStore.find(id: id)

@@ -2,74 +2,50 @@ import AppKit
 import Combine
 import UseCaseTask
 
-/// Organization のアイコンを預かる。
+/// Organization アイコンの取得・メモリキャッシュを担当するストア。
 ///
-/// **View から直接ファイルを読ませないため**の層。SwiftUI は同じ行を何度でも
-/// 描き直すので、描画のたびにディスクを叩くことになるし、まだ落としていない
-/// 相手には gh とネットワークを待たせることになる。ここで取りに行き、
-/// 取れたら `@Published` で描き直させる。
-///
-/// アイコンをどこに置き、いつ取り直すかは `FetchOrganizationAvatar` が
-/// 持っている。ここが持つのは「重ねて取りに行かないこと」と
-/// 「取れるまで何度か試すこと」の2つ。
+/// View からの直接のファイルアクセスや重複フェッチを防ぎ、
+/// バックグラウンドでの非同期取得と取得完了時の `@Published` による再描画制御を提供する。
+/// キャッシュの永続化および更新間隔は FetchOrganizationAvatar に委譲する。
 @MainActor
 public final class OrgAvatarStore: ObservableObject {
     @Published public private(set) var images: [String: NSImage] = [:]
 
     public init() {}
 
-    /// いま取りに行っている最中の相手。**走らせないためだけの印で、結果は覚えない。**
-    ///
-    /// SwiftUI は同じ見出しを何度でも描き直すので、これが無いと取得が重なる。
-    /// 逆に**失敗したことをここに残してはいけない** —— 残すと二度と
-    /// `FetchOrganizationAvatar.fetch` を呼ばなくなる
+    /// 現在取得処理を実行中のオーナー名集合（重複フェッチの抑止用）
     private var loading: Set<String> = []
 
-    /// 取れなかったときに試し直す回数 (最初の1回を含む)。
-    ///
-    /// **打ち止めを設けるのは、取れない相手が居るから。** 消えた組織や
-    /// 見せてもらえない組織は何度聞いても取れないので、際限なく試すと
-    /// 常駐している間ずっと gh を起こし続けることになる。
-    /// 3回・約22分あれば、起動直後にネットワークが不安定だった程度は拾える。
-    /// それより長く不調が続いたときは、アプリを立ち上げ直すまでモノグラムのまま
+    /// 取得失敗時の最大試行回数（初回含む。存在しない組織への無限リクエストを防止）
     private static let maxAttempts = 3
-    /// 試し直すまでの間。**Kit 側のクールダウン (10分) より長く取る。**
-    /// 短いと、向こうが「まだ聞かない」と答えるだけの空振りになる
+    /// リトライ間隔（FetchOrganizationAvatar のキャッシュクールダウン10分を超えるよう設定）
     private static let retryDelay: Duration = .seconds(11 * 60)
 
     /// - Parameters:
-    ///   - owner: GitHub の login 名
-    ///   - host: 持ち主が居るホスト。GitHub 以外は Kit 側で弾かれる
+    ///   - owner: GitHub オーナー名（login）
+    ///   - host: ホスト名（GitHub 以外は FetchOrganizationAvatar 側で除外）
     func load(owner: String, host: String) async {
         guard images[owner] == nil, !loading.contains(owner) else { return }
-        // 試し直しのあいだも印を立てておく。外すと、描き直しのたびに
-        // もう1本ずつ待ち行列が生まれる
         loading.insert(owner)
         defer { loading.remove(owner) }
 
         for attempt in 1...Self.maxAttempts {
             if await attemptLoad(owner: owner, host: host) { return }
-            // 最後の1回のあとは待たない。誰も待っていない眠りを残さない
             guard attempt < Self.maxAttempts else { return }
-            // **見出しが一覧から消えたらそこで諦める。** SwiftUI が `.task` を
-            // 畳んでくれるので、居なくなった組織のために眠り続けることはない
+            // ビューの破棄（.task のキャンセル）を検知して待機を中断
             do { try await Task.sleep(for: Self.retryDelay) } catch { return }
         }
     }
 
-    /// - Returns: 取れたら true
+    /// - Returns: 画像の取得・デコードに成功した場合は true
     private func attemptLoad(owner: String, host: String) async -> Bool {
-        // gh とネットワークを待つのでメインスレッドから外す。
-        // 返してもらうのはファイルの場所だけにして、画像そのものはここで開く
-        // (NSImage をスレッドをまたいで受け渡さない)
+        // I/O およびネットワーク処理をメインスレッド外で実行。NSImage のスレッド間受け渡しを避けるためパスのみ取得
         let file = await Task.detached(priority: .utility) {
             FetchOrganizationAvatar.fetch(owner: owner, host: host)
         }.value
         guard let file else { return false }
         guard let image = NSImage(contentsOf: file) else {
-            // 置き場は「いつ書かれたか」しか見ていないので、中身が壊れていても
-            // 期限 (7日) が切れるまで同じものを返してくる。読めたかどうかを
-            // 知っているのはここだけなので、捨てる合図もここから出す
+            // 画像ファイルが破損している場合はキャッシュを破棄して次回再取得を可能にする
             FetchOrganizationAvatar.discard(owner: owner)
             return false
         }

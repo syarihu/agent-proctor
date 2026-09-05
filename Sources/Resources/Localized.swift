@@ -1,27 +1,19 @@
 import Foundation
 
-/// 表に出る言葉の取り出し口。訳文は Resources/{en,ja}.lproj/Localizable.strings。
+/// ローカライズ文字列の取得窓口。リソース定義は Resources/{en,ja}.lproj/Localizable.strings。
 ///
-/// 3層 (Model / Repository / UseCase) のどれにも入れていないのは、
-/// どの層からも使うため。中身は静的な表の読み出しだけで、判断も台帳への出入りもしない。
-///
-/// CLI とアプリで別々に持たないのは、同じ言葉を2か所で訳すと必ずずれるから。
-/// 表示の**色**は View 側 (Terminal / Palette) が持つという分担は変わらない。
-/// ここが持つのは「何と呼ぶか」までで、TaskStatus と同じ線引きにしている。
+/// 各レイヤーから横断的に利用されるため基盤モジュールに配置する。
+/// CLI とアプリで文言の一貫性を保つため同一リソースを参照する。
 public enum Localized {
-    /// SwiftPM が作るリソースバンドルの名前 (パッケージ名_ターゲット名)
+    /// SwiftPM が生成するリソースバンドル名
     private static let bundleNames = [
         "proctor_Resources.bundle",
     ]
 
-    /// 訳文の入った .lproj を1つだけ選んで持っておく。
+    /// 適切な言語リソース (.lproj) バンドルの解決。
     ///
-    /// **言語を自分で選んでいる理由。**
-    /// `NSLocalizedString` に任せると、.app ではない実行ファイル (= CLI) では
-    /// 主バンドルに言語が無いために `preferredLocalizations` が常に ["en"] を返し、
-    /// システムが日本語でも英語が出てしまう。
-    /// `Locale.preferredLanguages` は素直に ja-JP を返すので、そこから選び直す。
-    /// システム設定の「アプリごとの言語」もこちらに乗るので、切り替えはそのまま効く。
+    /// CLI 単体バイナリでは主バンドルに言語定義が存在せず `NSLocalizedString` の自動解決が常に英語になるため、
+    /// `Locale.preferredLanguages` を基に対象言語の .lproj バンドルを明示的に探索する。
     private static let table: Bundle? = {
         guard let source = source else { return nil }
         let best = Bundle.preferredLocalizations(
@@ -31,7 +23,7 @@ public enum Localized {
         return Bundle(path: path) ?? source
     }()
 
-    /// .lproj を抱えている入れ物を探す。置かれ方が3通りあるので順に当たる。
+    /// .lproj を保持するリソースバンドルを探索する。配置パターンが3通りあるため順に検索する。
     ///
     /// 1. `.app` から起動したアプリ本体 … Contents/Resources に .lproj がある。
     ///    ここに置くのは、そうしないと macOS がこのアプリを「訳のあるアプリ」と見なさず、
@@ -42,10 +34,9 @@ public enum Localized {
     /// 3. ビルドディレクトリから直に走らせたとき … SwiftPM が作った .bundle が隣にいる
     private static let source: Bundle? = {
         var candidates: [Bundle?] = [.main]
-        // 実行ファイルが symlink 越し (~/bin/proctor) でも辿れるように実体も見る。
-        // argv[0] ではなく executablePath なのは、PATH 解決で名前だけ渡して
-        // spawn されると argv[0] が "proctor" になり、自分の居場所を辿れないため
-        // (Paths.appBundle も同じ理由で同じものを見ている)
+        // 実行ファイルがシンボリックリンク経由（~/bin/proctor など）でも解決できるよう実体パスを参照する。
+        // argv[0] ではなく executablePath を使用するのは、PATH 解決等により
+        // argv[0] が単なるコマンド名（"proctor"）となった場合でも自身の実行ファイルパスを特定できるようにするため
         let executable = URL(fileURLWithPath:
             Bundle.main.executablePath ?? CommandLine.arguments[0])
             .resolvingSymlinksInPath().deletingLastPathComponent()

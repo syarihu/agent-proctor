@@ -1,29 +1,20 @@
 import Foundation
 
-/// 台帳に載る1件。動いているエージェントのセッション1つに対応する。
-///
-/// 記録を作るのは hooks だけで、proctor が worktree を作ることはない
-/// (worktree の用意と後片付けは、これを呼ぶ側の仕事)。
-/// だから「実体を持つタスク」と「セッション」を区別する必要がなく、
-/// ここにあるのは常に生きているセッションになる。
-///
-/// 省略可能な項目は書き出すときに落とす (Swift の合成コードは Optional を
-/// encodeIfPresent で扱う)。台帳を読む側はどれも `null` と欠落を区別していないので、
-/// 無い項目はキーごと出さないほうが素直に読める。
+/// 台帳に記録されるエージェントセッション情報。
+/// オプション項目は JSON 出力時にキーを省略し、未設定値とキー欠落を同一視して扱う。
 public struct TaskRecord: Codable, Equatable {
     public var id: String
     public var repo: String
     public var branch: String
-    /// セッションが動いている場所。worktree のこともリポジトリ本体のこともある
+    /// セッションの作業ディレクトリ（worktree またはリポジトリルート）
     public var worktree: String
     public var sessionId: String?
     public var itermSession: String?
-    /// セッションを動かしているエージェント本体のプロセスID。
-    /// 端末に依存せず生死を確かめられる唯一の手掛かりで、これがあれば
-    /// iTerm2 以外で動かしているセッションも閉じた時点で片付けられる
+    /// セッションを実行しているエージェントプロセスの PID。
+    /// 端末に依存せず生存確認を行うために使用し、iTerm2 以外のセッション終了時にもクリーンアップできるようにする。
     public var pid: Int?
-    /// pid の起動時刻 (epoch 秒)。macOS は pid を使い回すので、
-    /// これが違えば「同じ番号の別のプロセス」として死んだ扱いにする
+    /// プロセスの起動時刻（epoch 秒）。
+    /// macOS の PID 再利用による別プロセスの誤判定を防ぎ、起動時刻が不一致の場合はプロセス終了として扱う。
     public var pidStartedAt: Int?
     public var status: String
     public var createdAt: Int
@@ -37,72 +28,28 @@ public struct TaskRecord: Codable, Equatable {
     /// セッションを動かしているエージェント ("claude" / "agy" / "codex")。
     /// タブを開き直すとき (attach) にどの CLI を呼ぶかの分岐に使う
     public var agent: String?
-    /// いま触っているツール ("Edit: TaskStore.swift" など)。
-    /// ツールを叩くたびに変わるので、ここが動いても updatedAt は動かさない
-    /// (動かすと「経過」がツールのたびに 0 に戻り、並び順も落ち着かなくなる)
+    /// 実行中のツール表示名 ("Edit: TaskStore.swift" など)。
+    /// ツール実行のたびに変化するため、経過時間のリセットや並び順の不安定化を防ぐ目的でこの更新では updatedAt を進めない。
     public var activity: String?
     /// 何の承認を待っているか ("Bash: mkdir -p /tmp/x" など)。
-    ///
-    /// **activity と別に持つ。** あちらは「もうやったこと」、こちらは
-    /// 「まだやっていないこと」で、消えるきっかけも違う (承認して動き出したら
-    /// こちらだけが消える)。混ぜると、承認を待っている最中に直前の
-    /// ツールが出て、それの承認を待っているように読めてしまう
+    /// 実行中のツール (activity) とはライフサイクルが異なり、承認時にクリアされる。
     public var request: String?
-    /// 終わったターンが最後に言ったこと (hooks の `last_assistant_message`)。
-    ///
-    /// **activity / request と並べて3つ目として持つ。** activity は「いま触っている
-    /// ツール」、request は「まだ承認していないもの」、こちらは**もう終わった話**で、
-    /// 消えるきっかけも違う (また動き出したときに古くなるのはこれだけ)。
-    ///
-    /// 持つ理由は、要確認の一覧で終わった行に出す2行目が無いこと。印と名前だけでは
-    /// 「終わった」ことは分かっても「何が終わったか」が分からず、どのみちタブを
-    /// 開くことになる。承認待ちの行が request を出しているのと同じ役目を、
-    /// 終わった行で果たす
+    /// 終了したターンが最後に返したメッセージ (hooks の `last_assistant_message`)。
+    /// activity や request とは異なり、完了時に何が行われたかを表示するために保持する。
     public var summary: String?
-    /// 終わったあと、**もう知らせなくていいと決まった時刻**。まだなら nil。
-    /// また動き出したら nil に戻す (次に終わったときは別の結果なので、改めて見てほしい)。
-    ///
-    /// **「見た時刻」ではない。** 打つのはタブを開いたとき (`MarkSessionSeen`) と、
-    /// 人が ✓ を押したとき (`ClearAttention`) の2つで、前者を打つかどうかは
-    /// 設定で変わる (`MarkSessionSeen.Policy`)。開かずに片付けることもできるので、
-    /// 見たかどうかとは一致しない
+    /// 完了後、通知等の注意喚起を解除した時刻。
+    /// セッションを閲覧した事実 (openedAt) とは別に、通知を再送不要とした判定を管理する。
     public var seenAt: Int?
-    /// 終わったあと、**そのタブを開いて中を見た時刻**。まだなら nil。
-    /// seenAt と同じく、また動き出したら nil に戻す。
-    ///
-    /// **seenAt と別に持つ。** あちらは「もう知らせなくていい」という判断で、
-    /// こちらは「見た」という事実。設定を「完了ボタンを押したとき」にすると
-    /// 2つは離れ、**見たけれど返事はまだ**という状態ができる。一覧の行は
-    /// これを見て静かになり (開いたものに ✅ を出し続けても意味が無い)、
-    /// 要確認と通知は seenAt を見て残る (返事はまだ済んでいない)
+    /// 完了後、そのタブを閲覧した時刻。
+    /// 一覧表示では閲覧済みとして表示しつつ、要確認や通知は未クリアとして残すために seenAt と分離している。
     public var openedAt: Int?
-    /// 終わった子の墓標 (agent_id → 終わった時刻)。
-    ///
-    /// hooks は非同期に飛ぶので、`SubagentStop` のあとにその子の `PostToolUse` が
-    /// 遅れて届くことがある。素直に受けると**消したはずの子が生え直し**、
-    /// その行に対する SubagentStop はもう来ないので、
-    /// セッションが永久に実行中のまま一覧に居座る。遅れて来たものを弾くために持つ
+    /// 終了済みサブエージェントの記録 (agent_id → 終了時刻)。
+    /// 非同期イベントの遅延到着によって、終了したサブエージェントが再登録されるのを防ぐ。
     public var finishedSubagents: [String: Int]?
-    /// 子を待つあいだ保留している落ち着き先 (done / failed、または idle)。
-    ///
-    /// 親のターンは子を待たずに終わるので、まだ子が走っているうちに Stop が届く。
-    /// そのまま完了にはできないが、捨ててしまうと**最後の子が帰ってきたときに
-    /// 終わりを告げる者がいなくなる** (親の Stop と子の SubagentStop は
-    /// 非同期に飛ぶので、Stop のほうが先に着くことがある)。ここに預けておく。
-    ///
-    /// idle が入るのは、確認待ちを降ろしたのに子が走っていたとき
-    /// (`ClearAttention.standDown`)。あちらは Stop が来ない相手なので、
-    /// 最後の子が帰った時点で落ち着かせるにはここに預けるしかない
+    /// 子エージェント待機中に保留している親セッションの完了状態 (done / failed / idle)。
+    /// 親のターン完了時にサブエージェントが動作中の場合、すべての子が完了するまで終了処理を遅延させるために保持する。
     public var pendingStatus: String?
-    /// 「この作業はこれ」と決めて付けた名前。
-    ///
-    /// **書き手は2つある。** 人が端末のタブに付けたタイトル (`tab_title`) と、
-    /// セッション自身が付けた名前 (`proctor title` = `NameSession.name`)。
-    /// 同じ欄を共有していて、**後から来たほうが勝つ**。既定のフックは `tab_title` を
-    /// 送らないので今は衝突しないが、毎イベント送るフックを書くと、セッションが
-    /// 付けた名前はその次のイベントで静かに上書きされる。
-    ///
-    /// エージェントが自分で付ける `name` より、こちらを先に出す
+    /// 表示用のセッションタイトル。タブのタイトルや明示的な指定名。
     public var title: String?
 
     // ここから下は statusline だけが知っている情報。
@@ -170,31 +117,23 @@ public struct TaskRecord: Codable, Equatable {
         TaskStatus.display(status: status, seenAt: seenAt, openedAt: openedAt)
     }
 
-    /// 要確認と通知に出す状態。**開いただけでは畳まない** (`TaskStatus.attention`)
+    /// 要確認と通知に出す状態。閲覧しただけでは畳まない (`TaskStatus.attention`)。
     public var attentionStatus: String {
         TaskStatus.attention(status: status, seenAt: seenAt)
     }
 
-    /// 表示に使う見出し。人が付けた名前を先に、無ければセッション名、最後に ID。
-    /// 数えた一覧 (CollectedTask) と同じ順で選ぶので、メニューと一覧で名前がずれない
+    /// 表示に使う見出し。人が付けた名前を優先し、無ければセッション名、最後に ID。
     public var displayName: String { title ?? name ?? id }
 }
 
-/// 差分の数。新規ファイルは git diff に出ないので別に数える。
+/// 差分の集計。新規ファイルは git diff に含まれないため別途カウントする。
 public struct DiffCounts: Codable, Equatable {
     public var added: Int
     public var removed: Int
     public var untracked: Int
-    /// 行では数えられなかったファイルの数 (バイナリ)。
-    ///
-    /// **行数と別に持つ。** バイナリの差分は「何行変わったか」を言えないので、
-    /// 行数に混ぜると 0 になり、変更があったこと自体が消える
+    /// 行数でカウントできないバイナリファイルの変更数。
     public var binary: Int
-    /// 変わったファイルの総数。**画面には出さない。「空か」を決めるためだけに持つ。**
-    ///
-    /// 行数もバイナリの印も出ない変更があるため (純粋なリネーム・モード変更は
-    /// numstat で `0 0 パス`)。そこまで数字で語ろうとすると記号が増えるだけなので、
-    /// 「変わったかどうか」だけをここで受け止める
+    /// 変更があったファイルの総数。変更の有無判定に使用する。
     public var changedFiles: Int
 
     public init(added: Int = 0, removed: Int = 0, untracked: Int = 0,
@@ -206,11 +145,8 @@ public struct DiffCounts: Codable, Equatable {
         self.changedFiles = changedFiles
     }
 
-    /// **見るのは総数と未追跡の2つだけ。** added・removed・binary は
-    /// 「numstat が行を出したファイル」から数えたものなので、どれかが 0 でなければ
-    /// `changedFiles` も必ず 0 でない。逆は成り立たない (リネームやモード変更は
-    /// 総数にしか出ない) ので、条件を重ねるのではなく総数のほうを見る。
-    /// これを見落とすと、画像や成果物やリネームしか無い worktree が
-    /// 「変更なし」になり、`CollectedWorktree.isRemovable` で片付けの候補に並ぶ
+    /// 変更が存在しないかどうか。
+    /// リネームやモード変更等の行数が出ない差分も changedFiles に反映されるため、
+    /// changedFiles と untracked の2値で判定する。
     public var isEmpty: Bool { changedFiles == 0 && untracked == 0 }
 }

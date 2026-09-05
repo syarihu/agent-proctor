@@ -1,12 +1,10 @@
 import Foundation
 
-/// 一覧のまとめ方。
-///
-/// 表示の都合なので DesignSystem に置く。
-/// CLI の `proctor ls` は一覧をまとめずに並べるので、この語彙が要るのはサイドバーと設定画面になる。
+/// タスク一覧のグループ化方式。
+/// CLI の `proctor ls` はグループ化を行わないため、サイドバーおよび設定画面の UI 表現として DesignSystem で管理する。
 public enum GroupingMode: String, CaseIterable, Sendable {
-    /// リポジトリごと
+    /// リポジトリ単位
     case repository
-    /// Organization ごと。その下にリポジトリがぶら下がる
+    /// Organization 単位（配下にリポジトリをネスト表示）
     case organization
 }

@@ -9,64 +9,42 @@ import UseCaseNotice
 import UseCaseSession
 import ItermBridge
 
-/// 台帳を見張って、表示に使うものを配る。
+/// 台帳の変更を監視し、UI 表示用のデータを配信する状態管理クラス。
 ///
-/// **View から Repository を直接触らせないための層**でもある。台帳の読み方が
-/// 変わっても、直すのはここだけで済むようにしておく。
+/// View から Repository への直接依存を防ぐファサードの役割を持つ。
 ///
-/// 見張りを2段に分けているのは、値段が違うから。
+/// 負荷の異なる2段階の監視を行う:
+/// - 台帳ファイルの更新時刻監視: stat システムコールのみで軽量。状態変化を検知して短周期で実行する。
+/// - 一覧および差分の再集計: worktree ごとに git プロセスを起動するため負荷が高い。表示中のみ適応型の間隔で実行する。
 ///
-///   - 台帳の更新時刻を見るだけ … stat 1回。状態の変化はここに必ず現れるので短く回す
-///   - 一覧を数え直す           … worktree ごとに git を起動する。高いので絞る
-///
-/// さらに、コードを編集しても台帳は変わらない。差分の数字だけは台帳の変化を
-/// 待っていても古いままなので、サイドバーが見えている間は定期的に数え直す。
-///
-/// その周期は固定ではなく、**数え直しにかかった時間から決める** (`PaceRecounts`)。
+/// 再集計の間隔は固定ではなく、直前の処理時間に基づいて動的に調整する（PaceRecounts）。
 @MainActor
 public final class TaskStore: ObservableObject {
-    /// サイドバーが出ている間だけ更新される、git まで数えた一覧
+    /// サイドバー表示中のみ更新される、git 差分を含めたタスク一覧
     @Published public private(set) var tasks: [CollectedTask] = []
-    /// 台帳そのもの。git を呼ばないので常に持っておける。
-    /// メニューの一覧や「開く」の照合はこちらを使う
+    /// 台帳データそのもの（git を呼ばないため常に最新を保持可能）
     @Published public private(set) var records: [TaskRecord] = []
-    /// メニューバーの要約
+    /// メニューバー表示用の状態集計
     @Published public private(set) var summary: [(status: String, count: Int)] = []
-    /// エージェントごとのレートリミットキャッシュ。セッションが無くても残る
+    /// エージェント別のレートリミットキャッシュ
     @Published public private(set) var agentRateLimits: [String: AgentRateLimits] = [:]
-    /// リポジトリごとの worktree。セッションが終わっても残るものを見せるために持つ。
-    /// 数えるのに git を起こすので、更新は自前の長い周期 (worktreeInterval) だけ
+    /// リポジトリごとの worktree 一覧（git プロセスを起動するため長周期で更新）
     @Published public private(set) var worktrees: [CollectedRepoWorktrees] = []
-    /// セッションも worktree も無くなっても、一覧に残しておくリポジトリ。
-    ///
-    /// タブを閉じた瞬間に見出しごと消えると、さっきまで居た場所へ戻る道が
-    /// そこで切れる。残ったものは動きのあるものの下に落ちるだけなので、
-    /// 今どうなっているかの見通しは変わらない。
-    /// 誰を残すかを決めるのは `CollectRecentRepos`
+    /// セッション終了後も一覧に保持するリポジトリ（直近アクセス履歴）
     @Published public private(set) var keptRepos: Set<String> = []
-    /// いま見ている iTerm2 のタブ。台帳には無い情報なので外から入れてもらう
-    /// (聞きに行くのは FocusWatcher。ここは表示のために預かるだけ)
+    /// 現在フォーカスされている iTerm2 セッション
     @Published public private(set) var focusedSession: String?
-    /// いま見ているタブがいるリポジトリ本体。エージェントが動いていない場所も含む。
-    ///
-    /// 台帳には書かない。台帳を書くのはフックの役目で、覗いただけの
-    /// リポジトリを覚えると、覚えておける件数の枠をそれで食ってしまう
+    /// 現在アクティブなタブが所属するリポジトリ本体のパス
     @Published public private(set) var currentRepo: String?
-    /// セッションの guid ごとの iTerm2 タブ番号 (⌘N の N)。
-    ///
-    /// **台帳には書かない。** 番号はタブを開く・閉じる・並べ替えるたびに動くので、
-    /// 台帳に持たせるとその都度書き込みが走り、一覧の組み直しを呼び続ける。
-    /// 端末に聞けば分かるものなので、預かるだけにする
-    /// (聞きに行くのは FocusWatcher)
+    /// セッション guid ごとの iTerm2 タブ番号（⌘N の N）。
+    /// タブの開閉や並べ替えのたびに頻繁に変動するため、台帳には永続化せずオンメモリで保持する。
     @Published public private(set) var tabNumbers: [String: Int] = [:]
 
-    /// 台帳の更新時刻を見に行く間隔。stat を叩くだけなので軽い
+    /// 台帳更新時刻のポーリング間隔
     private let pollInterval: TimeInterval = 0.5
-    /// 台帳が変わらなくても数え直す間隔。かかった時間から決まる (`PaceRecounts`)
+    /// セッション差分再集計の間隔（処理時間から動的に算出）
     private var sessionPace = PaceRecounts.sessions
-    /// worktree を数え直す間隔。一覧の数え直しよりさらに長い。
-    /// worktree は作られたり消えたりが分単位の出来事なのに、数えるのは1件につき
-    /// git を数回。セッションの差分と同じ速さで回すと、居るだけで git が鳴り続ける
+    /// worktree 再集計の間隔
     private var worktreePace = PaceRecounts.worktrees
 
     private var recountInterval: TimeInterval { sessionPace.interval }
@@ -76,20 +54,15 @@ public final class TaskStore: ObservableObject {
     private var lastModified: Date?
     private var lastRecount = Date.distantPast
     private var lastWorktreeCount = Date.distantPast
-    /// ファイルが変わった場所を教えてくれる見張り。
-    /// **数え直すかどうかは決めない** —— それは `worthRecounting` と `CountChanges` の役目
+    /// ファイル変更監視
     private let watcher = WorktreeWatcher()
-    /// 最後に覚えた差分を全部捨てた時刻
+    /// 最後に差分キャッシュを全破棄した時刻
     private var lastForgetAll = Date.distantPast
-    /// 覚えた差分を全部捨てる間隔。**見張りの取りこぼしに対する保険**
-    /// (`WorktreeWatcher` は黙っていても「変わっていない」を意味しない)。
-    /// 報せだけを頼りにすると、落ちた1回のせいで数字が古いまま居座るので、
-    /// 5分に1回は全部数え直して帳尻を合わせる
+    /// 差分キャッシュの定期全破棄間隔（FSEvents の通知取りこぼしに対するフォールバック）
     private let forgetAllInterval: TimeInterval = 300
-    /// 最後に時刻由来の値だけを進めた時刻
+    /// 最後に経過時間のみを更新した時刻
     private var lastElapsed = Date.distantPast
-    /// 現在地を調べた結果。「git の外だった」も覚えるので Optional では持たない
-    /// (Swift の辞書は nil の代入が削除になるため、覚えたつもりで毎回引き直しになる)
+    /// ディレクトリ調査結果のキャッシュ表現
     private enum DirectoryOrigin {
         case repository(String), outside
         var repository: String? {
@@ -97,53 +70,34 @@ public final class TaskStore: ObservableObject {
             return nil
         }
     }
-    /// 現在地 → 調べた結果と、調べた時刻。同じ場所を二度引かないための覚え書き。
-    /// 際限なく増えないよう、古いものから捨てる
+    /// ディレクトリパスごとの git リポジトリ判定キャッシュ
     private var repoOfDirectory: [String: (origin: DirectoryOrigin, at: Date)] = [:]
-    /// 「git の外だった」を信じ続ける時間。
-    ///
-    /// git が起動できなかったのか、本当に git の外なのかは見分けられない
-    /// (どちらも空で返ってくる)。取り違えたまま覚え込むと、**そのリポジトリが
-    /// 一覧から消えたまま戻らない**ので、外だという答えにだけ期限を付けて聞き直す。
-    /// リポジトリだと分かった答えのほうは変わらないので覚えたままでよい
+    /// 「git リポジトリ外」判定のキャッシュ有効期間（一時的なコマンド失敗による誤判定を避けるためTTLを設ける）
     private let outsideAnswerTTL: TimeInterval = 60
     private var directoryOrder: [String] = []
     private let directoryCacheLimit = 200
-    /// いちばん新しい問い合わせ。**答えが返る順は問い合わせた順とは限らない**ので、
-    /// これと違う答えは捨てる (A→B と移ったあとに A の答えが届いて巻き戻るのを防ぐ)
+    /// 最新の問い合わせディレクトリパス（非同期レスポンスの順序逆転対策）
     private var pendingDirectory: String?
-    /// 最近いたリポジトリ (新しい順)。台帳が覚えていない場所を数えるために持つ
+    /// 最近アクセスしたリポジトリ一覧（最大10件）
     private var visited: [String] = []
-    /// いまセッションが乗っている場所。worktree の一覧はここだけを見て変わる。
-    /// ツールが動くたびに台帳は変わるが、この顔ぶれが同じなら数え直す意味はない
+    /// 現在セッションが存在するディレクトリ群
     private var sessionPlaces: Set<String> = []
-    /// 最後に worktree を数えたときの顔ぶれ
+    /// 前回 worktree を集計した際のセッションディレクトリ群
     private var countedPlaces: Set<String> = []
-    /// いま数え直しが走っているか。重ねて起こさないための札
+    /// 再集計処理が実行中かどうかのフラグ（多重実行防止）
     private var recounting = false
-    /// 数え直しを求めた理由。
-    ///
-    /// **周期を伸ばしても、ここを塞がないと git は鳴り続ける。** 走っている
-    /// 最中に台帳が動くたびに札が立ち、終わった瞬間にもう一度走るので、
-    /// 200秒の周期にしても実際には数え直しが数珠つなぎになる
+    /// 再集計の要求種別
     private enum RecountReason {
-        /// 人が押した、あるいは顔ぶれ・現在地が変わった。**待たせない**
+        /// ユーザー操作や構成変更による即時再集計
         case urgent
-        /// 周期が来ただけ。走っている最中に重なったなら捨ててよい
-        /// (lastRecount は数え直しの**開始**時刻なので、次はどのみち
-        ///  完了から「間隔 − 所要時間」後に tick() が拾う)
+        /// 定期ポーリングによる再集計
         case periodic
     }
-    /// 走っている最中に来た数え直しの求め。**強いほうを残す**
+    /// 実行中に蓄積された次回の再集計要求（urgent を優先保持）
     private var pendingRecount: RecountReason?
-    /// サイドバーが見えていない間は git を起動しない。
-    /// 誰も見ていない一覧のためにノートの電池を使いたくない
+    /// サイドバーが表示されているかどうか（非表示時は git 処理を停止して負荷を抑制）
     private var collecting = false
-    /// 差分を数えてよいか。**覚え込まずに毎回聞く。**
-    ///
-    /// 設定は途中で変わるので、起動時の答えを持ち回ると次の起動まで効かない
-    /// (FocusWatcher の wantsTabNumbers や seenPolicy と同じ形)。
-    /// 既定を true にしてあるので、繋ぎ忘れても今までどおり数える
+    /// 変更差分を集計するかどうかの判定プロバイダ
     public var wantsDiff: () -> Bool = { true }
 
     public init() {
@@ -183,7 +137,7 @@ public final class TaskStore: ObservableObject {
         focusedSession = session
     }
 
-    /// タブ番号の顔ぶれが変わったときに呼ぶ。
+    /// タブ番号の対応関係が変化した際に呼び出す
     public func setTabNumbers(_ numbers: [String: Int]) {
         guard tabNumbers != numbers else { return }
         tabNumbers = numbers
@@ -206,8 +160,7 @@ public final class TaskStore: ObservableObject {
             let repo = top.isEmpty ? nil : (GitClient.mainWorktree(from: top) ?? top)
             await MainActor.run {
                 self.remember(path, as: repo.map(DirectoryOrigin.repository) ?? .outside)
-                // **遅れて届いた答えは捨てる。** 聞いたときの場所から既に移っていれば、
-                // それを当てると別のリポジトリの worktree が並ぶ
+                // 非同期取得中に現在地が変わっていた場合は古い取得結果を破棄する
                 guard self.pendingDirectory == path else { return }
                 self.apply(repo: repo)
             }
@@ -225,89 +178,57 @@ public final class TaskStore: ObservableObject {
     private func apply(repo: String?) {
         guard currentRepo != repo else { return }
         currentRepo = repo
-        // 立ち寄った先を少しだけ覚えておく。台帳が覚えているのは
-        // 「エージェントを動かしたことのあるリポジトリ」だけなので、そうでない場所は
-        // 現在地から外れた瞬間に数える対象から消える。タブを行き来するたびに
-        // 見出しが消えたり出たりするので、直近の分は持ち回る
-        // (並べるかどうかは、どのみちタブが開いているかで絞られる)
+        // 直近訪れたリポジトリを保持し、タブ非フォーカス時の即時非表示を防ぐ
         if let repo {
             visited.removeAll { $0 == repo }
             visited.insert(repo, at: 0)
             if visited.count > 10 { visited.removeLast(visited.count - 10) }
         }
-        // 場所が変わった瞬間に見たいので、次の周期を待たずに数え直す。
-        // 覚えている顔ぶれも捨てて、必ず数え直す側に倒す
+        // ディレクトリ変更時は直近の集計キャッシュを無効化し即時再集計を行う
         lastWorktreeCount = .distantPast
         countedPlaces = []
         if collecting { recount(reason: .urgent) }
     }
 
-    /// 一覧から1件外す。サイドバーの閉じるボタンから呼ばれる。
+    /// 一覧から1件除外する（サイドバーの閉じるボタン等から呼び出し）。
     ///
-    /// 台帳を読み直す前に手元の一覧からも落とす。読み直しは git を起動するので
-    /// 数百ミリ秒かかることがあり、押したのに消えない時間ができてしまう。
+    /// 台帳更新と git 読み直しによる遅延中に UI が残存するのを防ぐため、
+    /// ローカルの tasks 配列から即座に削除した上でリフレッシュを行う。
     public func forget(id: String) {
         do {
             try ForgetTask.forget(id: id)
         } catch {
-            return  // 既に消えているなど。台帳が正なので何もしない
+            return  // 既に消えている等。台帳が正なので何もしない
         }
         tasks.removeAll { $0.id == id }
         refreshNow()
     }
 
-    /// 要確認から片付ける。サイドバーのチェックから呼ばれる。
+    /// 要確認状態を解除する（サイドバーのチェックボタンから呼び出し）。
     ///
-    /// 押した瞬間に映るよう、git を起こさない経路 (`reapplied`) で先に差し替える。
-    /// **判断は写さない。** 何がどう変わるかは台帳を読み直した結果から来るので、
-    /// ここに「確認待ちは待機へ」のような写しを置かない
+    /// UI へ即時反映させるため、git を起動しない経路（reapplied）で先行適用する。
     public func clearAttention(ids: [String]) {
         guard (try? ClearAttention.clear(ids: ids)) == true else { return }
         reloadRecords()
         if let quick = CollectTasks.reapplied(tasks, records: records) { tasks = quick }
-        // 差分と worktree は次の数え直しで揃える
         if collecting { recount(reason: .urgent) }
     }
 
-    /// 台帳が外から変わったかもしれないときに呼ぶ (自分で書き換えた直後など)。
+    /// 台帳が外部から更新された可能性がある場合に呼び出す（自身での更新直後など）。
     public func refreshNow() {
         reloadRecords()
         if collecting { recount(reason: .urgent) }
     }
 
-    /// 「変更を数える」の設定が切り替わったときに呼ぶ。
-    ///
-    /// **worktree の周期を捨ててから数え直す。** `refreshNow()` では足りない —
-    /// あちらは `countWorktrees` の判断に触らないので、急ぎで数え直しても
-    /// worktree の側は自前の周期 (最大600秒) を待つ。セッション行の数字だけ
-    /// その場で消えて、worktree の側は古い判定を出し続けることになる。
-    ///
-    /// 逆に `refreshNow()` のほうへ入れてもいけない。あちらは台帳が書き換わる
-    /// たびに呼ばれるので、そこに置くと worktree の全走査がその都度走る。
-    ///
-    /// **呼ぶ側は一拍置くこと** (`main.swift` の debounce)。ここを通ると
-    /// 数え直しは必ず worktree を数える道に入り、その道はメインスレッドで
-    /// iTerm2 に AppleScript で問い合わせるので、押した直後だとスイッチが固まる。
-    ///
-    /// `countedPlaces` は捨てない。**あれが覚えているのはセッションの顔ぶれ**で、
-    /// 設定を切り替えても顔ぶれは変わっていない
+    /// 「変更を数える」設定の切り替え通知。
+    /// worktree の次回更新時刻をリセットし、即時再集計を行う。
     public func countingSettingChanged() {
         lastWorktreeCount = .distantPast
         if collecting { recount(reason: .urgent) }
     }
 
-    /// 周期が来たときに、数え直す値打ちがあるか。
-    ///
-    /// **どこも変わっていないなら数え直さない。** コードが編集されない限り
-    /// 差分の数字は動かないので、それでも数えるのは同じ答えのために
-    /// worktree の数だけ git を起こすのと同じことだった。
-    ///
-    /// ただし報せが来ないことは「変わっていない」の証にならないので、
-    /// 保険の全走査 (`forgetAllInterval`) の番が来たら変化に関わらず数える。
-    ///
-    /// **見張りに直接聞く。** 報せを受けて自前の旗を立てる形にすると、
-    /// 旗が立つのと印を引き取るのが別のスレッドから来るので、
-    /// 引き取った直後に旗だけが残って空振りの数え直しが1回入る
+    /// 定期ポーリング時に再集計を実行すべきかどうか。
+    /// ファイル変更が検知された場合、または定期キャッシュ全破棄間隔に達した場合のみ実行する。
     private var worthRecounting: Bool {
         watcher.hasChanged
             || Date().timeIntervalSince(lastForgetAll) >= forgetAllInterval
@@ -321,19 +242,12 @@ public final class TaskStore: ObservableObject {
             reloadRecords()
         }
         guard collecting else { return }
-        // 台帳が変わっても、映せる分を映せたなら数え直しはしない。
-        // ただし間隔のほうは止めない。ツールが立て続けに動いている間ずっと
-        // 早い経路に乗り続けると、いちばん編集している最中に差分が固まってしまう。
-        //
-        // **数えるのが高いと分かった場所では、状態が動いても数え直さない。**
-        // そうしないと、周期をいくら伸ばしてもターンの切れ目ごとに git が起きて
-        // 元の木阿弥になる。状態の色は quick path (CollectTasks.reapplied) が
-        // 台帳から運ぶので遅れない。据え置きになるのは差分の数字だけ
+        // 高負荷環境（sessionPace.isExpensive）では、ターンの切れ目ごとの連続 git 起動を防ぐため
+        // 状態変更時も差分再集計を行わず quick path（reapplied）で反映する
         let applied = changed
             && applyLedgerValues(includingStatusChanges: sessionPace.isExpensive)
         if changed && !applied {
-            // quick path に乗れなかった。**顔ぶれが変わっているので待たせない** —
-            // 新しい行には持ち越せる差分が無く、周期を待つと数字が出ないままになる
+            // タスク構成が変化した場合は差分情報を新規取得する必要があるため即時再集計する
             recount(reason: .urgent)
         } else if Date().timeIntervalSince(lastRecount) >= recountInterval {
             if worthRecounting {
@@ -344,32 +258,14 @@ public final class TaskStore: ObservableObject {
         }
     }
 
-    /// git を起こさずに、**時刻から出る値だけ**を進める。
-    ///
-    /// 経過時間 (age / idle) はファイルが変わらなくても秒が進むだけで古びる。
-    /// 「どこも変わっていないから数え直さない」に巻き込むと、待たせている行の
-    /// 時間表示が最大 `forgetAllInterval` ぶん飛び飛びになる。
-    /// 間隔を数え直しと同じにしてあるのは、今までもその周期でしか動かなかったため
+    /// git プロセスを起動せず、経過時間などの時刻由来の表示のみを更新する。
     private func refreshElapsed() {
         lastElapsed = Date()
         guard let quick = CollectTasks.reapplied(tasks, records: records) else { return }
         tasks = quick
     }
 
-    /// 台帳の変化のうち、git を起動せずに映せる分を先に映す。
-    ///
-    /// 「いま触っているツール」はツールのたびに変わる。ここで数え直していたら
-    /// 1手ごとに worktree の数だけ git が起きるので、差分の数字は据え置いて
-    /// 台帳の値だけ差し替える。
-    ///
-    /// - Parameter includingStatusChanges: 状態が動いた回もここで映してしまう。
-    ///   **数えるのが高いと分かった場所でだけ true にする。** 状態が動くのは
-    ///   ターンの切れ目なので、平時はそこで数え直して差分を最新にしたい
-    ///   (速いリポジトリの振る舞いは今までどおり)。ただし1回に数秒かかる場所では、
-    ///   ターンのたびに数え直していると周期を伸ばした意味が無くなる。
-    ///   そちらでは状態だけ先に映して、差分は次の周期に回す
-    /// - Returns: 映せたら true。数え直しが要るなら false
-    ///   (顔ぶれが変わったとき、または状態が動いて上を false にしているとき)
+    /// 台帳の変更内容のうち、git を起動せずに反映可能な項目を先行適用する。
     private func applyLedgerValues(includingStatusChanges: Bool) -> Bool {
         guard let quick = CollectTasks.reapplied(tasks, records: records) else { return false }
         if !includingStatusChanges {
@@ -380,8 +276,7 @@ public final class TaskStore: ObservableObject {
         return true
     }
 
-    /// 測った時間を秒で返す。Duration は attosecond まで持つので、
-    /// 秒とその端数を足して TimeInterval に均す
+    /// 測った時間を秒で返す。
     nonisolated static func seconds(since start: ContinuousClock.Instant) -> TimeInterval {
         let elapsed = ContinuousClock.now - start
         return TimeInterval(elapsed.components.seconds)
@@ -395,23 +290,14 @@ public final class TaskStore: ObservableObject {
 
     /// 一覧に出すリポジトリだけに絞る。
     ///
-    /// 残すのは、タブが開いているか、最近見た場所として残すと決めたもの
-    /// (`keep`)。**タブの有無だけでは足りない** —— それだけで絞ると、
-    /// タブを閉じた瞬間にリポジトリが一覧から消えて、さっきまで居た場所へ
-    /// 戻る道がそこで切れる。`keep` に入っていないリポジトリは、
-    /// 今までどおりタブが開いているときだけ出る。
+    /// タブを閉じた直後にリポジトリが一覧から消失するのを防ぐため、最近訪れたリポジトリ（keep）も含めて保持する。
     ///
     /// タブの見分け方は2つ。どちらかに当たればそのリポジトリは「開いている」。
     ///
     /// 1. タブの現在地が、そのリポジトリのどこかの worktree の中にある。
-    ///    リポジトリ本体のパスで見ないのは、worktree を本体の外に置く流儀があるから
     /// 2. そのタブで動いているセッションが、そのリポジトリのものである。
-    ///    iTerm2 が答えるのはシェルの現在地なので、ホームで `claude` を起こして
-    ///    そこから作業しているタブは、リポジトリではなくホームだと答える。
-    ///    現在地だけで判じると、いま働いている場所ほど消えてしまう
     ///
-    /// **聞けなかったとき (nil) は絞らない。** iTerm2 が一瞬答えなかっただけで
-    /// 一覧から worktree がごっそり消えると、何が起きたのか分からない。
+    /// iTerm2 から情報が取得できなかった場合（nil）は誤った非表示を防ぐため全グループを維持する。
     nonisolated static func visible(
         _ groups: [CollectedRepoWorktrees],
         openTabs: [(session: String, directory: String)]?,
@@ -420,7 +306,7 @@ public final class TaskStore: ObservableObject {
         guard let openTabs else { return groups }
         let directories = openTabs.map(\.directory)
         let liveTabs = Set(openTabs.map(\.session))
-        // タブが生きているセッションの居場所。上の 2 に使う
+        // タブが生存しているセッションの作業ディレクトリ
         let occupied = Set(sessions
             .filter { liveTabs.contains($0.itermSession ?? "") }
             .map(\.worktree))
@@ -437,40 +323,23 @@ public final class TaskStore: ObservableObject {
 
     private func reloadRecords() {
         let ledger = LedgerStore.read()
-        // iTerm2 のタブを持たないセッションは出さない。押しても元のタブへは戻れず、
-        // 新しいタブが開くだけなので、一覧に並んでいても行き先が無い。
-        // 台帳から消すわけではないので、CLI (proctor ls) には今までどおり出るし、
-        // 死んだセッションの片付け (Reaper) も pid を見て続く。
-        //
-        // **絞る条件は recount() の itermOnly: true と揃えること。** 片方だけ変えると
-        // applyLedgerValues() の照合 (顔ぶれが同じか) が常に外れ、台帳が動くたびに
-        // worktree の数だけ git が起きる。エラーにはならないので気づけない
-        // **変わっていないものは入れ直さない。** @Published は同じ値でも
-        // 代入するだけで objectWillChange が飛び、SwiftUI が一覧をまるごと
-        // 組み直す。台帳はツールが動くたびに触られるが、ここで見ている値まで
-        // 毎回変わるわけではない (activity だけ動いた、など)
+        // iTerm2 管理外のセッションは一覧に表示しない（遷移先タブが存在しないため）。
+        // recount() の itermOnly 絞り込み条件と一致させる必要がある（一致しないと applyLedgerValues の照合が常に失敗する）。
         let latest = ledger.tasks.filter(\.isItermManaged)
+        // 値が同一の場合は代入をスキップし、不要な objectWillChange 発火による SwiftUI 再描画を防ぐ
         if records != latest { records = latest }
-        // 絞る前の顔ぶれを見る。端末の外で動いているセッションでも、
-        // そこに乗られたら worktree は「誰もいない」ではなくなる
+        // 端末外で動作中のセッションも含め、セッションが存在する全作業ツリーを把握する
         sessionPlaces = Set(ledger.tasks.map(\.worktree))
         if agentRateLimits != ledger.agentRateLimits {
             agentRateLimits = ledger.agentRateLimits
         }
-        // タプルの配列は Equatable にならないので、要素ごとに見る
         let counts = TaskStatus.counts(latest)
         if !summary.elementsEqual(counts, by: { $0 == $1 }) { summary = counts }
     }
 
     private func recount(reason: RecountReason) {
-        // **重ねては起こさない。** 台帳はツール1回ごとに動くので、前の数え直しが
-        // 終わる前に次の番が来る。素直に走らせると worktree の数だけ起きる git が
-        // 何組も重なって、いちばん動いている最中にいちばん重くなる。
-        // 代わりに札を立てて、終わったところで1回だけ拾い直す。捨ててしまうと、
-        // セッションや現在地が変わったのに古い結果で上書きされ、次の周期まで食い違う
+        // 多重実行を防止する。実行中に届いた要求は pendingRecount に退避し、完了後に再評価する
         guard !recounting else {
-            // **強いほうを残す。** 周期の求めが先に立っていても、
-            // 人が押したのなら急ぐ側で上書きする
             if reason == .urgent || pendingRecount == nil { pendingRecount = reason }
             return
         }
@@ -478,9 +347,7 @@ public final class TaskStore: ObservableObject {
         pendingRecount = nil
         let now = Date()
         lastRecount = now
-        // **git を起こす前に、変わった場所の印を読む。** 覚えた数字を捨てておかないと、
-        // このあと数える側 (CountChanges) が古い答えをそのまま返す。
-        // 計測区間の外に置いてあるのは、印を読むのは数える費用ではないため
+        // 再集計前にファイル変更差分を取得し、該当パスのキャッシュを無効化する
         if now.timeIntervalSince(lastForgetAll) >= forgetAllInterval {
             lastForgetAll = now
             _ = watcher.takeChanged()
@@ -489,13 +356,8 @@ public final class TaskStore: ObservableObject {
             CountChanges.invalidate(watcher.takeChanged())
         }
         watcher.watch(watchRoots())
-        // worktree のほうは自分の間隔を持つ。**見送った回は前回の値をそのまま残す**
-        // (nil を入れると、数え直しのたびに一覧から worktree の行が消えて生え直す)。
-        //
-        // ただしセッションの居場所が変わったときは待たない。proctor から
-        // worktree を開いてエージェントを立てた直後に、その worktree が
-        // 「セッションがない」の側に残り続けるのがいちばん困る。
-        // 見るのは居場所の顔ぶれだけなので、ツールが動くたびには走らない
+
+        // worktree 一覧の更新要否判定（セッションの作業ディレクトリの変化、または更新間隔経過時）
         let placesChanged = sessionPlaces != countedPlaces
         let countWorktrees = placesChanged
             || now.timeIntervalSince(lastWorktreeCount) >= worktreeInterval
@@ -503,70 +365,27 @@ public final class TaskStore: ObservableObject {
             lastWorktreeCount = now
             countedPlaces = sessionPlaces
         }
-        // 数えるのは別スレッドなので、メインで読める値はここで写しておく。
-        // iTerm2 への問い合わせ (AppleScript) もメインスレッドからでないと通らない。
-        //
-        // **台帳が覚えているだけのリポジトリまでは並べない。** 出すのは、タブが
-        // 開いているものと、最近見たもの (visible の keep) だけ。全部見たいときは
-        // CLI (proctor worktree ls --all) がある
+
         let here = visited
         let openTabs = countWorktrees ? ItermBridge.openTabs(interactive: false) : nil
-        // 設定も同じくここで読む。Appearance は @MainActor なので、
-        // detached の中からは触れない
         let countDiff = wantsDiff()
-        // 持ち主を先に引いておく相手 (下の「温める」を見よ)。**手元にある顔ぶれから
-        // 採る。** 台帳を読み直せば正確だが、そのために JSON を丸ごとデコードするのは
-        // 温めるためだけの支払いになる。絞る回の CollectTasks.collect が見るのは
-        // ここと同じ (どちらも isItermManaged で絞った顔ぶれ) なので、これで足りる
         let knownRepos = Set(records.map(\.repo))
-        // git の起動を待つ間 UI を止めない。数え終わったらメインに戻して差し替える
+
+        // git 処理はバックグラウンドスレッドで実行し、UI の応答性を維持する
         Task.detached(priority: .utility) {
-            // 覚えているリポジトリはここで一度だけ読む。worktree の数え上げも
-            // 「一覧に残すか」の判断も同じものを見るので、それぞれに読ませると
-            // 同じ台帳を2回開くことになる。
-            //
-            // **読むのは worktree を数える回だけ。** 数えない回は visible を
-            // 呼ばないので、残すかどうかの判断そのものが要らない。
-            // LedgerStore.repos() は台帳 JSON を丸ごとデコードするので、
-            // 毎回読むと、同じ Task.detached の中で CollectTasks.collect が既に
-            // 1回読んでいるぶんと合わせて、10秒ごと (とツールが動くたび) に
-            // デコードが2回走ることになる。
-            //
-            // **測り始める前に読む。** worktree を数える回に必ず払う固定費であって、
-            // 「数えるのがどれだけ高いか」の一部ではない。
-            //
-            // **`ledgerRepos != nil` と `countWorktrees` は同じことを指す。**
-            // 読み手が2つ (下の outcome と、その前の「温める」) に増えているので、
-            // どちらかを countWorktrees と無関係に読める形へ広げないこと。
-            // 広げた瞬間、数えない回でも台帳のデコードが走り、同じ Task.detached の
-            // 中で CollectTasks.collect が読むぶんと合わせて、10秒ごと
-            // (とツールが動くたび) に同じ台帳を2回デコードすることになる
+            // worktree 集計時のみ台帳リポジトリ情報を取得する（不要な JSON デコードの重複を回避）
             let ledgerRepos = countWorktrees ? LedgerStore.repos() : nil
 
-            // **持ち主の解決も測る前に済ませておく。** ResolveRepoOrigin は
-            // 答えをプロセスの中に覚えるので高いのは初めて見るリポジトリの回だけ
-            // だが、`observe` は上がるときだけ即座に効くので、その1回が
-            // `smoothed` に焼き付いて周期が伸びたまま戻らなくなる
-            // (台帳の全リポジトリぶんの git remote は、15件もあれば数秒になる)。
-            //
-            // **初回の観測を捨てるだけでは足りない。** 台帳に新しいリポジトリが
-            // 加わるたびに同じ支払いが起きるので、そのたびに再発する。
-            // ここで温めておけば、下で測る区間はいつも「覚えている答えを引くだけ」
-            // に揃う。台帳を読んだ回はそちらも混ぜる —— **セッションの無いリポジトリの
-            // 持ち主を引くのは CollectWorktrees** で、それは worktree の側の
-            // 計測区間の中にあるため
+            // リポジトリ Origin の解決結果をキャッシュしておく。
+            // 初回解決（git remote）の遅延が sessionPace の処理時間計測に混入し、
+            // ポーリング間隔が過大に伸びるのを防ぐため、計測区間の前に実行する。
             var warm = knownRepos
             if let ledgerRepos { warm.formUnion(ledgerRepos.keys) }
-            // 立ち寄っただけの場所も混ぜる。**台帳にはまだ載っていない** ——
-            // エージェントを一度も動かしていないリポジトリを拾うのが visited の
-            // 役目なので、ここを外すと「今いる場所」がいちばん温まらない。
-            // 実体の無いパスを渡しても、引けなかったことごと覚えるので git は1回きり
             warm.formUnion(here)
             for repo in warm { _ = ResolveRepoOrigin.resolve(repo: repo) }
 
-            // **かかった時間を測って、次までの間隔に食わせる。**
-            // 時計は ContinuousClock を使う。Date は NTP で飛ぶので、
-            // 時刻が直された回に出鱈目な所要時間を覚えてしまう
+            // 所要時間を計測してポーリング間隔の適応制御（sessionPace）に反映する。
+            // NTP 同期等による時刻変動の影響を避けるため ContinuousClock を使用する
             let sessionStart = ContinuousClock.now
             // 持ち主まで引くのはここだけ。Organization でまとめる見出しに要る。
             // 生き続けるプロセスなので、git が起きるのはリポジトリごとに一度きり。
@@ -583,27 +402,18 @@ public final class TaskStore: ObservableObject {
             // 読み切れなかった回は、そのまま映さずに前の値を残す。
             // git が一度答えなかっただけで行が消えると、何が起きたのか分からない。
             //
-            // **時間はセッションのぶんと別々に測る。** それぞれ自分の間隔を持っているので、
-            // 混ぜると片方の重さでもう片方まで伸びる。
-            // 数えなかった回は nil。0 秒として食わせると、見送っただけの回で
-            // 間隔が下限まで戻ってしまう
+            // 処理時間はセッション集計と worktree 集計で個別に計測する。
+            // worktree 未集計時は nil を設定し、0秒として記録して間隔が不当に短縮されるのを防ぐ
             let outcome: (worktrees: [CollectedRepoWorktrees]?, kept: Set<String>?,
                           incomplete: Bool, seconds: TimeInterval?) = {
-                // 台帳を読んでいない回 = worktree を数えない回 (上を見よ)
                 guard countWorktrees, let ledgerRepos else { return (nil, nil, false, nil) }
-                // 最後のタブを閉じても、しばらくは一覧に残しておくリポジトリ。
-                // 読んだ台帳を使い回すだけなので、ここでは何も起きない
-                // (measure の外に置いてあるのはそのため)
                 let kept = CollectRecentRepos.collect(repos: ledgerRepos)
                 let start = ContinuousClock.now
                 let counted = CollectWorktrees.collect(allRepos: true, withOrigin: true,
                                                        countDiff: countDiff,
                                                        tasks: everything,
                                                        repos: ledgerRepos, also: here)
-                // 読み切れなかった回も、git を待った時間は同じだけかかっている
                 let seconds = TaskStore.seconds(since: start)
-                // worktree のほうが読めなくても、残す顔ぶれは分かっている。
-                // 据え置きの一覧に対しても効くので、そちらは映してよい
                 guard !counted.incomplete else { return (nil, kept, true, seconds) }
                 return (TaskStore.visible(counted.groups, openTabs: openTabs,
                                           sessions: everything, keep: kept),
@@ -612,23 +422,9 @@ public final class TaskStore: ObservableObject {
             let collected = everything.filter(\.isItermManaged)
             await MainActor.run {
                 self.recounting = false
-                // **設定で切ってあっても測り続ける。** 切ってあれば実測は
-                // 小さくなるので間隔は自然と下限へ戻り、オンに戻すと重い回が
-                // 1回だけ走ってそこでまた伸びる。
-                //
-                // ただし worktree を数えた回は食わせない。その回だけ
-                // セッション側も絞らずに集める (itermOnly: false) ので、
-                // 系統的に高い。6回に1回しか起きない費用でセッションの周期まで
-                // 伸ばすと、上の「混ぜると片方の重さでもう片方まで伸びる」が
-                // セッションの内側で起きることになる
-                //
-                // **食わせない回は、代わりに古びさせる (decay)。** 据え置きにすると、
-                // セッションの周期が worktree の周期 (下限60秒) を追い越した時点で
-                // どの回も「worktree を数える回」になり、**セッション側の実測を
-                // 二度と採れなくなる**。一度たまたま4秒かかっただけで 80秒間隔に
-                // 貼り付き、立ち上げ直すまで戻らない (`isExpensive` も貼り付くので、
-                // ターンの切れ目で差分を数え直す道まで閉じたままになる)。
-                // 減らしていけば数回で 60秒を割り、そこで実測の回が戻ってくる
+                // worktree を同時に集計した回はセッション側も非絞り込み（itermOnly: false）となり
+                // 通常より処理時間が長くなるため、observe ではなく decay（減衰）を行う。
+                // worktree を数えない通常回のみ実測値を observe に反映する。
                 if !countWorktrees {
                     self.sessionPace.observe(sessionSeconds)
                 } else {
@@ -639,15 +435,9 @@ public final class TaskStore: ObservableObject {
                 if let latest = outcome.worktrees, self.worktrees != latest {
                     self.worktrees = latest
                 }
-                // **変わっていないものは入れ直さない** (理由は reloadRecords と同じ)。
-                // 同じ値の代入でも objectWillChange が飛び、10秒ごとに
-                // 一覧がまるごと組み直される
+                // 等価な場合は代入をスキップし、不要な SwiftUI 再描画を防ぐ
                 if let kept = outcome.kept, self.keptRepos != kept { self.keptRepos = kept }
-                // 読めなかったぶんは次の周期を待たずに聞き直す
                 if outcome.incomplete { self.lastWorktreeCount = .distantPast }
-                // **拾い直すのは急ぎの求めだけ。** 周期の求めまで拾うと、
-                // 台帳が動くたびに数え直しが数珠つなぎになって間隔が効かない。
-                // 捨てたぶんは tick() が周期で拾う
                 let pending = self.pendingRecount
                 self.pendingRecount = nil
                 if pending == .urgent, self.collecting { self.recount(reason: .urgent) }
@@ -655,24 +445,10 @@ public final class TaskStore: ObservableObject {
         }
     }
 
-    /// 見張ってもらう場所 → **そこが動いたときに数え直す相手** (`CountChanges` の鍵)。
+    /// ファイル変更監視対象のパスと、変更時にキャッシュ無効化する対象パスの対応マップを構築する。
     ///
-    /// 見るのは台帳が知っているリポジトリと居場所、それにいま並べている worktree。
-    /// **worktree と親のリポジトリを両方渡す。** worktree はたいてい
-    /// リポジトリの中 (`.claude/worktrees/X`) にあるので親だけでも報せは届くが、
-    /// 外に置く流儀もあるので両方入れる (重なりは長いほうから当てて捌かれる)。
-    ///
-    /// **連結 worktree だけは見張る場所が2つになる。** 作業ツリーと、git が
-    /// その worktree のために使う置き場 (`GitClient.adminDirectory`)。
-    /// 後者を外すと、コミットで空になったはずの worktree が古い数字を出し続ける。
-    /// どちらも同じ鍵に落とすので、どちらが動いてもその worktree を数え直す。
-    ///
-    /// リポジトリ本体の `.git` はここに足さない。本体そのものを見張っている
-    /// 時点でその中身も届くし、**共有の `objects`/`refs` は誰がコミットしても
-    /// 動く**ので、足しても足さなくても本体の鍵は落ちる。
-    ///
-    /// 実体の無いパスは渡さない。FSEvents に見張らせても報せは来ないので、
-    /// 顔ぶれを揺らして張り替えの口実になるだけ
+    /// 各作業ツリーのほか、連結 worktree の git 管理ディレクトリ（adminDirectory）も監視対象に含める
+    /// （コミット実行時に作業ツリー側のファイルが動かない場合でも差分更新を検知するため）。
     private func watchRoots() -> [String: String] {
         var roots: [String: String] = [:]
         for repo in records.map(\.repo) { roots[repo] = repo }

@@ -1,17 +1,11 @@
 import Foundation
 
-/// 自分がどの版かを答える。
+/// アプリケーションおよび CLI のバージョン情報。
 ///
-/// 版の出どころは repo 直下の `VERSION` で、`scripts/build-app.sh` がそれを
-/// `.app` の Info.plist に焼き込む。ここは焼かれた結果を読むだけにしている。
-/// ソースに版を書き写さないのは、書いた瞬間に `VERSION` と二重管理になり、
-/// どちらかを直し忘れて食い違うため。
+/// バージョンはリポジトリ直下の `VERSION` を正本とし、ビルド時に Info.plist に埋め込まれる。
+/// 二重管理による不整合を防ぐため、ソースコード内にバージョンを保持せず plist から読み込む。
 public enum AppVersion {
-    /// 表示用の版。`.app` の外から走らせているときは nil。
-    ///
-    /// nil を「不明」として扱えるようにしているのは、`.build/release` から
-    /// 直に走らせた開発中のビルドに、それらしい版を名乗らせないため。
-    /// 版を聞かれて嘘を答えると、不具合の報告が当てにならなくなる。
+    /// 表示用バージョン。`.app` バンドル外から直接実行された開発用ビルドでは nil を返す。
     public static let current: String? = {
         // アプリ本体は自分自身が .app なので、これで取れる
         if let version = Bundle.main.infoDictionary?[key] as? String, !version.isEmpty {

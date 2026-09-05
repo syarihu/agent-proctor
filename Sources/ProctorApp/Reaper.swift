@@ -2,13 +2,10 @@ import Foundation
 import ItermBridge
 import UseCaseSession
 
-/// 定期的に、閉じられたタブの記録を片付けさせる。
-///
-/// 「どれを消してよいか」の判断は ReapClosedSessions が持つ。
-/// ここは iTerm2 という情報源から生きているIDを取ってきて渡すだけ。
+/// 閉じられたタブや終了したプロセスの台帳レコードを定期的に整理するウォッチャー
 @MainActor
 final class Reaper {
-    /// 反応が遅れても困らないので長めに取る
+    /// 定期クリーンアップ間隔
     private let interval: TimeInterval = 30
     private var timer: Timer?
     private let writer = LedgerWriter()
@@ -17,13 +14,9 @@ final class Reaper {
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                // nil は「分からなかった」であって「1つも無い」ではない。
-                // 空の集合として渡すと、向こうは端末との突き合わせだけを見送り、
-                // プロセスで生死が分かるものは片付けてくれる。
-                // iTerm2 が居なくても・許可が下りていなくても掃除が止まらないよう、
-                // ここで諦めてしまわない
+                // iTerm2 のセッション一覧取得失敗時（権限未付与など）も、プロセスの生死判定によるクリーンアップを実行できるよう空配列でフォールバックする
                 let alive = ItermBridge.liveSessionIDs() ?? []
-                // 片付けは台帳を書くのでメインスレッドから外す (理由は LedgerWriter)
+                // メインスレッドのブロックを防ぐため台帳書き込みはバックグラウンドで行う
                 self.writer.submit({
                     !((try? ReapClosedSessions.reap(aliveSessionIDs: alive)) ?? []).isEmpty
                 }, changed: onChange)

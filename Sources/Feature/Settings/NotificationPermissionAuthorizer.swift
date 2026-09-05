@@ -1,12 +1,12 @@
 import Foundation
 
-/// 通知センターの許可の状態。
+/// 通知センターの権限状態。
 public enum NotificationPermissionStatus: Sendable {
     case granted
     case denied
-    /// まだ尋ねていない。ダイアログを出せるのはこのときだけ
+    /// 未確認状態（システムダイアログを表示可能な状態）
     case undecided
-    /// そもそも通知を出せない (バンドルの外で動いている)
+    /// 通知利用不可（アプリバンドル外での実行時など）
     case unavailable
 }
 

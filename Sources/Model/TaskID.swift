@@ -1,13 +1,9 @@
 import Foundation
 import Resources
 
-/// タスクIDの決め方。
-///
-/// 人が打つものなので、ディレクトリ名をそのままではなく打ちやすい形に丸める。
-/// 台帳の中で一意であればよく、意味は持たせない。
+/// CLI や端末操作で扱いやすいタスク識別子の生成ユーティリティ。
 public enum TaskID {
-    /// 英数字以外を "-" に潰して小文字にする。
-    /// AppleScript やシェルに渡す通り道でもあるので、記号を残さない
+    /// 英数字以外をハイフンに置換し小文字化する（シェルや AppleScript で安全に扱えるようにする）
     public static func slugify(_ text: String) -> String {
         let replaced = text.map { ch -> Character in
             (ch.isASCII && (ch.isLetter || ch.isNumber)) ? ch : "-"

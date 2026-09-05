@@ -4,14 +4,7 @@ import RepositoryLedger
 import Resources
 import Utility
 
-/// 同梱の手順書を渡す。
-///
-/// エージェントに読ませるためのコマンド。各エージェントの設定には
-/// 「これを実行して従う」とだけ書いておけば、手引きの中身は proctor を
-/// 新しくするだけで入れ替わる (写しを貼り直さなくていい)。
-///
-/// 繋ぎ方の手引きはここではなく `proctor setup`。作業中に読む手順と、
-/// 一度きりの設定を混ぜると、どちらを読ませたいのか名前から分からなくなる。
+/// 同梱の手順書（スキル定義）を出力する。エージェントが最新の手順を参照できるようにする。
 func cmdSkill(_ args: Args) throws -> Int32 {
     let target = args.positional.first ?? "ls"
 

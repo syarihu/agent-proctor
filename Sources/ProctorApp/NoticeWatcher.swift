@@ -6,23 +6,14 @@ import ItermBridge
 import Model
 import UseCaseNotice
 
-/// 台帳の変化を見張って、通知に回すものを拾う。
-///
-/// 判断は `CollectNotices` が持ち、配るのは `Notifier` が持つ。ここはその2つを
-/// 繋ぐだけで、**前に見た台帳を覚えておく役**でもある。
-///
-/// 見張るのは `TaskStore` が読み直した結果 (`records`) で、台帳を自分では読まない。
-/// 読む口が2つになると、どちらが先に読んだかで通知が出たり出なかったりする。
-///
-/// そこに載るのは iTerm2 のタブを持つセッションだけなので、**タブの無いものは
-/// 知らせない**。押しても行き先が無い通知になるためで、一覧の絞り方と同じ線引き。
+/// 台帳の更新を監視し、通知対象のタスク変化を抽出して Notifier に渡すウォッチャー。
+/// 読み込みタイミングの不整合を防ぐため、自前での台帳読み込みは行わず TaskStore の records 変更を購読する。
 @MainActor
 final class NoticeWatcher {
     private let store: TaskStore
     private let settings: NoticeSettings
     private let notifier: Notifier
-    /// 前に見た台帳。**起動直後は nil。** 立ち上げ直しただけで
-    /// 前から続いている確認待ちが一斉に鳴るのを防ぐ (判断は CollectNotices)
+    /// 前回の台帳状態。アプリ起動直後の一斉通知を防ぐため初期値は nil とする
     private var previous: [TaskRecord]?
     private var cancellable: AnyCancellable?
 
@@ -30,7 +21,7 @@ final class NoticeWatcher {
         self.store = store
         self.settings = settings
         self.notifier = notifier
-        // @Published は購読した時点の値も流すので、最初の1回で前提 (previous) が埋まる
+        // 購読開始時の初期値で previous を初期化する
         cancellable = store.$records.sink { [weak self] records in
             self?.handle(records)
         }
@@ -43,12 +34,8 @@ final class NoticeWatcher {
         notifier.apply(changes)
     }
 
-    /// いま人が見ているタブ。見ていなければ nil。
-    ///
-    /// **iTerm2 が前面かどうかまで見る。** `focusedSession` は裏に回っても
-    /// 「さっきまで見ていたタブ」を指したままなので (理由は FocusWatcher)、
-    /// そこだけで判じると、別のアプリを触っている間に起きたことまで黙ってしまう。
-    /// 通知がいちばん要るのはその状況になる
+    /// ユーザーが現在注視しているタブの識別子。
+    /// iTerm2 が最前面でない場合は他アプリ作業中と判断し、通知を抑制しないよう nil を返す。
     private var watching: String? {
         ItermBridge.isItermFrontmost ? store.focusedSession : nil
     }

@@ -4,11 +4,7 @@ import RepositoryLedger
 import Resources
 import Utility
 
-/// 繋ぎ方の手引きを渡す。
-///
-/// **ここは本文を出すだけで、設定ファイルには触らない。**
-/// 触らない理由は SetupLibrary に書いてある (書き換えるのは読んだエージェント)。
-/// 名前を選ぶのは人なので、名前が無ければ一覧を出して選べるようにする。
+/// エージェント設定の手引きを出力する。実際の設定ファイル更新は読み手のエージェントに委ねるため本文の表示のみ行う。
 func cmdSetup(_ args: Args) throws -> Int32 {
     let target = args.positional.first ?? "ls"
 

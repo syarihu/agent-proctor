@@ -4,76 +4,56 @@ import Model
 import Resources
 import UseCaseTask
 
-/// リポジトリ1つ分のまとまり。
+/// リポジトリ単位のグループ。
 struct RepoGroup: Identifiable {
-    /// 折りたたみを覚えるための鍵。リポジトリ本体の絶対パス
+    /// 折りたたみ状態永続化用キー（リポジトリの絶対パス）
     var id: String
-    /// 見出しに出す名前 (パスの末尾)
+    /// 見出し表示名（リポジトリ名）
     var name: String
     var tasks: [CollectedTask]
-    /// セッションが乗っていない worktree。畳んだ1行にまとめて出す。
-    /// セッションと同じ扱いにはしない。あちらは今動いているもの、
-    /// こちらは残っているだけの場所で、急いで見るべきものが違う
+    /// セッションが存在しない待機中 worktree 一覧
     var worktrees: [CollectedWorktree] = []
 }
 
-/// Organization 1つ分のまとまり。中にリポジトリがぶら下がる。
+/// Organization 単位のグループ。配下にリポジトリグループを保持する。
 struct OrgGroup: Identifiable {
-    /// 折りたたみを覚えるための鍵。`org:github.com/syarihu` の形
+    /// 折りたたみ状態永続化用キー（`org:github.com/syarihu` 形式）
     var id: String
-    /// 見出しに出す名前
+    /// 見出し表示名
     var title: String
-    /// アイコンを引く相手。持ち主が分からないまとまりでは nil
+    /// アバター取得用オーナー名（特定不能な場合は nil）
     var owner: String?
-    /// 持ち主が居るホスト。gh に聞ける相手かの判断に使う
+    /// ホスト名（GitHub API 呼び出し可否判定用）
     var host: String?
     var repos: [RepoGroup]
 
-    /// 見出しに出す内訳のもと。畳んだときに中身の状態を数で見せるのに使う
+    /// 配下全リポジトリのタスク一覧（折りたたみ時のステータス集計用）
     var tasks: [CollectedTask] { repos.flatMap(\.tasks) }
 }
 
-/// 新着 (要確認) 1まとまり分。
+/// 未確認セッション（要対応）のグループ。
 ///
-/// `OrgGroup` と別に持つのは、こちらが**畳めない見出し**だから。中に
-/// リポジトリの段を作らず、鍵も覚えるためではなく `ForEach` のためだけに持つ。
+/// 折りたたみ不可とし、リポジトリ階層を持たせずフラットに表示する。
 struct PendingGroup: Identifiable {
     var id: String
-    /// 見出しに出す名前 (持ち主か、リポジトリ名)
+    /// 見出し表示名（オーナー名またはリポジトリ名）
     var title: String
-    /// アイコンを引く相手。持ち主が読めないまとまりと、
-    /// リポジトリでまとめているときは nil
+    /// アバター取得用オーナー名（リポジトリ別グループ時やオーナー特定不能時は nil）
     var owner: String?
     var host: String?
     var tasks: [CollectedTask]
 }
 
-/// 一覧を見出しの下にまとめる。
-///
-/// **動きがあったものを上に置く。** 名前順だと、今まさに動いているプロジェクトが
-/// 下に埋もれて気づけない。Organization の並びも、その中のリポジトリの並びも
-/// 同じ規則にしてある。片方だけ名前順にすると、上の見出しは動いたのに
-/// 中は動かないという、目で追えない並びになる。
+/// セッション一覧のグループ化ロジック。
+/// 直近に更新・稼働があった項目を上位に配置する安定ソートを提供する。
 enum TaskGrouping {
-    /// リポジトリごとにまとめる (これまでの見せ方)
+    /// リポジトリ単位でグループ化する。
     ///
     /// - Parameters:
-    ///   - worktrees: セッションが乗っていない worktree。
-    ///     これが第2の入り口になる。タスクからだけ組み立てると、
-    ///     セッションが1つも無いリポジトリは見出しごと生まれず、
-    ///     いちばん放置されている作業場が出てこない
-    ///   - keeping: セッションも worktree も無くても見出しを立てるリポジトリ。
-    ///     最近見た場所を一覧に残しておくための第3の入り口
-    ///     (誰が「最近」を決めるかは `CollectRecentRepos`)
-    ///
-    /// **並べ直しは要らない。** `recency` はタスクが1つも無ければ `.max` を返すので、
-    /// セッションの無いリポジトリは放っておいても下に落ちる。しかも `stable` は
-    /// 引き分けで入力順を保ち、渡される `worktrees` は
-    /// `CollectWorktrees.collect` が台帳の時刻の新しい順に並べたものなので、
-    /// 落ちたものどうしの並びもそのまま引き継がれる。
-    /// **ただしその時刻は24時間に1回しか書き直されない**
-    /// (`RecordHookEvent.repoMemoryRefresh`) ので、同じ日のうちに触った
-    /// 2つの順は入れ替わりうる。毎回揺れるわけではないので、ここは直さない
+    ///   - tasks: 集計対象タスク一覧
+    ///   - worktrees: セッションの存在しない worktree 一覧（タスクのないリポジトリも可視化対象とする）
+    ///   - keeping: タスクや worktree が存在しなくても一覧に維持するリポジトリパスの集合（直近アクセスリポジトリ）
+    /// - Returns: 直近稼働順にソートされたリポジトリグループ一覧
     static func byRepository(_ tasks: [CollectedTask],
                              worktrees: [CollectedRepoWorktrees] = [],
                              keeping: Set<String> = []) -> [RepoGroup] {
@@ -90,23 +70,14 @@ enum TaskGrouping {
         return stable(order.compactMap { box[$0] }) { recency($0.tasks) }
     }
 
-    /// セッションが1つも無いリポジトリが、**worktree だけで**見出しを持てるか。
-    ///
-    /// 中身の無い見出しを worktree の側から生やさないための門。これとは別に
-    /// 「最近見た」という理由でも見出しは立つ (`attach` の `keeping`) ので、
-    /// これが false でも一覧に出ないとは限らない
+    /// セッションのないリポジトリが worktree 単体で見出しを維持できるかを判定する
     private static func standsAlone(_ group: CollectedRepoWorktrees) -> Bool {
         !group.idle.isEmpty
     }
 
-    /// 残っている worktree を、対応するリポジトリのまとまりに足す。
-    /// まとまりがまだ無ければ (セッションが1つも無いリポジトリ) ここで作る。
-    ///
-    /// 作ってよいのは、worktree が残っているか (`standsAlone`)、
-    /// 最近見た場所として残すと決めたか (`keeping`) のどちらか。
-    /// **どちらでもないものの見出しは作らない** —— ずっと前に一度触ったきりの
-    /// リポジトリまで並ぶと、一覧の意味が「今どうなっているか」から
-    /// 「どこを触ったことがあるか」にすり替わってしまう
+    /// 待機中 worktree を対応するリポジトリグループに紐付ける。
+    /// グループが存在しない場合、worktree が存在するか直近リポジトリに含まれる場合のみ新規作成する
+    /// （過去に触っただけの無関係なリポジトリで見出しが増殖するのを防ぐ）。
     private static func attach(_ worktrees: [CollectedRepoWorktrees],
                                keeping: Set<String>,
                                order: inout [String],
@@ -121,18 +92,16 @@ enum TaskGrouping {
         }
     }
 
-    /// Organization ごとにまとめ、その下にリポジトリをぶら下げる。
+    /// Organization 単位でグループ化し、配下にリポジトリグループを配置する。
     ///
-    /// 持ち主が読めなかったリポジトリは1つのまとまりに寄せる。**中に混ぜて
-    /// しまうと、無関係なリポジトリが誰かの組織の下に並ぶ。** 別立てにすれば、
-    /// remote が付いていないだけだと分かる。
+    /// オーナーが特定できないリポジトリは独立した未分類グループに集約し、
+    /// 既存の組織グループへの誤混入を防ぐ。
     ///
     /// - Parameters:
-    ///   - keeping: `byRepository` にそのまま渡す。**セッションの無い
-    ///     リポジトリしか居ない Organization の見出しが新しく生えることになるが、
-    ///     それでよい** —— 中身の空な見出しではなく、戻り先のリポジトリが
-    ///     入っている見出しなので、畳めば1行、開けば行き先が並ぶ
-    ///   - unknownTitle: 持ち主が読めないまとまりの見出し
+    ///   - tasks: 集計対象タスク一覧
+    ///   - worktrees: セッションの存在しない worktree 一覧
+    ///   - keeping: 維持対象リポジトリ集合
+    ///   - unknownTitle: オーナー特定不能グループの表示見出し
     static func byOrganization(_ tasks: [CollectedTask],
                                worktrees: [CollectedRepoWorktrees] = [],
                                keeping: Set<String> = [],
@@ -165,40 +134,21 @@ enum TaskGrouping {
         return stable(groups) { recency($0.tasks) }
     }
 
-    /// 持ち主から、まとまりの見出しに要るものを作る。
+    /// リポジトリの origin 情報からグループ用の見出し情報を生成する。
     ///
-    /// **1か所で作る。** Organization の見出しと新着のまとめの2通りに書くと、
-    /// 鍵や名前の決め方がずれて、同じ持ち主が別のまとまりに見える。
-    ///
-    /// - Parameter unknownTitle: 持ち主が読めないまとまりの見出し
+    /// - Parameter unknownTitle: オーナー特定不能時の見出し
     private static func heading(for origin: RepoOrigin?, unknownTitle: String)
         -> (id: String, title: String, owner: String?, host: String?) {
         guard let origin else { return (unknownKey, unknownTitle, nil, nil) }
-        // アイコンを引けるのは GitHub だけ。それ以外のホストは名前で並べて、
-        // 代わりの絵を描かせる。
-        //
-        // **鍵は小文字に寄せる。** これは見出しに出す名前 (title) と違って、
-        // 覚えておく先とファイル名になる。原文のままにすると、先に現れた
-        // タスクの表記次第で Syarihu と syarihu を行き来し、大小を区別する
-        // ボリュームでは同じ人のアイコンが2枚落ちる
+        // アバター取得は GitHub のみ対応。キーは大文字小文字の違いによるキャッシュ重複やファイル名揺れを防ぐため小文字に正規化する
         return ("org:" + origin.groupKey, origin.owner,
                 origin.isGitHub ? origin.owner.lowercased() : nil, origin.host)
     }
 
-    /// 新着 (要確認) を見出しの下にまとめる。
+    /// 未確認セッション（要対応）をグループ化する。
     ///
-    /// **渡された順を崩さない。** 一覧のまとめ (`byRepository` / `byOrganization`) と
-    /// 分けているのはそのためで、あちらは動きの新しい順に並べ替える。
-    /// ここに来るのは急ぎの順 (`CollectTasks.awaitingReview`) に並んだものなので、
-    /// 並べ直すといちばん待たせているものが上から落ちる。
-    ///
-    /// 見出しの順も**中で最初に現れたものが先**。つまり急いでいるまとまりが上に来る。
-    ///
-    /// **まとめるほうを優先している。** 同じ持ち主のものを1か所に寄せるので、
-    /// 全体を通した急ぎの順とは一致しない (先頭の持ち主の「完了」が、
-    /// 次の持ち主の「確認待ち」より上に出ることがある)。まとまりを崩して
-    /// 厳密な順に並べると、同じ見出しが何度も現れて「どこが待っているか」が
-    /// 一目で分からなくなる。急ぐものから見たい向きは、まとまりの順のほうが担う
+    /// 優先度順（CollectTasks.awaitingReview）を維持するため再ソートは行わず、
+    /// 出現順に基づいてグループを整列する。
     static func pending(_ tasks: [CollectedTask], by mode: GroupingMode,
                         unknownTitle: String) -> [PendingGroup] {
         var order: [String] = []
@@ -209,9 +159,7 @@ enum TaskGrouping {
             case .organization:
                 head = heading(for: task.origin, unknownTitle: unknownTitle)
             case .repository:
-                // リポジトリでまとめているときはアイコンを出さない。
-                // 持ち主を読まないまとめ方なので、そこだけ組織の絵が出ると、
-                // 見出しが何を指しているのか分からなくなる
+                // リポジトリ単位グループ化時はアバターを表示しない
                 head = (task.repo, task.repoName, nil, nil)
             }
             if box[head.id] == nil {
@@ -224,12 +172,7 @@ enum TaskGrouping {
         return order.compactMap { box[$0] }
     }
 
-    /// 経過の短い順。**同じ値のときは元の並びを保つ。**
-    ///
-    /// 2つが同時に走っていれば経過はどちらも 0 になるので、並びが引き分けるのは
-    /// 日常的に起きる。Swift の `sorted` は安定ではないため、引き分けたときに
-    /// 見出しが入れ替わりうる。**動いていないものが動いて見えるのがいちばん困る**
-    /// ので、添字で決着をつける (`CollectTasks.ordered` と同じ考え方)
+    /// 経過時間の昇順ソート。同値時は元のインデックス順を維持する安定ソート（画面上の不要な並び順チラつきを防止）。
     private static func stable<T>(_ items: [T], by key: (T) -> Int) -> [T] {
         items.enumerated().sorted { lhs, rhs in
             let (a, b) = (key(lhs.element), key(rhs.element))
@@ -238,10 +181,7 @@ enum TaskGrouping {
         }.map(\.element)
     }
 
-    /// 持ち主が読めなかったものを寄せる先。**"org:" を付けないのは、
-    /// 実在する組織の鍵とぶつからないようにするため** (GitHub に "unknown" という
-    /// 組織があっても、こちらは "github.com/unknown" になるので別物ではあるが、
-    /// 種類そのものを分けておくほうが取り違えの余地が無い)
+    /// オーナー特定不能グループ用キー（実在する組織キーとの衝突を防ぐため接頭辞なしの固定値）
     private static let unknownKey = "no-organization"
 
     private static func recency(_ tasks: [CollectedTask]) -> Int {

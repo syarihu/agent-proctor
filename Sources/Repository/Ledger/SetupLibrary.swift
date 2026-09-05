@@ -2,19 +2,14 @@ import Foundation
 import Model
 import Resources
 
-/// proctor を繋ぐ手引きの置き場。
+/// proctor のセットアップガイドの取得窓口。
 ///
-/// 繋ぎ方は環境によって違い、既に hooks や statusLine を使っている人の設定を
-/// スクリプトで覆いきることはできない。だから proctor は設定を書き換えず、
-/// **AI に読ませて実行させる指示**を配る。そこを吸収するのがエージェントの仕事。
-///
-/// `skill` と分けてあるのは、これが作業中に読む手順ではなく一度きりの設定だから。
+/// 環境に応じた指示文を提供する。エージェントごとの設定手順を個別またはまとめて出力する。
 public enum SetupLibrary {
-    /// 繋ぎ方の手引きは**エージェントごとに分けてある**。1つにまとめると、
-    /// 読む側は自分に関係のない相手の分まで文脈に入れることになる
+    /// エージェント種別の識別子一覧
     static let agentIDs = ["claude", "agy", "codex", "other"]
 
-    /// `proctor setup ls` に出る順。上から読む相手を選べるように並べる
+    /// `proctor setup ls` に出る順
     static let ids = agentIDs + ["all"]
 
     /// 手引きの一覧
@@ -30,17 +25,14 @@ public enum SetupLibrary {
         all.first { $0.id == id }
     }
 
-    /// 手引きの本文。無い名前を渡されたら nil
+    /// 手引きの本文。存在しない ID の場合は nil。
     public static func body(id: String) -> String? {
         guard guide(id: id) != nil else { return nil }
         if id == "all" { return everyAgent() }
         return Localized.document("setup-\(id)")
     }
 
-    /// 繋ぎ方をまとめて出す。
-    ///
-    /// **まとめた文書は持たない。** 持つと、エージェントごとの手引きと同じ内容が
-    /// 2か所に並び、片方だけ直したときにずれる。読むときに繋いで返す。
+    /// 全エージェント向けの手引きを連結して生成する。
     private static func everyAgent() -> String? {
         let parts = agentIDs.compactMap { Localized.document("setup-\($0)") }
         return parts.isEmpty ? nil : parts.joined(separator: "\n---\n\n")
