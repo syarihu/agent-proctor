@@ -7,7 +7,6 @@
 エージェントへの手引きが欠落したりするため、CI およびローカルで事前に検知する。
 """
 
-import os
 import re
 import sys
 from collections import Counter
@@ -63,12 +62,15 @@ def check_strings_pair(en_file: Path, ja_file: Path) -> list[str]:
     en_counts = Counter(k for k, _ in en_keys)
     ja_counts = Counter(k for k, _ in ja_keys)
 
+    en_label = f"{en_file.parent.name}/{en_file.name}"
+    ja_label = f"{ja_file.parent.name}/{ja_file.name}"
+
     for key, count in en_counts.items():
         if count > 1:
-            errors.append(f"{en_file}: duplicate key '{key}' found {count} times")
+            errors.append(f"{en_label}: duplicate key '{key}' found {count} times")
     for key, count in ja_counts.items():
         if count > 1:
-            errors.append(f"{ja_file}: duplicate key '{key}' found {count} times")
+            errors.append(f"{ja_label}: duplicate key '{key}' found {count} times")
 
     en_set = set(en_counts.keys())
     ja_set = set(ja_counts.keys())
@@ -77,9 +79,9 @@ def check_strings_pair(en_file: Path, ja_file: Path) -> list[str]:
     missing_in_en = ja_set - en_set
 
     for key in sorted(missing_in_ja):
-        errors.append(f"Key '{key}' exists in {en_file.name} but missing in {ja_file.name}")
+        errors.append(f"Key '{key}' exists in {en_label} but missing in {ja_label}")
     for key in sorted(missing_in_en):
-        errors.append(f"Key '{key}' exists in {ja_file.name} but missing in {en_file.name}")
+        errors.append(f"Key '{key}' exists in {ja_label} but missing in {en_label}")
 
     return errors
 
