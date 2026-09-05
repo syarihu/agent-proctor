@@ -13,7 +13,7 @@ public enum GitHubClient {
     /// Homebrew の入れ先はそこに入っていない。PATH だけを見ていると、
     /// 端末からは動くのにアプリからだけ「gh が無い」ことになる。
     /// よくある置き場を先に当たるのは、当たればプロセスを起こさずに済むため
-    static let executable: String? = {
+    public static let executable: String? = {
         let known = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"]
         if let found = known.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
             return found

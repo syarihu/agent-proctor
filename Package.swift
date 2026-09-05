@@ -28,21 +28,49 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]),
 
         // -------------------------------------------------------------
+        // リポジトリ層 (データソースごとに小分け)
+        // -------------------------------------------------------------
+        .target(
+            name: "RepositoryLedger",
+            dependencies: ["Model", "Utility", "Resources"],
+            path: "Sources/Repository/Ledger",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "RepositoryGit",
+            dependencies: ["Model", "Utility"],
+            path: "Sources/Repository/Git",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "RepositoryGitHub",
+            dependencies: ["Model", "Utility"],
+            path: "Sources/Repository/GitHub",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+
+        // -------------------------------------------------------------
         // レガシーブリッジ (移行期間中に順次切り出しを進める)
         // -------------------------------------------------------------
         .target(
             name: "ProctorKit",
-            dependencies: ["Model", "Utility", "Resources"],
+            dependencies: [
+                "Model", "Utility", "Resources",
+                "RepositoryLedger", "RepositoryGit", "RepositoryGitHub"
+            ],
             path: "Sources/ProctorKit",
             swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
             name: "proctor",
-            dependencies: ["ProctorKit", "Model", "Utility", "Resources"],
+            dependencies: [
+                "ProctorKit", "Model", "Utility", "Resources",
+                "RepositoryLedger", "RepositoryGit", "RepositoryGitHub"
+            ],
             swiftSettings: [.swiftLanguageMode(.v5)]),
         // アプリ本体。scripts/build-app.sh がこれを Agent Proctor.app に組み立てる
         .executableTarget(
             name: "ProctorApp",
-            dependencies: ["ProctorKit", "Model", "Utility", "Resources"],
+            dependencies: [
+                "ProctorKit", "Model", "Utility", "Resources",
+                "RepositoryLedger", "RepositoryGit", "RepositoryGitHub"
+            ],
             swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )
