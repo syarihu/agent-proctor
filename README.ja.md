@@ -248,7 +248,7 @@ proctor は5分ごとに覚えている数字を全部捨てて数え直しま�
 | ユースケース | `UseCaseTask`, `UseCaseSession`, `UseCaseWorktree`, `UseCaseNotice` | やりたいこと1つに1つ。判断はすべてここが持ちます |
 | UI / 機能 | `DesignSystem`, `AppState`, `FeatureSettings`, `FeatureMenuBar`, `FeatureSidebar` | デザイン定義、共有状態、各種画面・コンポーネント |
 
-`Localized`（人に見せる言葉）は `Resources` に置いています。言葉はどの層からも要るもので、引くだけでは何も決めないためです。実行ターゲット（CLI の `proctor` とアプリの `ProctorApp`）は、ユースケースやフィーチャーを呼んで、返ってきたものを整えるだけです。
+`Localized`（人に見せる言葉）は `Resources` に置いています。言葉はどの層からも要るもので、引くだけでは何も決めないためです。実行ターゲット（CLI の `proctor` とアプリの `ProctorApp`）は、ユースケースやフィーチャーを呼んで、返ってきたものを整えるだけです。ターゲット間の依存関係図や詳細な設計規律については [docs/architecture.ja.md](docs/architecture.ja.md) を参照してください。
 
 | ファイル | 役割 |
 | --- | --- |
