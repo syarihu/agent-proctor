@@ -137,7 +137,7 @@ proctor setup all       # every guide at once
 anywhere else, run the command and hand its output to the agent.
 
 The guides live at
-[`Sources/ProctorKit/Resources/en.lproj/`](Sources/ProctorKit/Resources/en.lproj/)
+[`Sources/Resources/Resources/en.lproj/`](Sources/Resources/Resources/en.lproj/)
 if you would rather read one before installing anything.
 
 ## Usage
@@ -259,20 +259,16 @@ count.
 
 ## Design
 
-`ProctorKit` is split into three layers so that the logic serves both the CLI and
-the app. The boundary rule is that presentation concerns never enter the Kit:
-terminal ANSI colors live in the CLI and SwiftUI colors in the app, and all the
-Kit knows is which statuses exist and what to call them.
+Proctor is split into layered Swift Package Manager targets so that the logic serves both the CLI and the app. The boundary rule is that presentation concerns never enter the domain and logic layers: terminal ANSI colors live in the CLI and SwiftUI colors in `DesignSystem`, and all the model layer knows is which statuses exist and what to call them.
 
-| Layer | What goes in it |
-| --- | --- |
-| `Model/` | Data and vocabulary. No I/O |
-| `Repository/` | The only door to the outside: the ledger, git and the environment |
-| `UseCase/` | One per thing you want to do. Every decision lives here |
+| Layer | Target | What goes in it |
+| --- | --- | --- |
+| Core | `Model`, `Utility`, `Resources` | Data, vocabulary, helpers, and localized strings. No business logic |
+| Repository | `RepositoryLedger`, `RepositoryGit`, `RepositoryGitHub` | The only doors to the outside: the ledger, git, GitHub, and the environment |
+| UseCase | `UseCaseTask`, `UseCaseSession`, `UseCaseWorktree`, `UseCaseNotice` | One per action. Every decision lives here |
+| UI / Features | `DesignSystem`, `AppState`, `FeatureSettings`, `FeatureMenuBar`, `FeatureSidebar` | UI components, shared app state, and views |
 
-`Localized` sits outside the three, because every layer needs words and looking
-one up decides nothing. The views — `proctor/` for the CLI, `ProctorApp/` for the
-app — call a use case and format what comes back.
+`Localized` sits in `Resources`, because every layer needs words and looking one up decides nothing. The executables — `proctor` for the CLI, `ProctorApp` for the app — compose use cases and features.
 
 | File | Role |
 | --- | --- |

@@ -1,7 +1,18 @@
 import AppKit
+import AppState
 import Combine
+import DesignSystem
+import FeatureMenuBar
+import FeatureSettings
+import FeatureSidebar
+import ItermBridge
+import Model
+import Resources
 import SwiftUI
-import ProctorKit
+import UseCaseNotice
+import UseCaseSession
+import UseCaseTask
+import Utility
 
 /// アプリの組み立て。
 ///
@@ -32,6 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)  // Dock アイコンを出さない
+
+        Appearance.checkOrganizationAvailability = {
+            OrganizationGrouping.isAvailable()
+        }
 
         store = TaskStore()
         appearance = Appearance()

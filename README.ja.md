@@ -126,7 +126,7 @@ proctor setup all       # 繋ぎ方をまとめて出す
 他のエージェントなら、コマンドの出力をそのまま渡してください。
 
 入れる前に中身を読みたいときは
-[`Sources/ProctorKit/Resources/ja.lproj/`](Sources/ProctorKit/Resources/ja.lproj/) にあります。
+[`Sources/Resources/Resources/ja.lproj/`](Sources/Resources/Resources/ja.lproj/) にあります。
 
 ## 使い方
 
@@ -239,20 +239,16 @@ proctor は5分ごとに覚えている数字を全部捨てて数え直しま�
 
 ## 設計
 
-ロジックを CLI とアプリの両方から使えるように、`ProctorKit` を3層に分けています。
-表示の都合を Kit に持ち込まないのが境界の引き方で、たとえば端末の ANSI 色は
-CLI 側、SwiftUI の色はアプリ側がそれぞれ持ちます。Kit が知っているのは
-「どんな状態があり、どんな記号と名前で呼ぶか」までです。
+ロジックを CLI とアプリの両方から使えるように、階層型 Swift Package Manager ターゲットに分割しています。表示の都合をドメイン・ロジック層に持ち込まないのが境界の引き方で、たとえば端末の ANSI 色は CLI 側、SwiftUI の色は `DesignSystem` 側がそれぞれ持ちます。Model 層が知っているのは「どんな状態があり、どんな記号と名前で呼ぶか」までです。
 
-| 層 | 置くもの |
-| --- | --- |
-| `Model/` | データと語彙。I/O を持ちません |
-| `Repository/` | 外の世界との出入り口。ここだけが台帳・git・環境を触ります |
-| `UseCase/` | やりたいこと1つに1つ。判断はすべてここが持ちます |
+| 層 | ターゲット | 置くもの |
+| --- | --- | --- |
+| 基盤 | `Model`, `Utility`, `Resources` | データと語彙、共通処理、文言リソース。I/O や業務判断を持ちません |
+| リポジトリ | `RepositoryLedger`, `RepositoryGit`, `RepositoryGitHub` | 外の世界との出入り口。ここだけが台帳・git・GitHub・環境を触ります |
+| ユースケース | `UseCaseTask`, `UseCaseSession`, `UseCaseWorktree`, `UseCaseNotice` | やりたいこと1つに1つ。判断はすべてここが持ちます |
+| UI / 機能 | `DesignSystem`, `AppState`, `FeatureSettings`, `FeatureMenuBar`, `FeatureSidebar` | デザイン定義、共有状態、各種画面・コンポーネント |
 
-`Localized`（人に見せる言葉）は3層のどれにも入れていません。言葉はどの層からも要る
-もので、引くだけでは何も決めないためです。View（CLI の `proctor/` とアプリの
-`ProctorApp/`）は UseCase を呼んで、返ってきたものを整えるだけです。
+`Localized`（人に見せる言葉）は `Resources` に置いています。言葉はどの層からも要るもので、引くだけでは何も決めないためです。実行ターゲット（CLI の `proctor` とアプリの `ProctorApp`）は、ユースケースやフィーチャーを呼んで、返ってきたものを整えるだけです。
 
 | ファイル | 役割 |
 | --- | --- |

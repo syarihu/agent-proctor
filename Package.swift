@@ -9,23 +9,143 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [.macOS(.v13)],
     targets: [
-        // 台帳・git・集計の実装。CLI とアプリの両方がここを通る。
-        // 集計をここに閉じ込めることで、表示側にロジックが漏れるのを防ぐ
+        // -------------------------------------------------------------
+        // 基盤層 (Core / Resources / Utility)
+        // -------------------------------------------------------------
         .target(
-            name: "ProctorKit",
-            // 表示する言葉は CLI とアプリで同じものを使うので、
-            // 訳文も1か所 (Kit) に置いて両方から引く。
-            // scripts/build-app.sh がここの .lproj を .app の中へ配る
+            name: "Resources",
+            path: "Sources/Resources",
             resources: [.process("Resources")],
             swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "Model",
+            dependencies: ["Resources"],
+            path: "Sources/Model",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "Utility",
+            path: "Sources/Utility",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+
+        // -------------------------------------------------------------
+        // リポジトリ層 (データソースごとに小分け)
+        // -------------------------------------------------------------
+        .target(
+            name: "RepositoryLedger",
+            dependencies: ["Model", "Utility", "Resources"],
+            path: "Sources/Repository/Ledger",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "RepositoryGit",
+            dependencies: ["Model", "Utility"],
+            path: "Sources/Repository/Git",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "RepositoryGitHub",
+            dependencies: ["Model", "Utility"],
+            path: "Sources/Repository/GitHub",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+
+        // -------------------------------------------------------------
+        // ユースケース層 (ドメイン・機能ごとに小分け)
+        // -------------------------------------------------------------
+        .target(
+            name: "UseCaseTask",
+            dependencies: [
+                "Model", "Utility", "Resources",
+                "RepositoryLedger", "RepositoryGit", "RepositoryGitHub"
+            ],
+            path: "Sources/UseCase/Task",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "UseCaseSession",
+            dependencies: ["Model", "Utility", "Resources", "RepositoryLedger", "RepositoryGit"],
+            path: "Sources/UseCase/Session",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "UseCaseWorktree",
+            dependencies: ["Model", "Utility", "Resources", "RepositoryLedger", "RepositoryGit", "UseCaseTask"],
+            path: "Sources/UseCase/Worktree",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "UseCaseNotice",
+            dependencies: ["Model", "Utility", "Resources", "RepositoryLedger"],
+            path: "Sources/UseCase/Notice",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+
+        // -------------------------------------------------------------
+        // デザインシステム & ブリッジ
+        // -------------------------------------------------------------
+        .target(
+            name: "DesignSystem",
+            dependencies: ["Model", "Utility", "Resources"],
+            path: "Sources/DesignSystem",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "ItermBridge",
+            dependencies: ["Model", "Utility", "Resources"],
+            path: "Sources/Bridge/Iterm",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+
+        // -------------------------------------------------------------
+        // アプリケーション状態 (UI層で共有する状態管理)
+        // -------------------------------------------------------------
+        .target(
+            name: "AppState",
+            dependencies: [
+                "Model", "Utility", "Resources",
+                "RepositoryLedger", "RepositoryGit",
+                "UseCaseTask", "UseCaseSession", "UseCaseWorktree", "UseCaseNotice",
+                "ItermBridge"
+            ],
+            path: "Sources/AppState",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+
+        // -------------------------------------------------------------
+        // フィーチャー層 (UIコンポーネント・画面)
+        // -------------------------------------------------------------
+        .target(
+            name: "FeatureSettings",
+            dependencies: ["Model", "Utility", "Resources", "DesignSystem", "ItermBridge"],
+            path: "Sources/Feature/Settings",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "FeatureMenuBar",
+            dependencies: ["Model", "Utility", "Resources", "DesignSystem", "AppState"],
+            path: "Sources/Feature/MenuBar",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "FeatureSidebar",
+            dependencies: [
+                "Model", "Utility", "Resources",
+                "DesignSystem", "AppState",
+                "UseCaseTask", "UseCaseWorktree", "UseCaseNotice",
+                "ItermBridge"
+            ],
+            path: "Sources/Feature/Sidebar",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+
+        // -------------------------------------------------------------
+        // エントリポイント (CLI & アプリ)
+        // -------------------------------------------------------------
         .executableTarget(
             name: "proctor",
-            dependencies: ["ProctorKit"],
+            dependencies: [
+                "Model", "Utility", "Resources",
+                "RepositoryLedger", "RepositoryGit", "RepositoryGitHub",
+                "UseCaseTask", "UseCaseSession", "UseCaseWorktree", "UseCaseNotice"
+            ],
             swiftSettings: [.swiftLanguageMode(.v5)]),
         // アプリ本体。scripts/build-app.sh がこれを Agent Proctor.app に組み立てる
         .executableTarget(
             name: "ProctorApp",
-            dependencies: ["ProctorKit"],
+            dependencies: [
+                "Model", "Utility", "Resources",
+                "RepositoryLedger", "RepositoryGit", "RepositoryGitHub",
+                "UseCaseTask", "UseCaseSession", "UseCaseWorktree", "UseCaseNotice",
+                "DesignSystem", "ItermBridge", "AppState",
+                "FeatureSettings", "FeatureMenuBar", "FeatureSidebar"
+            ],
             swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )

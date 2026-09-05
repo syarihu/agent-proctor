@@ -32,8 +32,8 @@ Issue の本文やコメントも同じ。読む場所が同じなら、折り�
 | 正本（英語） | 訳（日本語） |
 | --- | --- |
 | `README.md` | `README.ja.md` |
-| `Sources/ProctorKit/Resources/en.lproj/skill-*.md` | `ja.lproj/skill-*.md` |
-| `Sources/ProctorKit/Resources/en.lproj/setup-*.md` | `ja.lproj/setup-*.md` |
+| `Sources/Resources/Resources/en.lproj/skill-*.md` | `ja.lproj/skill-*.md` |
+| `Sources/Resources/Resources/en.lproj/setup-*.md` | `ja.lproj/setup-*.md` |
 
 **片方だけ直さない。** 内容がずれると、どちらが正しいのか分からなくなる。
 
@@ -52,28 +52,30 @@ Issue の本文やコメントも同じ。読む場所が同じなら、折り�
 
 ## 設計
 
-`ProctorKit` は3層に分かれている。層をまたぐ変更をするときは、
+アーキテクチャは階層型マルチターゲット（SPM）に分かれている。層をまたぐ変更をするときは、
 どこに置くべきかを先に決める。
 
 | 層 | 置くもの | 置かないもの |
 | --- | --- | --- |
 | `Model/` | データと語彙 | I/O、判断 |
-| `Repository/` | 台帳・git・環境との出入り口 | 業務上の判断 |
+| `Repository/` | 台帳・git・GitHub・環境との出入り口 | 業務上の判断 |
 | `UseCase/` | やりたいこと1つにつき1つ。判断はすべてここ | 表示の都合 |
+| `DesignSystem/` | UIデザイン要素・色・グリフ | 業務判断、永続化 |
+| `Feature/` | 各種画面・UIコンポーネント | 永続化、ドメイン判断 |
 
 View（CLI とアプリ）は UseCase を呼んで整形するだけにする。
 
 守っていること。
 
-- **表示の都合を Kit に持ち込まない。** 端末の ANSI 色は CLI 側の `Terminal`、
-  SwiftUI の色はアプリ側の `Palette` がそれぞれ持つ。`TaskStatus` が知っているのは
+- **表示の都合をロジック層に持ち込まない。** 端末の ANSI 色は CLI 側の `Terminal`、
+  SwiftUI の色は `DesignSystem` の `Palette` がそれぞれ持つ。`TaskStatus` が知っているのは
   「どんな状態があり、どんな記号と名前で呼ぶか」まで
-- **View は Repository を直接触らない。** アプリ側は `TaskStore` が台帳を包む
+- **View は Repository を直接触らない。** アプリ側は `TaskStore`（`AppState`）が台帳を包む
 - **集計は `CollectTasks.run()` だけを通る。** 表示側に集計を書かない
 - **人に見せる言葉をコードに直接書かない。** `Localized.text("…")` で引く。
-  訳文は `Sources/ProctorKit/Resources/{en,ja}.lproj/Localizable.strings` にあり、
+  訳文は `Sources/Resources/Resources/{en,ja}.lproj/Localizable.strings` にあり、
   **鍵は必ず両方に足す**（片方にしか無い鍵は、もう片方の言語では鍵がそのまま出る）。
-  `Localized` を3層のどれにも入れていないのは、言葉がどの層からも要るものであり、
+  `Localized` を各層のどれにも入れていないのは、言葉がどの層からも要るものであり、
   引くだけで何も決めないため
 
 ## 変更後の確認

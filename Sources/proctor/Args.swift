@@ -1,4 +1,5 @@
-import ProctorKit
+import Model
+import Resources
 
 /// サブコマンドの引数。argparse の代わりに置いている小さな道具。
 ///
