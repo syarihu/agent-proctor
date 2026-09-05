@@ -97,7 +97,7 @@ public enum NameSession {
     ///
     /// - Returns: 書き換えたあとの記録。呼ぶ側が「何にどう付いたか」を言えるようにする
     @discardableResult
-    public static func run(title raw: String) throws -> TaskRecord {
+    public static func name(title raw: String) throws -> TaskRecord {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         // 空文字は「外す」。`tab_title` の扱いと揃えてある
         let value = trimmed.isEmpty ? nil : trimmed

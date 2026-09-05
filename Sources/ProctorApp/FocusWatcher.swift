@@ -87,7 +87,7 @@ final class FocusWatcher {
                 let session = self.current
                 let policy = seenPolicy()
                 self.writer.submit({
-                    (try? MarkSessionSeen.run(itermSession: session, policy: policy)) == true
+                    (try? MarkSessionSeen.mark(itermSession: session, policy: policy)) == true
                 }, changed: onSeen)
             }
         }

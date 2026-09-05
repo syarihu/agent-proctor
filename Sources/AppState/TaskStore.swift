@@ -262,7 +262,7 @@ public final class TaskStore: ObservableObject {
     /// **判断は写さない。** 何がどう変わるかは台帳を読み直した結果から来るので、
     /// ここに「確認待ちは待機へ」のような写しを置かない
     public func clearAttention(ids: [String]) {
-        guard (try? ClearAttention.run(ids: ids)) == true else { return }
+        guard (try? ClearAttention.clear(ids: ids)) == true else { return }
         reloadRecords()
         if let quick = CollectTasks.reapplied(tasks, records: records) { tasks = quick }
         // 差分と worktree は次の数え直しで揃える

@@ -104,7 +104,7 @@ func cmdTitle(_ args: Args) throws -> Int32 {
     _ = try args.require(0, Localized.text("cli.arg.title"))
     // 引用符を忘れた呼び方 (`proctor title 台帳を直す`) でも通るように繋ぐ
     let text = args.positional.joined(separator: " ")
-    let task = try NameSession.run(title: text)
+    let task = try NameSession.name(title: text)
     print(task.title.map { Localized.text("cli.title.set", task.id, $0) }
         ?? Localized.text("cli.title.cleared", task.id))
     return 0

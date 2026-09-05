@@ -93,7 +93,7 @@ func cmdTouch(_ args: Args) throws -> Int32 {
     }
     let outcome: RecordHookEvent.Outcome
     do {
-        outcome = try RecordHookEvent.touch(status: status, payload: payload)
+        outcome = try RecordHookEvent.record(status: status, payload: payload)
     } catch {
         // 台帳に書けなくても、このイベントが何を意味するかは伝える。
         // 黙って落ちると、呼び出し側はタブの色を決められない。
@@ -118,7 +118,7 @@ func cmdSubagent(_ args: Args) throws -> Int32 {
 }
 
 func cmdStats(_ args: Args) throws -> Int32 {
-    try RecordSessionStats.run(
+    try RecordSessionStats.record(
         HookPayload.fromStandardInput().naming(agent: args.value("--agent")))
     return 0
 }

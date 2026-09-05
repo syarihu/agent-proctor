@@ -18,12 +18,24 @@ import RepositoryLedger
 /// (本当に待たせている) ので、抑え込む仕掛けは置いていない。
 /// 黙らせたいだけなら、もう一度押せばよい。
 public enum ClearAttention {
+    /// 単一のセッションの要確認マークを降ろす。
+    ///
+    /// - Parameter id: 片付ける台帳の ID。**要確認に出ていたものを渡す。**
+    ///   押してから台帳に届くまでに状態が変わっていることはあるので、
+    ///   何を片付けてよいかはここで改めて確かめる
+    /// - Returns: 台帳を書き換えたら true
+    @discardableResult
+    public static func clear(id: String) throws -> Bool {
+        guard !id.isEmpty else { return false }
+        return try clear(ids: [id])
+    }
+
     /// - Parameter ids: 片付ける台帳の ID。**要確認に出ていたものを渡す。**
     ///   押してから台帳に届くまでに状態が変わっていることはあるので、
     ///   何を片付けてよいかはここで改めて確かめる
     /// - Returns: 台帳を書き換えたら true
     @discardableResult
-    public static func run(ids: [String]) throws -> Bool {
+    public static func clear(ids: [String]) throws -> Bool {
         let targets = Set(ids)
         guard !targets.isEmpty else { return false }
 

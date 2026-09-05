@@ -25,7 +25,7 @@ final class Reaper {
                 let alive = ItermBridge.liveSessionIDs() ?? []
                 // 片付けは台帳を書くのでメインスレッドから外す (理由は LedgerWriter)
                 self.writer.submit({
-                    !((try? ReapClosedSessions.run(aliveSessionIDs: alive)) ?? []).isEmpty
+                    !((try? ReapClosedSessions.reap(aliveSessionIDs: alive)) ?? []).isEmpty
                 }, changed: onChange)
             }
         }
