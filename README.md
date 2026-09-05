@@ -6,200 +6,97 @@ English | [日本語](README.ja.md)
 
 # agent-proctor
 
-A Mac app and CLI that acts as your proctor, watching over every coding agent
-at work across your git worktrees — one iTerm2 tab each — and telling you the
-moment one raises its hand.
+A macOS companion app and CLI designed to monitor, track, and manage concurrent AI coding agents (Claude Code, Antigravity, Codex) working across git worktrees and iTerm2 tabs.
 
-A proctor does not sit the exam. They watch the room, and they go to whoever
-raises a hand. That is exactly the job here: instead of checking tabs one by one,
-you see which session is blocked waiting for you and which one is still working
-in the background.
+## Overview
 
-The app is one half of a pair with iTerm2. The sidebar rides against the edge
-of your iTerm2 window and every row stands for one of its tabs, so clicking a row
-goes to that tab. The `proctor` CLI is not tied to a terminal and lists every
-session all the same.
+When running multiple AI coding agents across several repositories and git worktrees, tracking their progress becomes tedious. It is easy to lose track of which agent is waiting for permission to run a command, which agent is stuck thinking, and which one has completed its task.
+
+**agent-proctor** acts as an overseer for all your agent sessions. It observes active sessions in real time, organizes them alongside your iTerm2 terminal, surfaces sessions that need your attention, and brings you directly to the relevant terminal tab with a single click.
 
 <p align="center">
-  <img src="docs/images/sidebar-and-terminal.png" alt="The sidebar beside iTerm2: a Needs you strip at the top with a session waiting for approval and a finished one, three sessions across two repositories under the organization that owns them, and a macOS notification saying which session is waiting and what for" width="880">
+  <img src="docs/images/sidebar-and-terminal.png" alt="agent-proctor sidebar alongside iTerm2, showing session status, attention notices, and notifications" width="880">
 </p>
 
-The session name, context usage and subagent count are things a tab cannot tell
-you. `elapsed` is the time since the status last changed — if something has been
-running for a long time, that is a hint that it is either thinking hard or stuck.
-The tool line is what the agent is touching right now, and subagents hang under
-the session that spawned them, one row each. When the branch has a pull request,
-its number leads that line and takes you to it in the browser; the colour says
-whether it is open, merged or closed, and a draft stays dim.
+## Key Features
 
-```
-⏳ Fix the empty state of the sidebar  (context: 13%)
-   #128 develop · elapsed: 59s
-▶ Split the kit into layers  (context: 32%)
-   main · elapsed: 1m  🤖2              +74 -3 ?2
-   Edit: TaskStore.swift
-   ├ Explore  find where the ledger is read
-   │    Grep: LedgerStore · 12s
-   └ general-purpose  cross-check the review comments
-        Read: CollectTasks.swift · 48s
-```
-
-Everything you have not dealt with is gathered into a `Needs you` strip pinned
-at the top of the sidebar: a session stopped for your approval, a finished one
-you have not dealt with, and one that fell over that you have not dealt with
-either.
-A row that is waiting also carries what it is waiting for — `Bash: rm -rf
-build`, the command sitting in the permission prompt. A waiting row leaves the
-strip the moment you answer that prompt; a finished or failed one leaves once
-you visit its tab.
-
-Visiting the tab is only the default. *Settings…* has a `Needs you` section
-where a notice for a finished or failed session can be made to stay until you
-clear it by hand, so having looked at something does not count as having
-replied to it. It then goes once that session moves again — sending it an
-instruction is enough — or once you press the ✓ on the notice. Only the strip
-keeps it: the row in the list below turns ✔ the moment you visit its tab, so
-the list stays a picture of where things are and the strip stays the list of
-what is left to do.
-
-When you are not looking at the sidebar at all, macOS says it for you: a
-notification goes out the moment a session starts waiting for you, finishes, or
-falls over. Clicking it goes to that tab, exactly like clicking a row.
+- **iTerm2 Companion Sidebar**: A collapsible sidebar that docks directly against the active iTerm2 window. Every row represents an agent session in an iTerm2 tab, and clicking a row immediately focuses that tab.
+- **"Needs You" Attention Strip**: Pinned prominently at the top of the sidebar. Sessions awaiting approval for dangerous bash commands, unreviewed completed tasks, or crashed sessions are collected here so you never miss an interaction prompt.
+- **Rich Session Details**: Displays real-time status (waiting, running, finished, error), elapsed time since last state transition, context token consumption percentage, currently invoked tools (e.g. `Read`, `Edit`, `Grep`), and hierarchical subagent trees.
+- **Pull Request Awareness**: Automatically detects whether a worktree branch has an associated GitHub Pull Request, showing the PR number with status coloring (open, merged, closed, or draft) and providing direct browser links.
+- **Multi-Level Organization**: Sessions are automatically grouped by GitHub repository and organization/owner (with avatar icons). Groups can be folded independently with compact tally summaries (`⏳1 ▶2 ⌁2`).
+- **System Notifications**: Native macOS notifications alert you the instant an agent stops for approval, completes work, or encounters an error. Clicking a notification immediately takes you to the corresponding terminal tab.
+- **Git Worktree Oversight**: Inspect uncommitted file changes (`+N -M ?K`), branch merge states, and idle time across worktrees. Easily identify abandoned or completed worktrees that are ready for cleanup.
+- **Zero External Dependencies**: Built entirely with Swift and system frameworks with no third-party package dependencies. It relies only on local `git` (with optional `gh` CLI for organization avatar grouping and PR lookups).
 
 <p align="center">
-  <img src="docs/images/status-transitions.gif" alt="Subagent rows appearing and leaving, a session turning orange when it needs an answer and a notification saying what it is waiting for, the notification going away once it is answered, and a finished one going quiet once its tab has been looked at" width="760">
+  <img src="docs/images/status-transitions.gif" alt="Dynamic status transitions, subagent hierarchy, and notification triggers" width="760">
 </p>
 
-## Install
+## Installation
 
-### Homebrew (recommended)
+### Homebrew (Recommended)
 
 ```bash
 brew install syarihu/tap/agent-proctor
 proctor sidebar
 ```
 
-### From source
+### Building from Source
 
 ```bash
-scripts/create-signing-cert.sh   # once. Creates a local code signing certificate
-scripts/install.sh               # installs to /Applications and links ~/bin/proctor
+# Generate a local code signing certificate for automation permissions (one-time setup)
+scripts/create-signing-cert.sh
+
+# Build, install to /Applications, and symlink ~/bin/proctor
+scripts/install.sh
 ```
 
-The certificate comes first because Automation (Apple Events) permission is tied
-to the pair of bundle identifier and code signature. An ad-hoc signature changes on
-every build, so macOS would ask you to approve controlling iTerm2 again each time.
-
-Installing over a running copy does not replace the one that is running. Quit
-Agent Proctor and open it again afterwards — `brew upgrade` included. The CLI needs
-nothing: every invocation reads the bundle it is linked to.
-
-On first launch macOS asks for permission to control iTerm2, and to send
-notifications. It only ever asks once. If you refuse, open *Settings…* from
-the menu bar item: its *Permission* section shows where each stands and takes you
-to the right page of System Settings. Refusing notifications costs you the banners
-only — the sidebar and the `Needs you` strip carry on regardless.
-
-Open *Settings…* and turn on *Open at login*, and it will start on its own from
-then on. The sidebar's text size, width and grouping are set there too, as is
-whether it counts file changes at all — see
-[Counting changes](#counting-changes).
+> [!NOTE]
+> On first launch, macOS will request permissions to control iTerm2 (Apple Events) for automatic tab focusing, and notification permissions for desktop alerts. If permissions were declined, you can enable them at any time via **Settings… → Permission**.
 
 <p align="center">
-  <img src="docs/images/settings.png" alt="The settings window: sidebar text size, width, opacity, background, how rows are grouped, the tab-number and count-file-changes toggles, the make-room toggle, open at login, when a notice is cleared from the Needs you strip, which of waiting, finishing and failing are notified, whether sending notifications and controlling iTerm2 are allowed, and the version" width="540">
+  <img src="docs/images/settings.png" alt="agent-proctor settings window" width="540">
 </p>
 
-## Wiring up your agent
+## Connecting Your Agents
 
-Installing it is not enough — the list stays empty. agent-proctor is a passive
-tool that reads a ledger and shows it; what writes to that ledger is your agent's
-hooks (Claude Code, Antigravity or Codex).
+agent-proctor is a lightweight viewer that reads state from a centralized ledger (`~/.local/state/proctor/state.json`). To populate this ledger, configure your agent's event hooks to notify proctor on state transitions.
 
-Antigravity is the one exception, and only for one state. It has no hook for a
-permission prompt — it does not say when it starts asking you something, and does
-not say when the asking is over — so proctor reads that one thing out of
-Antigravity's own conversation record rather than waiting for a hook that never
-comes. Wiring the hooks up is still what puts the session on the list at all;
-this only fills the gap they cannot cover. Such a row does not say what it is
-waiting for, because that is not in the record while the prompt is still open.
-
-How to wire them up depends on your setup — existing hooks or a statusLine have to
-be merged rather than replaced — so instead of a procedure it is written as
-instructions for an AI to follow, and proctor prints them:
+proctor provides built-in setup guides formatted specifically for AI agents to follow:
 
 ```bash
-proctor setup ls        # which agents there are guides for
-proctor setup claude    # or agy, codex, other
-proctor setup all       # every guide at once
+# List available agent setup guides
+proctor setup ls
+
+# Output setup instructions for a specific agent (e.g. claude, agy, codex)
+proctor setup claude
+
+# Output all setup instructions
+proctor setup all
 ```
 
-→ in Claude Code, `! proctor setup claude` does it with nothing to install first;
-anywhere else, run the command and hand its output to the agent.
+For Claude Code, running `! proctor setup claude` directly within your conversation instructs the agent to configure its own hooks automatically.
 
-The guides live at
-[`Sources/Resources/Resources/en.lproj/`](Sources/Resources/Resources/en.lproj/)
-if you would rather read one before installing anything.
+## CLI Usage
 
-## Usage
+The `proctor` CLI allows you to inspect and manage sessions and worktrees from any terminal without opening the graphical sidebar:
 
-```bash
-proctor ls              # list (--all for every repository, --json for machines)
-proctor worktree ls     # list the worktrees, running or not (--all, --json)
-proctor skill [name]    # print a procedure for your agent to follow (no name lists them)
-proctor setup [agent]   # print how to wire proctor up (no name lists the agents)
-proctor attach <id>     # open the agent (claude / agy / codex) for that session, resuming it
-proctor rm <id>         # drop one row from the ledger (the worktree is left alone)
-proctor title <text>    # name the session you are in (empty text clears it)
-proctor sidebar         # launch the sidebar app
-proctor --version       # print the version
-```
+| Command | Description |
+| --- | --- |
+| `proctor ls` | List all active agent sessions (`--all` for all repositories, `--json` for structured output). |
+| `proctor worktree ls` | List git worktrees with status, uncommitted diffs, and cleanup suitability (`--all`, `--json`). |
+| `proctor attach <id>` | Resume the agent session associated with the specified ID in the current terminal. |
+| `proctor title <text>` | Assign a descriptive title to the current session (run `proctor title ""` to clear). |
+| `proctor rm <id>` | Remove a stale session from the ledger (leaves the underlying worktree untouched). |
+| `proctor setup [agent]` | Print hook configuration instructions for coding agents. |
+| `proctor skill [name]` | Print standardized workflow guides for agents (e.g. `proctor skill worktree`). |
+| `proctor sidebar` | Launch the macOS companion sidebar application. |
+| `proctor --version` | Print the version number. |
 
-That is the whole surface. Sessions appear on their own as soon as your hooks
-report them and leave once the agent exits, so there is nothing to register by
-hand. The app and the CLI never create or remove a worktree — they read the
-ledger, `git worktree list` and `git diff`, and write nothing but the ledger.
+### Worktree Management
 
-Clicking a row in the sidebar focuses that tab if it is still alive, and otherwise
-opens a new tab resuming the conversation. Hovering a row reveals a close button
-that drops it from the list — the worktree is left alone, and a session that is
-still running comes back on its next hook.
-
-Rows sit under the repository they belong to, and those repositories sit under the
-account or organization that owns them, each heading carrying its avatar. Clicking
-a heading folds it away; the two levels fold independently, and the folds are
-remembered across restarts. A folded heading carries the tally of what is inside
-it (`⏳1 ▶2 ⌁2`), so a session waiting on you still shows while its group is closed.
-The last of those counts the worktrees with nobody in them; it is deliberately a
-different mark in no status colour, because a worktree has no status of its own.
-The owner comes from the git remote rather than from where the repository sits on
-disk, so it does not matter how you lay out your clones. Without `gh` installed
-and signed in, the sidebar groups by repository alone.
-
-A repository does not leave the list when its last session ends — it only sinks
-below the ones that are still moving, and comes back with its heading folded. What
-stays is what you were in over the last week; older ones show only while a tab is
-open in them. Pointing at a heading reveals a `+` that opens a new tab in that
-repository, which is the one-click way back to somewhere you have not been since
-yesterday; reaching a worktree you left behind takes three, since the heading and
-its worktree line both start folded.
-
-The menu bar carries the same tally, and its menu lists every session with the
-same marks. Picking one goes to that tab, exactly as clicking a row does.
-
-<p align="center">
-  <img src="docs/images/menu-bar.png" alt="The menu bar item showing the tally, with the menu listing every session" width="382">
-</p>
-
-### Worktrees
-
-Sessions come and go; worktrees stay. When the last session in one ends, what
-remains on disk is a directory nobody is looking at any more.
-
-```bash
-proctor worktree ls            # this repository
-proctor worktree ls --all      # every repository proctor has seen
-proctor worktree ls --json     # the same facts, for an agent to read
-```
+When multiple agents complete their assignments, forgotten worktrees can accumulate on disk. `proctor worktree ls` surfaces idle worktrees and flags branches that have already been merged:
 
 ```
 agent-proctor
@@ -209,84 +106,37 @@ spike     spike        nobody here  +1     2d
 merged    merged-work  can go              6d
 ```
 
-Each one comes with the sessions running in it, its uncommitted changes, whether
-its branch has been merged, and how long it has been since its last commit.
-
-In the sidebar the same list sits under its repository as one folded line —
-*worktrees with no session: 3 · 1 can go* — because a pile of abandoned
-directories must never bury the session that is waiting for you.
-
-Making a worktree and sweeping it up afterwards is the agent's job, and the
-procedure ships with proctor:
+To teach your agents how to create, inspect, and safely sweep up worktrees, share the built-in skill:
 
 ```bash
-proctor skill ls          # which procedures there are
-proctor skill worktree    # print one, for an agent to follow
+proctor skill worktree
 ```
 
-The text lives in proctor rather than in your agent's configuration, so
-updating proctor updates it everywhere at once. With no setup at all, typing
-`! proctor skill worktree` in Claude Code drops the guide straight into the
-conversation.
+<p align="center">
+  <img src="docs/images/menu-bar.png" alt="agent-proctor menu bar extra showing session tally and quick access menu" width="382">
+</p>
 
-### Counting changes
+## Menu Bar Extra
 
-The `+`/`-` on every row, and the diff column of the worktree list, come from
-`git diff --numstat` and `git ls-files --others`. Editing a file does not touch
-the ledger, so the sidebar watches the repositories and worktrees it is showing
-and counts again only where something moved.
+agent-proctor runs quietly in your macOS menu bar. The menu bar icon displays a live tally of waiting and running sessions, and clicking it opens a menu listing every active session with instant navigation to its iTerm2 tab.
 
-In a large repository a single count takes seconds, and counting every ten
-seconds would leave git running the whole time. So proctor times each count and
-stretches the interval instead: the slower counting turns out to be, the longer
-it waits, until counting takes only a small slice of the time. A repository that
-answers straight away is left at the intervals it always had.
+## Architecture & Design
 
-Watching misses things. Events get coalesced, none arrive while the app is not
-running, and a worktree created between two sweeps is not being watched yet. So
-every five minutes proctor throws away every count it remembers and counts
-everything again: a number on screen is at most that far behind, and anything
-the watching does see is picked up on the next count.
+agent-proctor is designed as a modular, multi-target Swift Package Manager application adhering to strict layer separation:
 
-If you would rather not pay for it at all, turn off *Settings… → Sidebar → Count
-file changes*. Neither the `+`/`-` numbers nor whether a worktree can go is
-shown any more — with nothing counted, proctor cannot say whether work is still
-sitting in it uncommitted, and saying only that a branch is merged would leave
-the least reliable half of the answer on screen.
+- **Core (`Model`, `Utility`, `Resources`)**: Basic data models, process execution, and localization tables. Free of business logic.
+- **Repository (`RepositoryLedger`, `RepositoryGit`, `RepositoryGitHub`)**: External I/O gateways managing disk state synchronization, git processes, and GitHub CLI interactions.
+- **UseCase (`UseCaseTask`, `UseCaseSession`, `UseCaseWorktree`, `UseCaseNotice`)**: Encapsulates single-responsibility domain workflows and decisions.
+- **Design & Bridges (`DesignSystem`, `ItermBridge`)**: Shared UI tokens, status glyphs, and AppleScript terminal automation.
+- **Application State (`AppState`)**: Thread-safe observable stores (`TaskStore`) bridging background polling with SwiftUI views.
+- **Features (`FeatureSidebar`, `FeatureMenuBar`, `FeatureSettings`)**: Modular UI views and controllers.
+- **Entry Points (`proctor`, `ProctorApp`)**: CLI executable and macOS menu bar application.
 
-`proctor ls` and `proctor worktree ls` do not read that setting. They always
-count.
-
-## Design
-
-Proctor is split into layered Swift Package Manager targets so that the logic serves both the CLI and the app. The boundary rule is that presentation concerns never enter the domain and logic layers: terminal ANSI colors live in the CLI and SwiftUI colors in `DesignSystem`, and all the model layer knows is which statuses exist and what to call them.
-
-| Layer | Target | What goes in it |
-| --- | --- | --- |
-| Core | `Model`, `Utility`, `Resources` | Data, vocabulary, helpers, and localized strings. No business logic |
-| Repository | `RepositoryLedger`, `RepositoryGit`, `RepositoryGitHub` | The only doors to the outside: the ledger, git, GitHub, and the environment |
-| UseCase | `UseCaseTask`, `UseCaseSession`, `UseCaseWorktree`, `UseCaseNotice` | One per action. Every decision lives here |
-| UI / Features | `DesignSystem`, `AppState`, `FeatureSettings`, `FeatureMenuBar`, `FeatureSidebar` | UI components, shared app state, and views |
-
-`Localized` sits in `Resources`, because every layer needs words and looking one up decides nothing. The executables — `proctor` for the CLI, `ProctorApp` for the app — compose use cases and features. See [docs/architecture.md](docs/architecture.md) for detailed target relationships and dependency diagrams.
-
-| File | Role |
-| --- | --- |
-| `~/.local/state/proctor/state.json` | The ledger. One across all repositories. Created on first use |
-| `~/.local/state/proctor/avatars/` | Organization avatars, one per owner. Safe to delete; they are fetched again |
-
-The reasoning behind each rule is kept in the code, as a comment at the place it
-applies. Copying it here as well would only let the two drift apart.
-
-## Dependencies
-
-`git`, and nothing else. There are no external Swift package dependencies.
+For detailed architecture diagrams and layer boundary rules, see [docs/architecture.md](docs/architecture.md).
 
 ## Contributing
 
-See [CLAUDE.md](CLAUDE.md) for the conventions used in this repository
-(English commit messages, Japanese code comments, and how to check behaviour
-before and after a change).
+See [CLAUDE.md](CLAUDE.md) for development guidelines, testing procedures, and coding conventions.
 
 ## License
 
