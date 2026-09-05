@@ -1,6 +1,13 @@
 import Foundation
 import Combine
-import ProctorKit
+import Model
+import RepositoryLedger
+import RepositoryGit
+import UseCaseTask
+import UseCaseWorktree
+import UseCaseNotice
+import UseCaseSession
+import ItermBridge
 
 /// 台帳を見張って、表示に使うものを配る。
 ///
@@ -17,41 +24,41 @@ import ProctorKit
 ///
 /// その周期は固定ではなく、**数え直しにかかった時間から決める** (`PaceRecounts`)。
 @MainActor
-final class TaskStore: ObservableObject {
+public final class TaskStore: ObservableObject {
     /// サイドバーが出ている間だけ更新される、git まで数えた一覧
-    @Published private(set) var tasks: [CollectedTask] = []
+    @Published public private(set) var tasks: [CollectedTask] = []
     /// 台帳そのもの。git を呼ばないので常に持っておける。
     /// メニューの一覧や「開く」の照合はこちらを使う
-    @Published private(set) var records: [TaskRecord] = []
+    @Published public private(set) var records: [TaskRecord] = []
     /// メニューバーの要約
-    @Published private(set) var summary: [(status: String, count: Int)] = []
+    @Published public private(set) var summary: [(status: String, count: Int)] = []
     /// エージェントごとのレートリミットキャッシュ。セッションが無くても残る
-    @Published private(set) var agentRateLimits: [String: AgentRateLimits] = [:]
+    @Published public private(set) var agentRateLimits: [String: AgentRateLimits] = [:]
     /// リポジトリごとの worktree。セッションが終わっても残るものを見せるために持つ。
     /// 数えるのに git を起こすので、更新は自前の長い周期 (worktreeInterval) だけ
-    @Published private(set) var worktrees: [CollectedRepoWorktrees] = []
+    @Published public private(set) var worktrees: [CollectedRepoWorktrees] = []
     /// セッションも worktree も無くなっても、一覧に残しておくリポジトリ。
     ///
     /// タブを閉じた瞬間に見出しごと消えると、さっきまで居た場所へ戻る道が
     /// そこで切れる。残ったものは動きのあるものの下に落ちるだけなので、
     /// 今どうなっているかの見通しは変わらない。
     /// 誰を残すかを決めるのは `CollectRecentRepos`
-    @Published private(set) var keptRepos: Set<String> = []
+    @Published public private(set) var keptRepos: Set<String> = []
     /// いま見ている iTerm2 のタブ。台帳には無い情報なので外から入れてもらう
     /// (聞きに行くのは FocusWatcher。ここは表示のために預かるだけ)
-    @Published private(set) var focusedSession: String?
+    @Published public private(set) var focusedSession: String?
     /// いま見ているタブがいるリポジトリ本体。エージェントが動いていない場所も含む。
     ///
     /// 台帳には書かない。台帳を書くのはフックの役目で、覗いただけの
     /// リポジトリを覚えると、覚えておける件数の枠をそれで食ってしまう
-    @Published private(set) var currentRepo: String?
+    @Published public private(set) var currentRepo: String?
     /// セッションの guid ごとの iTerm2 タブ番号 (⌘N の N)。
     ///
     /// **台帳には書かない。** 番号はタブを開く・閉じる・並べ替えるたびに動くので、
     /// 台帳に持たせるとその都度書き込みが走り、一覧の組み直しを呼び続ける。
     /// 端末に聞けば分かるものなので、預かるだけにする
     /// (聞きに行くのは FocusWatcher)
-    @Published private(set) var tabNumbers: [String: Int] = [:]
+    @Published public private(set) var tabNumbers: [String: Int] = [:]
 
     /// 台帳の更新時刻を見に行く間隔。stat を叩くだけなので軽い
     private let pollInterval: TimeInterval = 0.5
@@ -137,9 +144,9 @@ final class TaskStore: ObservableObject {
     /// 設定は途中で変わるので、起動時の答えを持ち回ると次の起動まで効かない
     /// (FocusWatcher の wantsTabNumbers や seenPolicy と同じ形)。
     /// 既定を true にしてあるので、繋ぎ忘れても今までどおり数える
-    var wantsDiff: () -> Bool = { true }
+    public var wantsDiff: () -> Bool = { true }
 
-    init() {
+    public init() {
         reloadRecords()
         pollTimer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) {
             [weak self] _ in
@@ -150,12 +157,12 @@ final class TaskStore: ObservableObject {
     deinit { pollTimer?.invalidate() }
 
     /// ID から台帳の1件を引く。View はここを通す
-    func record(id: String) -> TaskRecord? {
+    public func record(id: String) -> TaskRecord? {
         records.first { $0.id == id }
     }
 
     /// サイドバーの表示が切り替わったときに呼ぶ。
-    func setCollecting(_ on: Bool) {
+    public func setCollecting(_ on: Bool) {
         guard collecting != on else { return }
         collecting = on
         if on {
@@ -171,13 +178,13 @@ final class TaskStore: ObservableObject {
     }
 
     /// いま見ているタブが変わったときに呼ぶ。
-    func setFocused(_ session: String?) {
+    public func setFocused(_ session: String?) {
         guard focusedSession != session else { return }
         focusedSession = session
     }
 
     /// タブ番号の顔ぶれが変わったときに呼ぶ。
-    func setTabNumbers(_ numbers: [String: Int]) {
+    public func setTabNumbers(_ numbers: [String: Int]) {
         guard tabNumbers != numbers else { return }
         tabNumbers = numbers
     }
@@ -186,7 +193,7 @@ final class TaskStore: ObservableObject {
     ///
     /// リポジトリ本体を出すには git を起こすので、同じ場所は二度引かない
     /// (タブを行き来するだけで毎回起こすことになる)。
-    func setCurrentDirectory(_ path: String?) {
+    public func setCurrentDirectory(_ path: String?) {
         pendingDirectory = path
         guard let path else { apply(repo: nil); return }
         if let known = repoOfDirectory[path],
@@ -239,7 +246,7 @@ final class TaskStore: ObservableObject {
     ///
     /// 台帳を読み直す前に手元の一覧からも落とす。読み直しは git を起動するので
     /// 数百ミリ秒かかることがあり、押したのに消えない時間ができてしまう。
-    func forget(id: String) {
+    public func forget(id: String) {
         do {
             try ForgetTask.run(id: id)
         } catch {
@@ -254,7 +261,7 @@ final class TaskStore: ObservableObject {
     /// 押した瞬間に映るよう、git を起こさない経路 (`reapplied`) で先に差し替える。
     /// **判断は写さない。** 何がどう変わるかは台帳を読み直した結果から来るので、
     /// ここに「確認待ちは待機へ」のような写しを置かない
-    func clearAttention(ids: [String]) {
+    public func clearAttention(ids: [String]) {
         guard (try? ClearAttention.run(ids: ids)) == true else { return }
         reloadRecords()
         if let quick = CollectTasks.reapplied(tasks, records: records) { tasks = quick }
@@ -263,7 +270,7 @@ final class TaskStore: ObservableObject {
     }
 
     /// 台帳が外から変わったかもしれないときに呼ぶ (自分で書き換えた直後など)。
-    func refreshNow() {
+    public func refreshNow() {
         reloadRecords()
         if collecting { recount(reason: .urgent) }
     }
@@ -284,7 +291,7 @@ final class TaskStore: ObservableObject {
     ///
     /// `countedPlaces` は捨てない。**あれが覚えているのはセッションの顔ぶれ**で、
     /// 設定を切り替えても顔ぶれは変わっていない
-    func countingSettingChanged() {
+    public func countingSettingChanged() {
         lastWorktreeCount = .distantPast
         if collecting { recount(reason: .urgent) }
     }
@@ -382,7 +389,7 @@ final class TaskStore: ObservableObject {
     }
 
     /// 一覧最下部に出すレートリミット集約情報
-    var rateLimitSummaries: [AgentQuotaSummary] {
+    public var rateLimitSummaries: [AgentQuotaSummary] {
         CollectTasks.summarizedRateLimits(tasks, persisted: agentRateLimits)
     }
 

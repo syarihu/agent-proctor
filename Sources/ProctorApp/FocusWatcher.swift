@@ -1,5 +1,6 @@
 import Foundation
 import ProctorKit
+import ItermBridge
 
 /// いま見ている iTerm2 のタブを追いかける。
 ///

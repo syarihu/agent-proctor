@@ -1,4 +1,5 @@
 import AppKit
+import FeatureSettings
 import Foundation
 import ProctorKit
 import UserNotifications
@@ -12,19 +13,11 @@ import UserNotifications
 /// 通知を差し替えるので、1つのセッションについて通知センターに残るのは
 /// 常に最後の1件になる (確認待ち → 完了と続いても積み上がらない)。
 @MainActor
-final class Notifier: NSObject, UNUserNotificationCenterDelegate {
+final class Notifier: NSObject, UNUserNotificationCenterDelegate, NotificationPermissionAuthorizer {
     /// 通知が押されたときに呼ばれる。渡すのはセッションの id
     var onOpen: ((String) -> Void)?
 
-    /// 通知センターの許可の状態。オートメーションの許可と同じ並びにしてある
-    enum Permission {
-        case granted
-        case denied
-        /// まだ尋ねていない。ダイアログを出せるのはこのときだけ
-        case undecided
-        /// そもそも通知を出せない (バンドルの外で動いている)
-        case unavailable
-    }
+    typealias Permission = NotificationPermissionStatus
 
     /// userInfo に入れる鍵。押されたときにどのセッションかを引くのに使う。
     /// 押されたことを受け取る口 (delegate) はメインの外から来るので nonisolated
@@ -80,6 +73,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             "x-apple.systempreferences:com.apple.Notifications-Settings.extension")
         else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    func openSettings() {
+        Self.openSettings()
     }
 
     /// 決まったものを配る。取り下げも同じ口で受ける

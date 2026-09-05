@@ -1,6 +1,11 @@
 import AppKit
-import ProctorKit
+import DesignSystem
+import ItermBridge
+import Model
+import Resources
 import SwiftUI
+import UseCaseSession
+import Utility
 
 /// 設定画面。
 ///
@@ -13,14 +18,14 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var appearance: Appearance
     @ObservedObject var notices: NoticeSettings
-    let notifier: Notifier
+    let notifier: NotificationPermissionAuthorizer
 
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginError: String?
     /// 通知の許可。読むのに待ちが要る (通知センターに聞きに行く) ので、
     /// 分かるまでは何も言わない。「許可されていません」と出しておいて
     /// あとから覆ると、断った覚えを作ってしまう
-    @State private var notifyPermission: Notifier.Permission?
+    @State private var notifyPermission: NotificationPermissionStatus?
     /// 通知の許可を尋ねている間。押し重ねてダイアログが重ならないようにする
     @State private var askingNotify = false
     // 読むだけなら即返るので、最初の描画からほんとうの状態を出せる。
@@ -318,7 +323,7 @@ struct SettingsView: View {
 
     private func requestNotify() {
         guard notifyPermission == .undecided else {
-            Notifier.openSettings()
+            notifier.openSettings()
             return
         }
         // 答えが返ってから映す。尋ねている最中に読むと、まだ

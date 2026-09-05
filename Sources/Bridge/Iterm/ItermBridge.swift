@@ -1,6 +1,6 @@
 import Foundation
 import AppKit
-import ProctorKit
+import Resources
 
 /// iTerm2 との連携。
 ///
@@ -15,10 +15,10 @@ import ProctorKit
 ///
 /// NSAppleScript はスレッド安全ではないので、必ずメインスレッドから呼ぶ。
 @MainActor
-enum ItermBridge {
+public enum ItermBridge {
     // AutomationPermission がメインスレッド外から読むので隔離から外す。
     // 変わらない文字列なので、どのスレッドから読んでも困らない
-    nonisolated static let bundleID = "com.googlecode.iterm2"
+    nonisolated public static let bundleID = "com.googlecode.iterm2"
 
     /// オートメーションの許可が下りていないときに一度だけ知らせるための記録。
     /// 毎回出すと、許可しないと決めた人にとって邪魔にしかならない
@@ -49,7 +49,7 @@ enum ItermBridge {
     ///
     /// 尋ねる往復は AutomationPermission がメインスレッドの外へ逃がすので、
     /// 人が答えるまで待たされるのは向こうのスレッドだけで済む。
-    static func settlePermission() async {
+    public static func settlePermission() async {
         guard !permissionSettled else { return }
         // 先客が居るなら、その答えを一緒に待つ。二重には尋ねない
         if let settling {
@@ -84,7 +84,7 @@ enum ItermBridge {
     ///
     /// 取得に失敗したときは nil を返す。空配列と区別できないと、
     /// 「一時的に取れなかった」ときに台帳を全部消してしまう。
-    static func liveSessionIDs() -> Set<String>? {
+    public static func liveSessionIDs() -> Set<String>? {
         let source = """
         tell application "iTerm2"
             set out to ""
@@ -152,7 +152,7 @@ enum ItermBridge {
     ///   出さない番号のために1秒ごとに1件投げ続けることになる。文面が変われば
     ///   別のものとしてコンパイル結果が覚えられる (execute の compiled は文面が鍵) ので、
     ///   設定を切り替えても組み立て直しはそれぞれ一度きり
-    static func focusedTab(withTabNumbers: Bool)
+    public static func focusedTab(withTabNumbers: Bool)
         -> (session: String, directory: String, tabNumbers: [String: Int])? {
         var source = """
         tell application "iTerm2"
@@ -231,7 +231,7 @@ enum ItermBridge {
     /// 動かすのは `current window`。サイドバーが追いかけているのも
     /// CGWindowList で最前面に出ている iTerm2 のウィンドウなので、同じものを指す。
     @discardableResult
-    static func setCurrentWindowBounds(_ rect: CGRect) -> Bool {
+    public static func setCurrentWindowBounds(_ rect: CGRect) -> Bool {
         let source = """
         tell application "iTerm2"
             if (count of windows) is 0 then return "none"
@@ -246,14 +246,14 @@ enum ItermBridge {
 
     /// iTerm2 が最前面か。確認済みの印を付けてよいかの判定に使う。
     /// NSWorkspace を見るだけなのでオートメーションの許可は要らない
-    static var isItermFrontmost: Bool {
+    public static var isItermFrontmost: Bool {
         NSWorkspace.shared.frontmostApplication?.bundleIdentifier == bundleID
     }
 
     /// その guid のセッションが開いているタブにフォーカスする。
     /// 見つからなければ false を返すので、呼び出し側は開き直しに回れる。
     @discardableResult
-    static func focus(sessionID: String) -> Bool {
+    public static func focus(sessionID: String) -> Bool {
         let source = """
         tell application "iTerm2"
             repeat with w in windows
@@ -278,7 +278,7 @@ enum ItermBridge {
 
     /// 新しいタブでコマンドを走らせる。ウィンドウが無ければ作る。
     @discardableResult
-    static func openTab(runningCommand command: String) -> Bool {
+    public static func openTab(runningCommand command: String) -> Bool {
         let source = """
         tell application "iTerm2"
             if (count of windows) is 0 then
@@ -305,7 +305,7 @@ enum ItermBridge {
     /// その worktree の中に降りているタブも同じ場所とみなす (src/ で作業していた、など)。
     /// 逆向き (親にいるタブ) は当たらないので、worktree を本体の中に置いていても
     /// 本体のタブを掴むことはない。ぴったり同じ場所に居るタブがあれば、そちらを優先する。
-    static func sessionID(inDirectory path: String) -> String? {
+    public static func sessionID(inDirectory path: String) -> String? {
         guard let tabs = openTabs(interactive: true) else { return nil }
 
         let target = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
@@ -335,7 +335,7 @@ enum ItermBridge {
     ///
     /// - Parameter interactive: 人が押した操作の一部か。裏方の呼び出しでは
     ///   許可が無くても黙って諦める (execute の説明を参照)
-    static func openTabs(interactive: Bool) -> [(session: String, directory: String)]? {
+    public static func openTabs(interactive: Bool) -> [(session: String, directory: String)]? {
         let source = """
         tell application "iTerm2"
             set out to ""
@@ -397,7 +397,7 @@ enum ItermBridge {
     /// タブごと消える。ここで開きたいのは「これから何か始める場所」なので、
     /// 普段どおりのシェルを立ち上げてから cd を打ち込む。
     @discardableResult
-    static func openTab(inDirectory path: String) -> Bool {
+    public static func openTab(inDirectory path: String) -> Bool {
         let command = "cd \(shellQuoted(path))"
         let source = """
         tell application "iTerm2"
@@ -424,7 +424,7 @@ enum ItermBridge {
 
     /// いま使われているプロファイルの背景色。サイドバーの下地を端末に馴染ませる。
     /// 取れなければ nil を返し、呼び出し側はシステムの色に任せる。
-    static func backgroundColor() -> NSColor? {
+    public static func backgroundColor() -> NSColor? {
         let source = """
         tell application "iTerm2"
             if (count of windows) is 0 then return ""
@@ -443,13 +443,13 @@ enum ItermBridge {
                        blue: parts[2] / 65535, alpha: 1)
     }
 
-    static func activateIterm() {
+    public static func activateIterm() {
         guard let app = NSRunningApplication
             .runningApplications(withBundleIdentifier: bundleID).first else { return }
         app.activate()
     }
 
-    static var isItermRunning: Bool {
+    public static var isItermRunning: Bool {
         !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
     }
 

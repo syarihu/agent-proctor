@@ -1,5 +1,6 @@
 import AppKit
-import ProctorKit
+import DesignSystem
+import Resources
 import SwiftUI
 
 /// 設定画面の器。
@@ -9,19 +10,20 @@ import SwiftUI
 ///
 /// 器は1つだけ持ち回す。開くたびに作ると、閉じずに何枚も重なる。
 @MainActor
-final class SettingsWindow {
+public final class SettingsWindow {
     private var window: NSWindow?
     private let appearance: Appearance
     private let notices: NoticeSettings
-    private let notifier: Notifier
+    private let notifier: NotificationPermissionAuthorizer
 
-    init(appearance: Appearance, notices: NoticeSettings, notifier: Notifier) {
+    public init(appearance: Appearance, notices: NoticeSettings,
+                notifier: NotificationPermissionAuthorizer) {
         self.appearance = appearance
         self.notices = notices
         self.notifier = notifier
     }
 
-    func show() {
+    public func show() {
         if window == nil { window = make() }
         // 通常は accessory (Dock に出さない) なので、そのままだとキーウィンドウに
         // なれない。設定を触っている間だけ regular に上げて、閉じたら戻す

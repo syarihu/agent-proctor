@@ -1,6 +1,9 @@
 import AppKit
+import AppState
 import Combine
-import ProctorKit
+import DesignSystem
+import Model
+import Resources
 
 /// メニューバーの要約。
 ///
@@ -13,19 +16,19 @@ import ProctorKit
 /// 記号の描き方は StatusGlyph が持つ。一覧では絵文字を使っているが、
 /// メニューバーでは字幅の揃う SF Symbols に置き換えている。
 @MainActor
-final class MenuBarController: NSObject, NSMenuDelegate {
+public final class MenuBarController: NSObject, NSMenuDelegate {
     private let item: NSStatusItem
     private let store: TaskStore
     private var cancellable: AnyCancellable?
     private var appearanceObserver: NSKeyValueObservation?
 
-    var onToggleSidebar: (() -> Void)?
+    public var onToggleSidebar: (() -> Void)?
     /// 手で閉じられているか。メニューの文言を決めるのに使う
-    var isSidebarHidden: (() -> Bool)?
-    var onOpenTask: ((String) -> Void)?
-    var onOpenSettings: (() -> Void)?
+    public var isSidebarHidden: (() -> Bool)?
+    public var onOpenTask: ((String) -> Void)?
+    public var onOpenSettings: (() -> Void)?
 
-    init(store: TaskStore) {
+    public init(store: TaskStore) {
         self.store = store
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
@@ -81,7 +84,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return color
     }
 
-    func menuNeedsUpdate(_ menu: NSMenu) {
+    public func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         for entry in buildMenu().items {
             // 別のメニューから移すには、いったん外さないと入れられない

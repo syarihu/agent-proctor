@@ -3,7 +3,6 @@ import AppKit
 import SwiftUI
 import CoreGraphics
 import Combine
-import ProctorKit
 
 /// 見た目の設定。
 ///
@@ -20,15 +19,15 @@ import ProctorKit
 /// 際限なく繰り返してスタックを食い潰す。範囲に収める処理は値を返す形にして、
 /// 代入はここで1回だけ行う。
 @MainActor
-final class Appearance: ObservableObject {
+public final class Appearance: ObservableObject {
     // MARK: - 文字の大きさ
 
     /// 既定は 16。iTerm2 の Toolbelt に出していた頃と同じ大きさに合わせている
-    static let defaultSize: CGFloat = 16
-    static let sizeRange: ClosedRange<CGFloat> = 9...28
-    static let sizeStep: CGFloat = 1
+    public static let defaultSize: CGFloat = 16
+    public static let sizeRange: ClosedRange<CGFloat> = 9...28
+    public static let sizeStep: CGFloat = 1
 
-    @Published var fontSize: CGFloat {
+    @Published public var fontSize: CGFloat {
         didSet {
             let clamped = Self.clamp(fontSize, to: Self.sizeRange)
             if clamped != fontSize {
@@ -42,12 +41,12 @@ final class Appearance: ObservableObject {
 
     // MARK: - サイドバーの幅
 
-    static let defaultWidth: CGFloat = 280
+    public static let defaultWidth: CGFloat = 280
     /// 下限はタスク名が読める程度、上限は画面の半分を超えない程度
-    static let widthRange: ClosedRange<CGFloat> = 180...1200
-    static let widthStep: CGFloat = 1
+    public static let widthRange: ClosedRange<CGFloat> = 180...1200
+    public static let widthStep: CGFloat = 1
 
-    @Published var sidebarWidth: CGFloat {
+    @Published public var sidebarWidth: CGFloat {
         didSet {
             let clamped = Self.clamp(sidebarWidth, to: Self.widthRange)
             if clamped != sidebarWidth {
@@ -64,7 +63,7 @@ final class Appearance: ObservableObject {
     ///
     /// 他人のウィンドウを動かすのは驚かれる振る舞いなので、切れるようにしておく。
     /// 切ってあると、全画面のときサイドバーは画面の端で止まって端末に重なる。
-    @Published var makeRoomForSidebar: Bool {
+    @Published public var makeRoomForSidebar: Bool {
         didSet { UserDefaults.standard.set(makeRoomForSidebar, forKey: Self.makeRoomKey) }
     }
 
@@ -75,7 +74,7 @@ final class Appearance: ObservableObject {
     /// **切ってあるときは端末に番号を聞きに行かない。** 出さない番号のために
     /// 1秒ごとに Apple Event を1件投げ続けることになる (ItermBridge.focusedTab)。
     /// 見た目だけ消しても、止まるのは描画だけで問い合わせは残ってしまう
-    @Published var showTabNumbers: Bool {
+    @Published public var showTabNumbers: Bool {
         didSet { UserDefaults.standard.set(showTabNumbers, forKey: Self.showTabNumbersKey) }
     }
 
@@ -91,7 +90,7 @@ final class Appearance: ObservableObject {
     /// **NoticeSettings ではなくここに置いたのは、これが見た目の設定だから。**
     /// 消えるのは行に添える数字と、worktree を片付けてよいかの言い切りで、
     /// どちらもサイドバーの見せ方の話に収まる
-    @Published var countChanges: Bool {
+    @Published public var countChanges: Bool {
         didSet { UserDefaults.standard.set(countChanges, forKey: Self.countChangesKey) }
     }
 
@@ -102,14 +101,14 @@ final class Appearance: ObservableObject {
     /// **Organization を既定にできるのは、gh が無い環境が勝手に
     /// リポジトリごとへ落ちるから** (`resolvedGrouping`)。落ちる先が
     /// これまでの見せ方なので、既定を寄せても誰の一覧も壊れない
-    static let defaultGrouping: GroupingMode = .organization
+    public static let defaultGrouping: GroupingMode = .organization
 
     /// リポジトリごとか、Organization ごとか。**選んだものをそのまま持つ。**
     ///
     /// gh が使えるかどうかで書き換えないのは、一時的に使えないだけ
     /// (ログインが切れた・ネットワークが無い) のときに、選んだ覚えのない
     /// 設定に戻ってしまうため。使えるかどうかは出すときに見る (`resolvedGrouping`)
-    @Published var groupingMode: GroupingMode {
+    @Published public var groupingMode: GroupingMode {
         didSet { UserDefaults.standard.set(groupingMode.rawValue, forKey: Self.groupingKey) }
     }
 
@@ -121,7 +120,7 @@ final class Appearance: ObservableObject {
     /// 描いてしまう。既定が Organization だと、起動のたびに一覧が組み変わって
     /// 見える。gh を入れたり消したりは滅多に無いので、前回の答えで描き始めて
     /// 違っていたときだけ直すほうが落ち着く
-    @Published var canGroupByOrganization: Bool {
+    @Published public var canGroupByOrganization: Bool {
         didSet {
             UserDefaults.standard.set(canGroupByOrganization, forKey: Self.canGroupByOrgKey)
         }
@@ -130,16 +129,19 @@ final class Appearance: ObservableObject {
     /// 実際に使うまとめ方。**gh が使えないならリポジトリごとに戻す。**
     /// 持ち主の名前だけの見出しになると、なぜアイコンが出ないのかが画面から
     /// 分からないので、そうなるくらいなら元の見せ方のままにしておく
-    var resolvedGrouping: GroupingMode {
+    public var resolvedGrouping: GroupingMode {
         groupingMode == .organization && canGroupByOrganization ? .organization : .repository
     }
 
+    /// Organization まとめが利用可能かを確かめるプロバイダ。UseCaseTask への直接依存を避けるために注入する
+    public static var checkOrganizationAvailability: (@Sendable () async -> Bool)?
+
     /// gh が使えるかを見に行く。設定画面を開いたときとアプリの起動時に呼ぶ。
     /// プロセスを起こすので、メインスレッドは待たせない
-    func refreshOrganizationAvailability() {
+    public func refreshOrganizationAvailability() {
         Task {
             let available = await Task.detached(priority: .utility) {
-                OrganizationGrouping.isAvailable()
+                await Self.checkOrganizationAvailability?() ?? false
             }.value
             if canGroupByOrganization != available { canGroupByOrganization = available }
         }
@@ -147,10 +149,10 @@ final class Appearance: ObservableObject {
 
     // MARK: - 不透明度 (透明度)
 
-    static let defaultOpacity: Double = 0.95
-    static let opacityRange: ClosedRange<Double> = 0.2...1.0
+    public static let defaultOpacity: Double = 0.95
+    public static let opacityRange: ClosedRange<Double> = 0.2...1.0
 
-    @Published var opacity: Double {
+    @Published public var opacity: Double {
         didSet {
             let clamped = min(max(opacity, Self.opacityRange.lowerBound), Self.opacityRange.upperBound)
             if clamped != opacity {
@@ -164,16 +166,16 @@ final class Appearance: ObservableObject {
 
     // MARK: - 背景色
 
-    static let defaultCustomHex = "#1E1E24"
+    public static let defaultCustomHex = "#1E1E24"
 
-    @Published var useCustomBackgroundColor: Bool {
+    @Published public var useCustomBackgroundColor: Bool {
         didSet {
             UserDefaults.standard.set(useCustomBackgroundColor, forKey: Self.useCustomColorKey)
             onAppearanceChange?()
         }
     }
 
-    @Published var customColorHex: String {
+    @Published public var customColorHex: String {
         didSet {
             UserDefaults.standard.set(customColorHex, forKey: Self.customColorKey)
             onAppearanceChange?()
@@ -181,7 +183,7 @@ final class Appearance: ObservableObject {
     }
 
     /// SettingsView の ColorPicker と直接バインドするためのプロパティ
-    var customColor: Color {
+    public var customColor: Color {
         get {
             Color(nsColor: NSColor(hex: customColorHex) ?? NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 1))
         }
@@ -192,12 +194,12 @@ final class Appearance: ObservableObject {
     }
 
     /// iTerm2 から取得した背景色
-    @Published var itermBackgroundColor: NSColor? {
+    @Published public var itermBackgroundColor: NSColor? {
         didSet { onAppearanceChange?() }
     }
 
     /// 実際にパネルに適用する背景色（透明度適用済み）
-    var resolvedBackgroundColor: NSColor {
+    public var resolvedBackgroundColor: NSColor {
         let base: NSColor
         if useCustomBackgroundColor {
             base = NSColor(hex: customColorHex) ?? NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 1)
@@ -208,7 +210,7 @@ final class Appearance: ObservableObject {
     }
 
     /// パネルなどの描画更新通知
-    var onAppearanceChange: (() -> Void)?
+    public var onAppearanceChange: (() -> Void)?
 
     // MARK: -
 
@@ -223,7 +225,7 @@ final class Appearance: ObservableObject {
     private static let showTabNumbersKey = "proctor_show_tab_numbers"
     private static let countChangesKey = "proctor_count_changes"
 
-    init() {
+    public init() {
         fontSize = Self.load(Self.sizeKey, in: Self.sizeRange, default: Self.defaultSize)
         sidebarWidth = Self.load(Self.widthKey, in: Self.widthRange, default: Self.defaultWidth)
 
@@ -254,10 +256,10 @@ final class Appearance: ObservableObject {
         refreshOrganizationAvailability()
     }
 
-    func resetFontSize() { fontSize = Self.defaultSize }
-    func resetWidth() { sidebarWidth = Self.defaultWidth }
-    func resetOpacity() { opacity = Self.defaultOpacity }
-    func resetBackgroundColor() {
+    public func resetFontSize() { fontSize = Self.defaultSize }
+    public func resetWidth() { sidebarWidth = Self.defaultWidth }
+    public func resetOpacity() { opacity = Self.defaultOpacity }
+    public func resetBackgroundColor() {
         useCustomBackgroundColor = false
         customColorHex = Self.defaultCustomHex
     }
@@ -274,7 +276,7 @@ final class Appearance: ObservableObject {
 }
 
 extension NSColor {
-    convenience init?(hex: String) {
+    public convenience init?(hex: String) {
         let trimmed = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         var int: UInt64 = 0
         guard Scanner(string: trimmed).scanHexInt64(&int) else { return nil }
@@ -290,7 +292,7 @@ extension NSColor {
         self.init(srgbRed: r, green: g, blue: b, alpha: 1.0)
     }
 
-    func toHex() -> String {
+    public func toHex() -> String {
         guard let rgb = usingColorSpace(.sRGB) else { return "#1E1E24" }
         let r = Int(round(rgb.redComponent * 255))
         let g = Int(round(rgb.greenComponent * 255))

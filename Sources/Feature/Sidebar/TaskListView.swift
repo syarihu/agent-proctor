@@ -1,6 +1,13 @@
 import AppKit
+import AppState
+import DesignSystem
+import Model
+import Resources
 import SwiftUI
-import ProctorKit
+import UseCaseNotice
+import UseCaseSession
+import UseCaseTask
+import UseCaseWorktree
 
 /// サイドバーに出す一覧。
 ///
@@ -8,27 +15,46 @@ import ProctorKit
 /// セッション名・コンテキスト使用率・サブエージェントの数、そして
 /// 最後に状態が動いてからの経過時間。実行中のまま経過が長ければ、
 /// 考え込んでいるのか止まっているのかの手がかりになる。
-struct TaskListView: View {
-    @ObservedObject var store: TaskStore
-    @ObservedObject var appearance: Appearance
-    @ObservedObject var folding: GroupFolding
-    @ObservedObject var avatars: OrgAvatarStore
-    @ObservedObject var pullRequests: PullRequestStore
-    var onOpen: (CollectedTask) -> Void
-    var onClose: (CollectedTask) -> Void
+public struct TaskListView: View {
+    @ObservedObject public var store: TaskStore
+    @ObservedObject public var appearance: Appearance
+    @ObservedObject public var folding: GroupFolding
+    @ObservedObject public var avatars: OrgAvatarStore
+    @ObservedObject public var pullRequests: PullRequestStore
+    public var onOpen: (CollectedTask) -> Void
+    public var onClose: (CollectedTask) -> Void
     /// セッションの乗っていない worktree を押したとき。
     /// 戻る先のタブが無いので、そこへ移動した新しいタブを開く
-    var onOpenWorktree: (CollectedWorktree) -> Void
+    public var onOpenWorktree: (CollectedWorktree) -> Void
     /// リポジトリの見出しの `+` を押したとき。そのリポジトリで新しいタブを開く
-    var onNewTab: (_ path: String, _ name: String) -> Void
+    public var onNewTab: (_ path: String, _ name: String) -> Void
     /// 要確認から片付けるとき。渡した分だけ台帳の状態まで動く
-    var onClearAttention: ([CollectedTask]) -> Void
+    public var onClearAttention: ([CollectedTask]) -> Void
+
+    public init(store: TaskStore, appearance: Appearance, folding: GroupFolding,
+                avatars: OrgAvatarStore, pullRequests: PullRequestStore,
+                onOpen: @escaping (CollectedTask) -> Void,
+                onClose: @escaping (CollectedTask) -> Void,
+                onOpenWorktree: @escaping (CollectedWorktree) -> Void,
+                onNewTab: @escaping (_ path: String, _ name: String) -> Void,
+                onClearAttention: @escaping ([CollectedTask]) -> Void) {
+        self.store = store
+        self.appearance = appearance
+        self.folding = folding
+        self.avatars = avatars
+        self.pullRequests = pullRequests
+        self.onOpen = onOpen
+        self.onClose = onClose
+        self.onOpenWorktree = onOpenWorktree
+        self.onNewTab = onNewTab
+        self.onClearAttention = onClearAttention
+    }
 
     /// 文字の大きさはここだけで決める。余白も記号もこれに追従する。
     /// メニューバーから変えられる (Appearance)
     private var base: CGFloat { appearance.fontSize }
 
-    var body: some View {
+    public var body: some View {
         // **まとめ直しは body 1回につき1度だけ。** 計算プロパティのままだと
         // ForEach と animation の value の両方から読まれ、同じ組み直しが
         // 2度3度走る。台帳はツールが動くたびに変わるので、そのたびに掛かる
@@ -1202,80 +1228,6 @@ private struct Pulsing: ViewModifier {
 
 private extension View {
     func pulsing() -> some View { modifier(Pulsing()) }
-}
-
-/// 色は元の iTerm2 パネルの CSS から持ってきている。
-/// ライト/ダークで変えるものだけ環境に追従させる
-enum Palette {
-    static let fg = Color.primary
-    static let dim = Color.secondary
-    static let hover = Color.gray.opacity(0.18)
-    /// いま開いているタブの下地。帯 (spinner の色) と合わせて居場所を示す
-    static let current = Color.gray.opacity(0.13)
-    static let waiting = Color(red: 1.0, green: 0.655, blue: 0.149)     // #ffa726
-    /// 終わったのにまだ見ていないもの。印 (✅) と揃えて緑にする
-    static let done = Color(red: 0.400, green: 0.733, blue: 0.416)      // #66bb6a
-    static let agents = Color(red: 0.671, green: 0.533, blue: 0.941)    // #ab88f0
-    static let added = Color(red: 0.298, green: 0.686, blue: 0.314)     // #4caf50
-    static let removed = Color(red: 0.937, green: 0.325, blue: 0.314)   // #ef5350
-    static let untracked = Color(red: 0.161, green: 0.714, blue: 0.965) // #29b6f6
-    /// 行で数えられなかったファイル (バイナリ)。追加とも削除とも言えないので、
-    /// 緑でも赤でもない色を当てる
-    static let binary = Color(red: 1.0, green: 0.655, blue: 0.149)      // #ffa726
-    static let spinner = Color(red: 0.310, green: 0.765, blue: 0.969)   // #4fc3f7
-    /// いま触っているツールの行。主役はセッション名なので、
-    /// 読めるが目を引かない程度に落とす
-    static let activity = Color.secondary.opacity(0.85)
-    static let claude = Color(red: 0.878, green: 0.478, blue: 0.345)       // #e07a58 (テラコッタ)
-    static let antigravity = Color(red: 0.353, green: 0.647, blue: 0.980)  // #5aa5fa (ブルー)
-    static let codex = Color(red: 0.063, green: 0.639, blue: 0.498)        // #10a37f (グリーン)
-
-    /// PR の状態。同じ行に並ぶ diff バッジと同じ濃さで持つ。
-    ///
-    /// **タイトルの状態色 (`TaskRow.titleColor`) とは役目が違う。** あちらは
-    /// 「まだ手を付けていないか」を示すもので、こちらは PR そのものの状態。
-    /// 同じ行の diff が既に色を持っているので、ここに色を置いても浮かない
-    static let prOpen = Color(red: 0.298, green: 0.686, blue: 0.314)   // #4caf50
-    static let prMerged = Color(red: 0.671, green: 0.533, blue: 0.941) // #ab88f0
-    static let prClosed = Color(red: 0.937, green: 0.325, blue: 0.314) // #ef5350
-
-    /// PR1件を何色で出すか。
-    ///
-    /// **下書きは状態より先に見る。** 開いてはいてもレビューには出ていないので、
-    /// 開いている PR と同じ色で並べると、見てもらえる状態だと読み違える
-    static func pullRequest(_ ref: PullRequestRef) -> Color {
-        if ref.isDraft { return dim }
-        switch ref.state {
-        case PullRequestState.open: return prOpen
-        case PullRequestState.merged: return prMerged
-        case PullRequestState.closed: return prClosed
-        default: return dim
-        }
-    }
-
-    /// 状態そのものを表す色。畳んだ見出しの内訳のように、
-    /// 印と数だけで状態を見せる場所で使う。
-    ///
-    /// 行のタイトル (TaskRow.titleColor) とは別に持つ。あちらは読ませるのが仕事なので
-    /// 実行中まで色を付けず、待たせているものだけを目立たせている
-    static func status(_ status: String) -> Color {
-        switch status {
-        case TaskStatus.waiting: return waiting
-        case TaskStatus.running: return spinner
-        case TaskStatus.done: return done
-        // 失敗は見たあとも失敗のまま残る = まだ片付いていない。
-        // 畳んで数だけになったときこそ、脇役の色にしてはいけない
-        case TaskStatus.failed: return removed
-        default: return dim
-        }
-    }
-
-    /// 残りが少なくなってきたら色で知らせる (statusline と同じ考え方)
-    static func context(_ percent: Int) -> Color {
-        if percent >= 80 { return removed }
-        if percent >= 50 { return Color(red: 1.0, green: 0.718, blue: 0.302) } // #ffb74d
-        return dim
-    }
 }
 
 /// サイドバー最上部の新着。**まだ人が見ていないものだけ**を1行ずつ並べる。

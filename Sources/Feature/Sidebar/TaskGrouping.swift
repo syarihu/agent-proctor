@@ -1,16 +1,8 @@
 import Foundation
-import ProctorKit
-
-/// 一覧のまとめ方。
-///
-/// Kit に置いていないのは、これが表示の都合だから。CLI の `proctor ls` は
-/// 一覧をまとめずに並べるので、この語彙が要るのはサイドバーだけになる。
-enum GroupingMode: String, CaseIterable {
-    /// リポジトリごと
-    case repository
-    /// Organization ごと。その下にリポジトリがぶら下がる
-    case organization
-}
+import DesignSystem
+import Model
+import Resources
+import UseCaseTask
 
 /// リポジトリ1つ分のまとまり。
 struct RepoGroup: Identifiable {

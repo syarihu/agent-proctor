@@ -15,7 +15,7 @@ import AppKit
 /// 線ではなく塗りで描く。この印と入れ替わりに同じ場所へ出る状態の記号が
 /// `hand.raised.fill` のような塗りの SF Symbols なので、線画にすると
 /// 印のときだけ細く見えて落ち着かない。
-enum AppMark {
+public enum AppMark {
     /// 角帽の板の幅。頭より広く取らないと、ひさしが出ずに帽子に見えない。
     /// 板が印の中で一番広いので、この値がそのまま印の幅になる
     private static let boardWidthRatio: CGFloat = 0.96
@@ -46,7 +46,7 @@ enum AppMark {
     ///
     /// テンプレート画像にはしない。`NSTextAttachment` に入れた画像は
     /// テンプレートとして扱われず、地色に関わらず黒で出てしまうため
-    static func image(height: CGFloat, tint: NSColor) -> NSImage {
+    public static func image(height: CGFloat, tint: NSColor) -> NSImage {
         let boardW = height * boardWidthRatio
         let boardH = height * boardThickRatio
         let crownH = height * crownHeightRatio

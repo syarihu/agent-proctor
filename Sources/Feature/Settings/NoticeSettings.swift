@@ -1,6 +1,7 @@
 import Combine
 import Foundation
-import ProctorKit
+import Model
+import UseCaseSession
 
 /// 何を知らせるか、どこまで知らせ続けるかの設定。
 ///
@@ -15,24 +16,24 @@ import ProctorKit
 /// 既定は3つとも入り。通知そのものは macOS 側で許可されるまで出ないので、
 /// 入れておいても勝手に鳴り出すことはない (最初に許可を尋ねられる)。
 @MainActor
-final class NoticeSettings: ObservableObject {
-    @Published var onWaiting: Bool {
+public final class NoticeSettings: ObservableObject {
+    @Published public var onWaiting: Bool {
         didSet { UserDefaults.standard.set(onWaiting, forKey: Self.waitingKey) }
     }
-    @Published var onDone: Bool {
+    @Published public var onDone: Bool {
         didSet { UserDefaults.standard.set(onDone, forKey: Self.doneKey) }
     }
-    @Published var onFailed: Bool {
+    @Published public var onFailed: Bool {
         didSet { UserDefaults.standard.set(onFailed, forKey: Self.failedKey) }
     }
     /// 未読をいつ降ろすか。**既定は今までどおりタブを開いた時点。**
     /// 入れた覚えのない人の手元で振る舞いが変わらないようにする
-    @Published var seenPolicy: MarkSessionSeen.Policy {
+    @Published public var seenPolicy: MarkSessionSeen.Policy {
         didSet { UserDefaults.standard.set(seenPolicy.rawValue, forKey: Self.seenPolicyKey) }
     }
 
     /// 出してよい状態。`CollectNotices` に渡す形にして持つ
-    var wanted: Set<String> {
+    public var wanted: Set<String> {
         var wanted: Set<String> = []
         if onWaiting { wanted.insert(TaskStatus.waiting) }
         if onDone { wanted.insert(TaskStatus.done) }
@@ -45,7 +46,7 @@ final class NoticeSettings: ObservableObject {
     private static let failedKey = "proctor_notify_failed"
     private static let seenPolicyKey = "proctor_seen_policy"
 
-    init() {
+    public init() {
         // bool(forKey:) は未設定でも false を返すので、
         // 「まだ決めていない」と「切ってある」を object の有無で分ける
         onWaiting = UserDefaults.standard.object(forKey: Self.waitingKey) as? Bool ?? true

@@ -1,7 +1,9 @@
 import AppKit
-import SwiftUI
-import CoreGraphics
 import Combine
+import CoreGraphics
+import DesignSystem
+import ItermBridge
+import SwiftUI
 
 /// 左端でドラッグして幅を変えるための取っ手。
 ///
@@ -41,7 +43,7 @@ final class ResizeHandleView: NSView {
 /// AppleScript と違ってオートメーションの許可が要らないので、
 /// 許可を出す前でも吸着だけは動く。
 @MainActor
-final class SidebarPanel: NSObject {
+public final class SidebarPanel: NSObject {
     private var panel: NSPanel!
     private var handle: ResizeHandleView!
     private var backgroundTintView: NSView?
@@ -63,9 +65,9 @@ final class SidebarPanel: NSObject {
     /// iTerm2 やウィンドウマネージャが元の大きさへ戻しにかかって取っ組み合いになる。
     /// サイドバー自身は即座に追従するので、待つのは端末を詰める分だけ
     private let widthSettleDelay: TimeInterval = 0.35
-    private(set) var isShowing = false
+    public private(set) var isShowing = false
     /// メニューから手で閉じたかどうか。iTerm2 の追従が勝手に開き直さないための札
-    private(set) var userHidden = false
+    public private(set) var userHidden = false
 
     /// 幅の正本は Appearance。設定画面からも端のドラッグからも同じ値を動かす
     private var width: CGFloat { appearance.sidebarWidth }
@@ -76,9 +78,9 @@ final class SidebarPanel: NSObject {
 
     /// 見えているかどうかが変わったときに知らせる。
     /// 見えていない間は git を起動したくないので、集計の入切に使う
-    var onVisibilityChange: ((Bool) -> Void)?
+    public var onVisibilityChange: ((Bool) -> Void)?
 
-    init(appearance: Appearance, content: some View) {
+    public init(appearance: Appearance, content: some View) {
         self.appearance = appearance
         super.init()
 
@@ -157,7 +159,7 @@ final class SidebarPanel: NSObject {
     }
 
     /// 背景色。iTerm2 のプロファイルから拾えたらそれを敷いて境目を消す
-    func applyBackground(_ color: NSColor?) {
+    public func applyBackground(_ color: NSColor?) {
         appearance.itermBackgroundColor = color
         refreshBackground()
     }
@@ -304,9 +306,9 @@ final class SidebarPanel: NSObject {
     }
 
     /// 寄せた分の iTerm2 の幅を返す。終了するときに呼ぶ
-    func restoreRoom() { room.restore() }
+    public func restoreRoom() { room.restore() }
 
-    func toggle() {
+    public func toggle() {
         if isShowing {
             userHidden = true
             panel.orderOut(nil)

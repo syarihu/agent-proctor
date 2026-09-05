@@ -74,6 +74,58 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]),
 
         // -------------------------------------------------------------
+        // デザインシステム & ブリッジ
+        // -------------------------------------------------------------
+        .target(
+            name: "DesignSystem",
+            dependencies: ["Model", "Utility", "Resources"],
+            path: "Sources/DesignSystem",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "ItermBridge",
+            dependencies: ["Model", "Utility", "Resources"],
+            path: "Sources/Bridge/Iterm",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+
+        // -------------------------------------------------------------
+        // アプリケーション状態 (UI層で共有する状態管理)
+        // -------------------------------------------------------------
+        .target(
+            name: "AppState",
+            dependencies: [
+                "Model", "Utility", "Resources",
+                "RepositoryLedger", "RepositoryGit",
+                "UseCaseTask", "UseCaseSession", "UseCaseWorktree", "UseCaseNotice",
+                "ItermBridge"
+            ],
+            path: "Sources/AppState",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+
+        // -------------------------------------------------------------
+        // フィーチャー層 (UIコンポーネント・画面)
+        // -------------------------------------------------------------
+        .target(
+            name: "FeatureSettings",
+            dependencies: ["Model", "Utility", "Resources", "DesignSystem", "ItermBridge"],
+            path: "Sources/Feature/Settings",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "FeatureMenuBar",
+            dependencies: ["Model", "Utility", "Resources", "DesignSystem", "AppState"],
+            path: "Sources/Feature/MenuBar",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "FeatureSidebar",
+            dependencies: [
+                "Model", "Utility", "Resources",
+                "DesignSystem", "AppState",
+                "UseCaseTask", "UseCaseWorktree", "UseCaseNotice",
+                "ItermBridge"
+            ],
+            path: "Sources/Feature/Sidebar",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+
+        // -------------------------------------------------------------
         // レガシーブリッジ (移行期間中に順次切り出しを進める)
         // -------------------------------------------------------------
         .target(
@@ -99,7 +151,9 @@ let package = Package(
             dependencies: [
                 "ProctorKit", "Model", "Utility", "Resources",
                 "RepositoryLedger", "RepositoryGit", "RepositoryGitHub",
-                "UseCaseTask", "UseCaseSession", "UseCaseWorktree", "UseCaseNotice"
+                "UseCaseTask", "UseCaseSession", "UseCaseWorktree", "UseCaseNotice",
+                "DesignSystem", "ItermBridge", "AppState",
+                "FeatureSettings", "FeatureMenuBar", "FeatureSidebar"
             ],
             swiftSettings: [.swiftLanguageMode(.v5)]),
     ]

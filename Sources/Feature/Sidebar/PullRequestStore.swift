@@ -1,6 +1,7 @@
 import Combine
 import Foundation
-import ProctorKit
+import Model
+import UseCaseTask
 
 /// 行に出す PR を預かる。
 ///
@@ -12,9 +13,11 @@ import ProctorKit
 /// 持っている。ここが持つのは「重ねて取りに行かないこと」
 /// 「見えていない間は聞きに行かないこと」「いっぺんに走らせすぎないこと」の3つ。
 @MainActor
-final class PullRequestStore: ObservableObject {
+public final class PullRequestStore: ObservableObject {
     /// worktree ごとの PR。無いものは載せない (行は何も出さない)
-    @Published private(set) var refs: [String: PullRequestRef] = [:]
+    @Published public private(set) var refs: [String: PullRequestRef] = [:]
+
+    public init() {}
 
     /// いま取りに行っている最中の worktree。**走らせないためだけの印。**
     ///
@@ -79,7 +82,7 @@ final class PullRequestStore: ObservableObject {
     private static let forcedAttempts = 12
 
     /// サイドバーの表示が切り替わったときに呼ぶ。
-    func setEnabled(_ on: Bool) { enabled = on }
+    public func setEnabled(_ on: Bool) { enabled = on }
 
     /// 1つの worktree を見張り続ける。行が出ている間だけ回る。
     ///
@@ -119,7 +122,7 @@ final class PullRequestStore: ObservableObject {
     /// **取れた答えは行が消えても残り続ける。** 見張りのほうは `.task` が
     /// 畳まれて止まるが、辞書に載せたものを外す者がいない。作業場を作っては
     /// 捨てる使い方だと、常駐している間ずっと積み上がることになる
-    func keep(worktrees: Set<String>) {
+    public func keep(worktrees: Set<String>) {
         active = worktrees
         let stale = refs.keys.filter { !worktrees.contains($0) }
         guard !stale.isEmpty else { return }

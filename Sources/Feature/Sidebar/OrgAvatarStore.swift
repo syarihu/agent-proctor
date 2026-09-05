@@ -1,6 +1,6 @@
 import AppKit
 import Combine
-import ProctorKit
+import UseCaseTask
 
 /// Organization のアイコンを預かる。
 ///
@@ -13,8 +13,10 @@ import ProctorKit
 /// 持っている。ここが持つのは「重ねて取りに行かないこと」と
 /// 「取れるまで何度か試すこと」の2つ。
 @MainActor
-final class OrgAvatarStore: ObservableObject {
-    @Published private(set) var images: [String: NSImage] = [:]
+public final class OrgAvatarStore: ObservableObject {
+    @Published public private(set) var images: [String: NSImage] = [:]
+
+    public init() {}
 
     /// いま取りに行っている最中の相手。**走らせないためだけの印で、結果は覚えない。**
     ///

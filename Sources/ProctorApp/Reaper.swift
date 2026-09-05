@@ -1,5 +1,6 @@
 import Foundation
 import ProctorKit
+import ItermBridge
 
 /// 定期的に、閉じられたタブの記録を片付けさせる。
 ///

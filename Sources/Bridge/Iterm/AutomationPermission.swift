@@ -13,8 +13,8 @@ import CoreServices
 ///    `askIfNeeded` を立てて呼んでも、その場で errAEEventNotPermitted が返るだけで
 ///    ダイアログは出ない。記録を消す手立てはアプリ側には無く
 ///    (`tccutil` は人が端末から叩くもの)、設定へ送るのが唯一残された道になる
-enum AutomationPermission {
-    enum State {
+public enum AutomationPermission {
+    public enum State: Sendable {
         /// 許可されている
         case granted
         /// 断られている。もうダイアログは出せないので、設定へ送るしかない
@@ -36,7 +36,7 @@ enum AutomationPermission {
     /// 「人に尋ねる間いくらでも待たされうるから」なので、
     /// 尋ねないこの経路はメインスレッドから呼んでよい。
     /// 尋ねるほうは `request()` を使うこと。
-    static func state() -> State {
+    public static func state() -> State {
         determine(askIfNeeded: false)
     }
 
@@ -52,7 +52,7 @@ enum AutomationPermission {
     /// 人間の注意力の長さだけ塞ぐことになり、同じプールを使う
     /// TaskStore の集計 (git を回す) がその間つかえる。
     /// GCD は塞がれた分だけスレッドを増やすので、待つならこちらが向いている。
-    static func request() async -> State {
+    public static func request() async -> State {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 continuation.resume(returning: determine(askIfNeeded: true))
@@ -94,7 +94,7 @@ enum AutomationPermission {
     /// 開けるのはページまでで、その中の Agent Proctor の行までは指定できない。
     /// それでも「設定のどこかにあります」と文字で言うよりは近くまで運べる。
     @MainActor
-    static func openSettings() {
+    public static func openSettings() {
         guard let url = URL(string:
             "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")
         else { return }

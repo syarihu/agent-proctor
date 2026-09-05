@@ -1,5 +1,5 @@
 import AppKit
-import ProctorKit
+import Model
 
 /// メニューバーに出す状態の見た目。
 ///
@@ -9,12 +9,12 @@ import ProctorKit
 ///
 /// 状態の語彙そのものは ProctorKit の TaskStatus が正本で、
 /// ここが決めるのは「メニューバーではどう描くか」だけ。
-enum StatusGlyph {
+public enum StatusGlyph {
     /// 記号と数字の太さ。
     ///
     /// メニューバーは壁紙が透けるので、既定の太さだと細くて沈む。
     /// 記号と数字を別々に決めると字面がちぐはぐになるので、まとめてここで持つ。
-    static let weight: NSFont.Weight = .semibold
+    public static let weight: NSFont.Weight = .semibold
 
     /// 状態に対応する SF Symbol 名と色。
     ///
@@ -24,8 +24,8 @@ enum StatusGlyph {
     ///
     /// - Parameter defaultTint: 状態そのものが色を持たないときに使う色。
     ///   メニューバーの地色に合わせたものを呼び出し側が解決して渡す
-    static func symbol(for status: String,
-                       defaultTint: NSColor) -> (name: String, tint: NSColor) {
+    public static func symbol(for status: String,
+                              defaultTint: NSColor) -> (name: String, tint: NSColor) {
         switch status {
         case TaskStatus.waiting:
             // 手を挙げて待っている。ここだけ色を付けて目を引かせる
@@ -47,8 +47,8 @@ enum StatusGlyph {
     }
 
     /// 「記号 数」を1組ぶん作る。
-    static func attributed(status: String, count: Int, fontSize: CGFloat,
-                           defaultTint: NSColor) -> NSAttributedString {
+    public static func attributed(status: String, count: Int, fontSize: CGFloat,
+                                  defaultTint: NSColor) -> NSAttributedString {
         let (name, tint) = symbol(for: status, defaultTint: defaultTint)
         let line = NSMutableAttributedString()
 
@@ -86,7 +86,7 @@ enum StatusGlyph {
     ///
     /// こちらは NSMenuItem.image なのでテンプレートが効く。
     /// 状態そのものが色を持つものだけ塗り、あとは OS に任せる。
-    static func menuIcon(for status: String) -> NSImage? {
+    public static func menuIcon(for status: String) -> NSImage? {
         let (name, tint) = symbol(for: status, defaultTint: .labelColor)
         guard let image = NSImage(systemSymbolName: name,
                                   accessibilityDescription: TaskStatus.label(status))
@@ -112,8 +112,8 @@ enum StatusGlyph {
     /// 色は数字と同じ地色 (メニューバーの文字色) をそのまま使う。薄くすると
     /// 壁紙が透ける場所で沈んで見えなくなる。白と決め打ちにしないのは、
     /// メニューバーが明るいときに見えなくなるため
-    static func idleLine(fontSize: CGFloat = 13,
-                         defaultTint: NSColor) -> NSAttributedString {
+    public static func idleLine(fontSize: CGFloat = 13,
+                                defaultTint: NSColor) -> NSAttributedString {
         let image = AppMark.image(height: fontSize * markScale, tint: defaultTint)
         let font = NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: Self.weight)
 
@@ -144,9 +144,9 @@ enum StatusGlyph {
     private static let markScale: CGFloat = 1.3
 
     /// 要約をまるごと1行にする。組と組の間は文字の間より広く空ける
-    static func summaryLine(_ summary: [(status: String, count: Int)],
-                            fontSize: CGFloat = 13,
-                            defaultTint: NSColor) -> NSAttributedString {
+    public static func summaryLine(_ summary: [(status: String, count: Int)],
+                                   fontSize: CGFloat = 13,
+                                   defaultTint: NSColor) -> NSAttributedString {
         let line = NSMutableAttributedString()
         for (index, entry) in summary.enumerated() {
             if index > 0 {

@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import ItermBridge
 
 /// サイドバーの居場所を作る。
 ///
