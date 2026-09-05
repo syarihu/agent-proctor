@@ -1,4 +1,5 @@
 import Foundation
+import Resources
 
 /// 状態の語彙。ここが正本で、CLI もサイドバーもメニューバーもこれを使う。
 ///

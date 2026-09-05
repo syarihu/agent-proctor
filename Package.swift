@@ -9,23 +9,40 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [.macOS(.v13)],
     targets: [
-        // 台帳・git・集計の実装。CLI とアプリの両方がここを通る。
-        // 集計をここに閉じ込めることで、表示側にロジックが漏れるのを防ぐ
+        // -------------------------------------------------------------
+        // 基盤層 (Core / Resources / Utility)
+        // -------------------------------------------------------------
+        .target(
+            name: "Resources",
+            path: "Sources/Resources",
+            resources: [.process("Resources")],
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "Model",
+            dependencies: ["Resources"],
+            path: "Sources/Model",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "Utility",
+            path: "Sources/Utility",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+
+        // -------------------------------------------------------------
+        // レガシーブリッジ (移行期間中に順次切り出しを進める)
+        // -------------------------------------------------------------
         .target(
             name: "ProctorKit",
-            // 表示する言葉は CLI とアプリで同じものを使うので、
-            // 訳文も1か所 (Kit) に置いて両方から引く。
-            // scripts/build-app.sh がここの .lproj を .app の中へ配る
-            resources: [.process("Resources")],
+            dependencies: ["Model", "Utility", "Resources"],
+            path: "Sources/ProctorKit",
             swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
             name: "proctor",
-            dependencies: ["ProctorKit"],
+            dependencies: ["ProctorKit", "Model", "Utility", "Resources"],
             swiftSettings: [.swiftLanguageMode(.v5)]),
         // アプリ本体。scripts/build-app.sh がこれを Agent Proctor.app に組み立てる
         .executableTarget(
             name: "ProctorApp",
-            dependencies: ["ProctorKit"],
+            dependencies: ["ProctorKit", "Model", "Utility", "Resources"],
             swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )

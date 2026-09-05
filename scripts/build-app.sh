@@ -59,7 +59,7 @@ cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 # システム設定の「アプリごとの言語」にこのアプリが出てこない。
 # SwiftPM が作る .bundle をそのまま入れないのは、.app の作法に合わないため
 # (Helpers 側に .lproj を置くのも駄目。codesign が入れ子のバンドルと解釈して失敗する)
-cp -R "$ROOT"/Sources/ProctorKit/Resources/*.lproj "$APP/Contents/Resources/"
+cp -R "$ROOT"/Sources/Resources/Resources/*.lproj "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

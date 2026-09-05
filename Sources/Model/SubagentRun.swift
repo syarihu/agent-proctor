@@ -1,4 +1,5 @@
 import Foundation
+import Resources
 
 /// 親セッションの下で走っているサブエージェント1体。
 ///

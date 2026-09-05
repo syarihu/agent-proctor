@@ -1,4 +1,5 @@
 import Foundation
+import Resources
 
 /// タスクIDの決め方。
 ///

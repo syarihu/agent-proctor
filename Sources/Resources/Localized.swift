@@ -10,7 +10,10 @@ import Foundation
 /// ここが持つのは「何と呼ぶか」までで、TaskStatus と同じ線引きにしている。
 public enum Localized {
     /// SwiftPM が作るリソースバンドルの名前 (パッケージ名_ターゲット名)
-    private static let bundleName = "proctor_ProctorKit.bundle"
+    private static let bundleNames = [
+        "proctor_Resources.bundle",
+        "proctor_ProctorKit.bundle",
+    ]
 
     /// 訳文の入った .lproj を1つだけ選んで持っておく。
     ///
@@ -51,7 +54,9 @@ public enum Localized {
         for directory in [Bundle.main.bundleURL, Bundle.main.resourceURL,
                           executable, siblingResources].compactMap({ $0 }) {
             candidates.append(Bundle(url: directory))
-            candidates.append(Bundle(url: directory.appendingPathComponent(bundleName)))
+            for name in bundleNames {
+                candidates.append(Bundle(url: directory.appendingPathComponent(name)))
+            }
         }
         return candidates.first { hasTable($0) } ?? nil
     }()
