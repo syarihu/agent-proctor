@@ -16,7 +16,7 @@ func cmdLs(_ args: Args) throws -> Int32 {
         // 黙って全件出すと、絞り込めているのか区別がつかない
         Terminal.note(Localized.text("cli.outside_repo"))
     }
-    let tasks = CollectTasks.run(repo: repo, allRepos: all)
+    let tasks = CollectTasks.collect(repo: repo, allRepos: all)
 
     if args.has("--json") {
         print(try prettyJSON(tasks))
@@ -88,7 +88,7 @@ func cmdAttach(_ args: Args) throws -> Int32 {
 /// プロセスを追えないまま残った古い記録 (この仕組みより前のもの・Claude Code 以外) を
 /// 期限切れを待たずに片付けるための逃げ道として置いてある。
 func cmdRm(_ args: Args) throws -> Int32 {
-    let task = try ForgetTask.run(id: try args.require(0, Localized.text("cli.arg.session_id")))
+    let task = try ForgetTask.forget(id: try args.require(0, Localized.text("cli.arg.session_id")))
     // 消したのは記録だけ。作業していた場所は残っていることを断っておく
     print(Localized.text("cli.removed", task.id, task.worktree))
     return 0

@@ -13,11 +13,11 @@ import RepositoryGit
 /// 一覧を数え直すたびに答えの出ない git が起きる。無いことも1つの答えとして扱う。
 ///
 /// 覚えているのはプロセスの中だけなので、**一回きりで終わる CLI には効かない。**
-/// `proctor ls` が既定で持ち主を引かないのはそのため (`CollectTasks.run`)。
+/// `proctor ls` が既定で持ち主を引かないのはそのため (`CollectTasks.collect`)。
 public enum ResolveRepoOrigin {
     /// - Parameter repo: リポジトリ本体の場所 (worktree ではない)
     /// - Returns: 持ち主。remote が無い・読めない置き方なら nil
-    public static func run(repo: String) -> RepoOrigin? {
+    public static func resolve(repo: String) -> RepoOrigin? {
         lock.lock()
         if let remembered = cache[repo] {
             lock.unlock()

@@ -40,9 +40,9 @@ public enum CollectRecentRepos {
     /// 掛ける。`repos` は `CollectWorktrees` が「どこを見に行くか」を決める元でも
     /// あるので、ここで古い行を落とすと、いちばん見たいもの——長く放置された
     /// worktree——が worktree の一覧からも消えてしまう。
-    public static func run(repos: [String: Int]? = nil,
-                           within: Int = window,
-                           now: Int = Int(Date().timeIntervalSince1970)) -> Set<String> {
+    public static func collect(repos: [String: Int]? = nil,
+                               within: Int = window,
+                               now: Int = Int(Date().timeIntervalSince1970)) -> Set<String> {
         let lastSeen = repos ?? LedgerStore.repos()
         return Set(lastSeen.filter { _, seen in
             // 時刻を持たないものは残さない。いつ見たのか分からないものは、

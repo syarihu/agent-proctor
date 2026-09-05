@@ -45,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)  // Dock アイコンを出さない
 
         Appearance.checkOrganizationAvailability = {
-            OrganizationGrouping.isAvailable()
+            CheckOrganizationAvailability.check()
         }
 
         store = TaskStore()

@@ -9,7 +9,7 @@ import UseCaseTask
 /// 相手には gh とネットワークを待たせることになる。ここで取りに行き、
 /// 取れたら `@Published` で描き直させる。
 ///
-/// アイコンをどこに置き、いつ取り直すかは Kit の `OrganizationGrouping` が
+/// アイコンをどこに置き、いつ取り直すかは `FetchOrganizationAvatar` が
 /// 持っている。ここが持つのは「重ねて取りに行かないこと」と
 /// 「取れるまで何度か試すこと」の2つ。
 @MainActor
@@ -22,7 +22,7 @@ public final class OrgAvatarStore: ObservableObject {
     ///
     /// SwiftUI は同じ見出しを何度でも描き直すので、これが無いと取得が重なる。
     /// 逆に**失敗したことをここに残してはいけない** —— 残すと二度と
-    /// `OrganizationGrouping.avatar` を呼ばなくなる
+    /// `FetchOrganizationAvatar.fetch` を呼ばなくなる
     private var loading: Set<String> = []
 
     /// 取れなかったときに試し直す回数 (最初の1回を含む)。
@@ -63,14 +63,14 @@ public final class OrgAvatarStore: ObservableObject {
         // 返してもらうのはファイルの場所だけにして、画像そのものはここで開く
         // (NSImage をスレッドをまたいで受け渡さない)
         let file = await Task.detached(priority: .utility) {
-            OrganizationGrouping.avatar(owner: owner, host: host)
+            FetchOrganizationAvatar.fetch(owner: owner, host: host)
         }.value
         guard let file else { return false }
         guard let image = NSImage(contentsOf: file) else {
             // 置き場は「いつ書かれたか」しか見ていないので、中身が壊れていても
             // 期限 (7日) が切れるまで同じものを返してくる。読めたかどうかを
             // 知っているのはここだけなので、捨てる合図もここから出す
-            OrganizationGrouping.discardAvatar(owner: owner)
+            FetchOrganizationAvatar.discard(owner: owner)
             return false
         }
         images[owner] = image

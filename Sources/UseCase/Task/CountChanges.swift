@@ -23,7 +23,7 @@ public enum CountChanges {
         public let untracked: Int?
     }
 
-    public static func run(worktree: String) -> Counted {
+    public static func count(worktree: String) -> Counted {
         lock.lock()
         if let remembered = cache[worktree] {
             lock.unlock()

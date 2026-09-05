@@ -18,7 +18,7 @@ public enum CollectWorktrees {
     ///   - repo: このリポジトリ本体だけに絞る。allRepos が true なら無視される
     ///   - allRepos: 覚えているリポジトリを全部見る
     ///   - withOrigin: 持ち主 (remote) まで引く。**既定は false。要る人だけが払う**
-    ///     (理由は CollectTasks.run と同じ)
+    ///     (理由は CollectTasks.collect と同じ)
     ///   - countDiff: 未コミットの変更を数える。**既定は true (今までどおり)**。
     ///     false にすると `diffKnown` が false のまま返るので、
     ///     `isRemovable` も立たない。**数え切れていないものを「消してよい」と
@@ -63,7 +63,7 @@ public enum CollectWorktrees {
         -> (groups: [CollectedRepoWorktrees], incomplete: Bool) {
         // 自分で集める回にも同じ答えを渡す。ここで数えてしまうと、
         // 「数えない」と言われた回に git がセッションのぶんだけ起きる
-        let sessions = tasks ?? CollectTasks.run(allRepos: true, countDiff: countDiff)
+        let sessions = tasks ?? CollectTasks.collect(allRepos: true, countDiff: countDiff)
 
         // 覚えているリポジトリと、いま動いているセッションのリポジトリを合わせる。
         // 台帳を覚えるより前から居座っているセッションがあっても取りこぼさない
@@ -176,7 +176,7 @@ public enum CollectWorktrees {
         return CollectedRepoWorktrees(
             repo: repo,
             repoName: URL(fileURLWithPath: repo).lastPathComponent,
-            origin: withOrigin ? ResolveRepoOrigin.run(repo: repo) : nil,
+            origin: withOrigin ? ResolveRepoOrigin.resolve(repo: repo) : nil,
             worktrees: sorted)
     }
 
@@ -202,7 +202,7 @@ public enum CollectWorktrees {
     /// 片方が空だっただけの場所が「変更なし」として片付けの候補に並ぶ。
     /// 欠けたぶんを 0 で埋めるセッションの側 (`CollectTasks.diff`) とはそこが違う
     static func diff(at worktree: String) -> DiffCounts? {
-        let counted = CountChanges.run(worktree: worktree)
+        let counted = CountChanges.count(worktree: worktree)
         guard let lines = counted.lines, let untracked = counted.untracked else { return nil }
         return DiffCounts(added: lines.added, removed: lines.removed,
                           untracked: untracked, binary: lines.binary,

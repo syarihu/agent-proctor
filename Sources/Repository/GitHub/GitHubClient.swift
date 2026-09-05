@@ -25,7 +25,7 @@ public enum GitHubClient {
     }()
 
     /// 資格情報が入っているか。**聞くだけで、覚えない。**
-    /// いつ聞き直すかは方針なので `OrganizationGrouping` が持つ。
+    /// いつ聞き直すかは方針なので `CheckOrganizationAvailability` が持つ。
     ///
     /// **`gh auth status` ではなく `gh auth token` を使う。** status のほうは
     /// トークンが今も生きているかを GitHub に問い合わせに行くので、

@@ -155,7 +155,7 @@ public final class PullRequestStore: ObservableObject {
         loading.insert(worktree)
         // gh とネットワーク、それに git を待つのでメインスレッドから外す
         let found = await Task.detached(priority: .utility) {
-            ResolvePullRequest.run(worktree: worktree, origin: origin)
+            ResolvePullRequest.resolve(worktree: worktree, origin: origin)
         }.value
         loading.remove(worktree)
         apply(found, for: worktree)
