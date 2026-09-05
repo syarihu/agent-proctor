@@ -34,26 +34,15 @@ public enum Paths {
     /// scripts/build-app.sh が組み立てるバンドルの名前。探すときもこれで揃える
     private static let appBundleName = "Agent Proctor.app"
 
-    /// サイドバーの .app の在り処。
+    /// サイドバーの .app の探索。
     ///
-    /// /Applications 決め打ちにできないのは、Homebrew から入れると .app が Cellar の
-    /// 下に置かれるため。formula は HOMEBREW_PREFIX の外に書けないので、
-    /// /Applications にあるのはそこへの symlink か、あるいは何も無い。
+    /// Homebrew 経由でのインストール時は Cellar 配下に配置されるため、/Applications 固定にはしない。
     ///
-    /// **まず `PROCTOR_APP` を見る。指定があればそれだけで決める。**
-    /// 外れていても他を探さない (試験と、変な入れ方をしたときの逃げ道であり、
-    /// 「ここを使え」の意味だから)。指定が無いときだけ、次の順に当たる。
-    ///
-    /// 1. 自分の居場所から2つ上 … CLI は Contents/Helpers にいるので、そこが .app。
-    ///    これを先に見るのは「今動いている CLI と対の .app」を確実に指すから。
-    ///    別の場所に入れ直したあと、古いほうを起動してしまうのを防ぐ。
-    ///    symlink (~/bin/proctor や Homebrew の bin/proctor) 越しでも辿れるよう実体を見る
-    /// 2. /Applications … .app だけ手で置いた・CLI を通さず起動したいとき
-    /// 3. ~/Applications … 管理者権限なしで入れた場合
+    /// 1. 環境変数 `PROCTOR_APP`: 明示指定がある場合はこれを優先する。
+    /// 2. 実行ファイル自身が内包されている .app: 同梱 CLI (Contents/Helpers) から対となる .app を参照する。
+    /// 3. /Applications / ~/Applications: 一般的な配置先。
     public static var appBundle: URL? {
-        // 明示された場所は「ここを使え」であって「候補に加えろ」ではない。
-        // 外れたときに黙って別の .app へ流れると、使い捨てのつもりで
-        // 動いている本物を起動してしまう。指定が効かないならそう言う
+        // 明示指定がある場合はそのパスのみを検証し、他候補へフォールバックしない。
         let override = ProcessInfo.processInfo.environment["PROCTOR_APP"]
         if let override, !override.isEmpty {
             let url = URL(fileURLWithPath: (override as NSString).expandingTildeInPath)
@@ -68,23 +57,13 @@ public enum Paths {
         return candidates.first { isAppBundle($0) }
     }
 
-    /// **いま動いているこの実行ファイルが入っている .app。** 入っていなければ nil。
+    /// 現在実行中のプロセスが内包されている .app バンドルの URL。バンドル外での実行時は nil。
     ///
-    /// `appBundle` と混同しないこと。あちらは「起動すべき .app はどこか」を
-    /// 答えるもので、自分が入っていなければ /Applications まで見に行く。
-    /// こちらは「自分は何者か」なので、**入っていないなら nil を返すのが正しい**
-    /// (.build/release から走らせたときに、入っている .app の版を
-    /// 自分の版として答えてしまうのを防ぐ)。
+    /// `appBundle` とは異なり、外部の /Applications 等を探索せず、
+    /// 自身がバンドル内に存在するかどうかのみを判定する（開発ビルドでの誤判定防止）。
     ///
-    /// CLI は Contents/Helpers、アプリ本体は Contents/MacOS にいるので、
-    /// どちらも2つ上がバンドルになる。
-    ///
-    /// argv[0] ではなく executablePath を見るのは、PATH 解決で名前だけ渡して
-    /// spawn されると (subprocess.run(["proctor", ...]) など) argv[0] が
-    /// "proctor" になり、そこからでは自分の居場所を辿れないため。
-    /// executablePath は symlink を解決しないので、その先は自分で辿る。
-    /// public にしないのは、View から見えると `appBundle` と並んで補完に出て、
-    /// 説明を読まずに近いほうを選ばれるため。要るのは Kit の中だけ
+    /// CLI は Contents/Helpers、アプリ本体は Contents/MacOS に配置されるため、2階層上がバンドルルートとなる。
+    /// argv[0] はシェル経由での実行時にコマンド名のみになる場合があるため executablePath を使用する。
     static var enclosingAppBundle: URL? {
         let executable = URL(fileURLWithPath:
             Bundle.main.executablePath ?? CommandLine.arguments[0])

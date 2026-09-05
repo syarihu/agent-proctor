@@ -16,17 +16,12 @@ public enum EnvironmentSource {
         return raw.components(separatedBy: ":").last
     }
 
-    /// Claude Code が全ての子プロセスへ渡すセッションID。
+    /// Claude Code が子プロセスへ渡すセッションID。
     ///
-    /// 台帳の `TaskRecord.sessionId` と同じ値なので、エージェントが Bash から
-    /// 何か叩いたとき、**自分がどの行なのかをそこから引ける**。
-    /// hooks の payload が要らないのはこれがあるため。
-    ///
-    /// **サブエージェントの中から読んでも親の値が返る。** 子は親のプロセスから
-    /// 環境ごと生えるので、子が名前を付けても付くのは親の行になる ——
-    /// 一覧に出ているのは親の行なので、これは望ましい。
-    ///
-    /// 取れないとき (Claude Code 以外) は nil。
+    /// 台帳の `TaskRecord.sessionId` と一致するため、エージェント実行中のコマンドから
+    /// 該当するタスク行を特定するために使用する。
+    /// サブエージェント実行時も親プロセスの環境変数が引き継がれる。
+    /// 取得できない場合 (Claude Code 以外など) は nil を返す。
     public static func claudeSessionID(
         _ environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> String? {
