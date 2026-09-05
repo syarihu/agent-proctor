@@ -7,14 +7,7 @@ import SwiftUI
 import UseCaseSession
 import Utility
 
-/// 設定画面。
-///
-/// もともとメニューバーの中に項目として並べていたが、
-/// 文字の大きさのように「少しずつ動かして確かめたい」ものはメニューだと
-/// 開き直すたびに手が止まる。ここに集めて、動かしながら結果を見られるようにする。
-///
-/// サイドバーは Appearance を見て描いているので、
-/// つまみを動かすとその場で反映される。プレビューは要らない。
+/// アプリ全般の設定画面。
 struct SettingsView: View {
     @ObservedObject var appearance: Appearance
     @ObservedObject var notices: NoticeSettings
@@ -22,37 +15,25 @@ struct SettingsView: View {
 
     @State private var launchAtLogin = LoginItem.isEnabled
     @State private var loginError: String?
-    /// 通知の許可。読むのに待ちが要る (通知センターに聞きに行く) ので、
-    /// 分かるまでは何も言わない。「許可されていません」と出しておいて
-    /// あとから覆ると、断った覚えを作ってしまう
+    /// 通知の許可状態（非同期取得完了までは nil）
     @State private var notifyPermission: NotificationPermissionStatus?
-    /// 通知の許可を尋ねている間。押し重ねてダイアログが重ならないようにする
+    /// 通知許可の要求中フラグ
     @State private var askingNotify = false
-    // 読むだけなら即返るので、最初の描画からほんとうの状態を出せる。
-    // 一瞬だけ違う状態が見えると、それが答えだと思われてしまう
+    /// iTerm2 オートメーション権限状態
     @State private var automation = AutomationPermission.state()
-    /// 尋ねている間。答えを待つ間にもう一度押せると、ダイアログが重なる
+    /// オートメーション許可の要求中フラグ
     @State private var asking = false
 
     var body: some View {
-        // 版はどの節にも属さないので Form の外に置く。
-        // 節にすると「設定できる項目」に見えてしまう
         VStack(spacing: 0) {
             form
-            // 版が無いときは文ごと差し替える。"Version %@" の穴に
-            // "development build" を差すと "Version development build" になり、
-            // 文にならない。**穴に入れる語は、どんな語でも文になる保証が作れない**
             Text(AppVersion.current.map { Localized.text("app.settings.version", $0) }
                  ?? Localized.text("app.settings.version.development"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 12)
         }
-        // **要確認の1行に合わせた幅。** セグメントは幅を等分するので、長いほうの
-        // 「完了ボタンを押したとき」(13pt で 132) が2つ分と余白で 300 ほど要る。
-        // ラベル (「通知を消すタイミング」で 120) を足すと 460 では収まらず、
-        // セグメントがラベルの下へ落ちて2行になる。
-        // 他の節はここまで要らないが、節ごとに幅は変えられない
+        // 最長ラベル（「通知を消すタイミング」等）が折り返されないよう幅を固定
         .frame(width: 540)
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -185,10 +166,7 @@ struct SettingsView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    // **ここだけ幅を決めない。** 他の Picker は語 (「リポジトリ」など) が
-                    // 並ぶだけだが、こちらは選択肢が文 (「完了ボタンを押したとき」は
-                    // 13pt で 132) なので、幅を決め打つと窓に入らずラベルの下へ落ちる。
-                    // 残っている幅を渡して、そこに収めてもらう
+                    // 選択肢の文言長に合わせてレイアウトを自動調整する
                 }
             } header: {
                 Text(Localized.text("app.settings.unread_section"))
@@ -221,7 +199,7 @@ struct SettingsView: View {
                                              ? .secondary : .primary)
                         Spacer()
                         Button(notifyAction, action: requestNotify)
-                            // 尋ねている間は止める。隣のオートメーションと同じ扱い
+                            // 問い合わせ実行中は多重操作を抑止する
                             .disabled(askingNotify || notifyPermission == nil
                                       || notifyPermission == .unavailable)
                     }
@@ -232,9 +210,7 @@ struct SettingsView: View {
                             .foregroundStyle(automation == .granted ? .secondary : .primary)
                         Spacer()
                         Button(automationAction, action: requestAutomation)
-                            // iTerm2 が居ないときに設定を開かせても行き止まりになる。
-                            // 一度も尋ねていなければ TCC に記録が無く、
-                            // オートメーションの一覧にこのアプリの行が出てこない
+                            // iTerm2 未起動時は TCC にアプリ一覧が表示されないため無効化する
                             .disabled(asking || automation == .targetNotRunning)
                     }
                 }
@@ -247,39 +223,23 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        // 画面を開き直したときに、外で変えられていた設定を拾い直す
+        // 画面表示時に外部で変更された設定（ログイン項目、権限、gh 状態）を再取得する
         .onAppear {
             launchAtLogin = LoginItem.isEnabled
             automation = AutomationPermission.state()
-            // gh にログインし直したあと、開き直せば選べるようになってほしい
             appearance.refreshOrganizationAvailability()
             refreshNotifyPermission()
         }
-        // 何か1つでも入れた直後に許可を尋ねる。**設定を閉じて何かが終わるまで
-        // 何も起きないのでは遅い** — 入れたのに効かなかったように見える。
-        // onChange の2引数版は macOS 14 からなので、値そのものを見る
+        // 通知対象を有効化した際に未決定状態であれば即座に許可ダイアログを要求する
         .onChange(of: notices.wanted.isEmpty) { empty in
             guard !empty, notifyPermission == .undecided else { return }
             requestNotify()
         }
-        // この画面が一番出す動作は「システム設定を開く」で、それは設定ウィンドウを
-        // 閉じない。onAppear だけだと、向こうで許可して戻ってきても表示が
-        // 「許可されていません」のままになる。前面に戻った時点で見に行く。
-        //
-        // 尋ねている最中にも飛んでくる (ダイアログを閉じるとアプリが前面に戻る) が、
-        // **どちらが後に代入されても同じ値になるので競合しない**。
-        // ここも request() も TCC という同じ正本を読みに行くだけで、
-        // 後から読んだほうが必ず新しい。片方が答えを手元で組み立てたり
-        // 覚え込んだりするようになると、この前提は崩れる
+        // システム設定等からアプリにフォーカスが戻った際に、変更された権限状態を再取得する
         .onReceive(NotificationCenter.default.publisher(
             for: NSApplication.didBecomeActiveNotification)) { _ in
             automation = AutomationPermission.state()
-            // 通知も同じ。システム設定で入れ直して戻ってきたときに拾う
             refreshNotifyPermission()
-            // gh も同じ理由でここに要る。「gh auth login を済ませると選べる」と
-            // 案内しておきながら、端末で済ませて戻ってきても止まったままだと、
-            // 案内どおりにやったのに効かなかったように見える。
-            // Kit 側は「使えない」を60秒しか持ち越さないので、ここで聞き直せば拾える
             appearance.refreshOrganizationAvailability()
         }
     }
@@ -294,8 +254,7 @@ struct SettingsView: View {
         }
     }
 
-    /// まだ決まっていないときだけ、ここからダイアログを出せる。
-    /// それ以外は設定を開くしかない (理由は AutomationPermission)
+    /// 未決定時は許可ダイアログを要求し、決定済みの場合はシステム設定画面を開く
     private var automationAction: String {
         automation == .undecided
             ? Localized.text("app.settings.automation.ask")
@@ -361,10 +320,8 @@ struct SettingsView: View {
                         isDefault: Bool, reset: @escaping () -> Void) -> some View {
         LabeledContent(title) {
             HStack(spacing: 12) {
-                // Slider に step を渡すと macOS は目盛りを描く。
-                // 幅は 180〜1200 を 1pt 刻みにしているので目盛りが 1021 本並び、
-                // つまみの下が白い線で埋まってしまう。
-                // 刻みは書き込み側で丸めて、部品には連続値として渡す
+                // Slider に step を渡すと全刻みに目盛り線が描画されて視認性が悪化するため、
+                // Slider 自体は連続値として扱い、Binding の setter で値を丸める
                 Slider(value: Binding(
                     get: { value.wrappedValue },
                     set: { value.wrappedValue = (($0 / step).rounded() * step) }
@@ -372,7 +329,6 @@ struct SettingsView: View {
                 Text("\(Int(value.wrappedValue))\(unit)")
                     .font(.system(.body, design: .monospaced))
                     .foregroundStyle(.secondary)
-                    // 数字の桁で幅が動くと、つまみまで揺れて掴みにくい
                     .frame(width: 52, alignment: .trailing)
                 Button(Localized.text("app.settings.reset"), action: reset)
                     .disabled(isDefault)
@@ -387,8 +343,7 @@ struct SettingsView: View {
         } catch {
             loginError = error.localizedDescription
         }
-        // 成否にかかわらず、実際の状態をスイッチに反映する。
-        // 失敗したのに入ったままだと、登録できたと誤解する
+        // 処理成否に関わらず実際の登録状態を再取得してトグルに同期する
         launchAtLogin = LoginItem.isEnabled
     }
 }

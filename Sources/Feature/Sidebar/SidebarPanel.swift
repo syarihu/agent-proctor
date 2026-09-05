@@ -5,9 +5,8 @@ import DesignSystem
 import ItermBridge
 import SwiftUI
 
-/// 左端でドラッグして幅を変えるための取っ手。
-///
-/// 幅 8px。iTerm2 側のリサイズと干渉しないよう、内側ではなく外側の縁に置く。
+/// パネル左端のドラッグリサイズ用ハンドル。
+/// iTerm2 側のリサイズ操作と干渉しないよう、パネル外縁（左端）に配置する。
 final class ResizeHandleView: NSView {
     var onResize: ((CGFloat) -> Void)?
     private var initialMouseX: CGFloat = 0
@@ -27,9 +26,9 @@ final class ResizeHandleView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         guard dragging else { return }
-        // 左端を外側 (左) にドラッグすると幅が広がり、内側 (右) だと狭まる
+        // 左方向へのドラッグで幅を拡大、右方向で縮小
         let delta = initialMouseX - NSEvent.mouseLocation.x
-        // 範囲は Appearance が持つ。ここに数字を書くと設定画面とずれる
+        // 許容幅の範囲定義は Appearance に集約して設定画面と整合させる
         let range = Appearance.widthRange
         onResize?(max(range.lowerBound, min(range.upperBound, initialWidth + delta)))
     }
@@ -37,11 +36,10 @@ final class ResizeHandleView: NSView {
     override func mouseUp(with event: NSEvent) { dragging = false }
 }
 
-/// iTerm2 のウィンドウの左隣に吸着して追従するパネル。
+/// iTerm2 ウィンドウの左隣に吸着・追従するフローティングパネル。
 ///
-/// 位置合わせは CGWindowList で iTerm2 のウィンドウ枠を読んで行う。
-/// AppleScript と違ってオートメーションの許可が要らないので、
-/// 許可を出す前でも吸着だけは動く。
+/// CGWindowList により iTerm2 のウィンドウ枠を取得して位置合わせを行う
+/// （オートメーション権限不要で動作可能）。
 @MainActor
 public final class SidebarPanel: NSObject {
     private var panel: NSPanel!
@@ -52,32 +50,28 @@ public final class SidebarPanel: NSObject {
     private let appearance: Appearance
     private var widthObserver: AnyCancellable?
     private var roomObserver: AnyCancellable?
-    /// iTerm2 を右へ寄せて居場所を作る係。寄せた分を戻すのもここが覚えている
+    /// iTerm2 ウィンドウを右に寄せて表示領域を確保・復元する制御クラス
     private let room = SidebarRoom()
 
     private var lastTarget: NSRect = .zero
-    /// 幅が最後に変わった時刻。ドラッグやスライダーで動かしている間は
-    /// 端末の幅を触らずに待つ (下記 widthSettleDelay)
+    /// 幅が最後に変更された時刻。ドラッグ操作中の不要な iTerm2 リサイズを抑制するために使用する
     private var lastWidthChange = Date.distantPast
-    /// 幅が落ち着いたと見なすまでの間。
+    /// 幅変更完了とみなすまでの遅延時間（秒）。
     ///
-    /// 幅を変えるたびに iTerm2 をリサイズすると、ドラッグ中に何度も窓を動かすことになり、
-    /// iTerm2 やウィンドウマネージャが元の大きさへ戻しにかかって取っ組み合いになる。
-    /// サイドバー自身は即座に追従するので、待つのは端末を詰める分だけ
+    /// リサイズ中の頻繁な iTerm2 リサイズ要求とウィンドウマネージャの復元処理との競合を防ぐため、
+    /// 操作が落ち着くまで iTerm2 の移動・リサイズを遅延させる。
     private let widthSettleDelay: TimeInterval = 0.35
     public private(set) var isShowing = false
-    /// メニューから手で閉じたかどうか。iTerm2 の追従が勝手に開き直さないための札
+    /// ユーザー操作により明示的に非表示にされたかどうかのフラグ（追従処理による自動再表示を抑止）
     public private(set) var userHidden = false
 
-    /// 幅の正本は Appearance。設定画面からも端のドラッグからも同じ値を動かす
     private var width: CGFloat { appearance.sidebarWidth }
 
-    /// 追従の細かさ。動いている間は 60fps、止まったら 0.5 秒に落として省電力化する
+    /// ウィンドウ追従ポーリング間隔。移動中は約60fps（0.016秒）、静止時は省電力のため0.5秒に切り替える
     private var pollInterval: TimeInterval = 0.5
     private var stationaryCount = 0
 
-    /// 見えているかどうかが変わったときに知らせる。
-    /// 見えていない間は git を起動したくないので、集計の入切に使う
+    /// 表示状態の変更通知コールバック（非表示時のバックグラウンド処理抑制用）
     public var onVisibilityChange: ((Bool) -> Void)?
 
     public init(appearance: Appearance, content: some View) {
@@ -85,8 +79,7 @@ public final class SidebarPanel: NSObject {
         super.init()
 
         // 枠なし・影付きのフローティングパネル。
-        // nonactivatingPanel なので、触っても iTerm2 からフォーカスを奪わない。
-        // 高さ (level) は前面のアプリに合わせて updateLevel が動かす
+        // nonactivatingPanel を指定し、クリック時にも iTerm2 のフォーカスを奪わないようにする。
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: width, height: 600),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -138,8 +131,7 @@ public final class SidebarPanel: NSObject {
             self?.room.retryNow()
             self?.wakeUp()
         }
-        // 設定で切られたら、寄せた分はその場で返す。
-        // 切ったのに端末が細いままだと、何が起きたのか分からない
+        // 設定解除時は即座に iTerm2 のリサイズを元の状態に復元する
         roomObserver = appearance.$makeRoomForSidebar.sink { [weak self] enabled in
             guard let self else { return }
             if enabled { self.wakeUp() } else { self.room.restore() }
@@ -174,23 +166,12 @@ public final class SidebarPanel: NSObject {
         wakeUp()
     }
 
-    /// パネルの高さ (level) を前面のアプリで決める。
+    /// 前面アプリケーションに応じてパネルのウィンドウレベル（level）を更新する。
     ///
-    /// 端末の脇に居る間は端末より上に居てほしいので浮かせる。**別のアプリに
-    /// 移ったあとまで浮かせたままにしない。** 切り替えた先のウィンドウの上に
-    /// 居座って、関係の無い作業の邪魔をするため。普通の高さまで下げれば、
-    /// 重なるウィンドウの下に潜り、重ならなければ見えたまま残る。
-    ///
-    /// ステージマネージャーではこれが問題にならなかった。アプリを移ると
-    /// iTerm2 のウィンドウごと画面から外れ、追う相手を失ったパネルが
-    /// そのまま引っ込んでいたため。切っていると窓は画面に残るので、
-    /// 浮いたままのパネルだけが上に出てしまう。
-    ///
-    /// 自分が前面のときも浮かせるのは、**サイドバーを押した瞬間に前面が
-    /// こちらへ移る**から。ここで下げると指の下でパネルが沈む。
+    /// iTerm2 または本アプリがアクティブな場合は端末の前面に表示するため .floating に設定し、
+    /// 他のアプリがアクティブになった場合は作業の妨げにならないよう .normal に下げて背面に潜らせる。
     private func updateLevel() {
-        // 誰が前面か分からないときは触らない。読めなかっただけで
-        // 上げ下げすると、パネルがちらつく
+        // 前面アプリの特定に失敗した場合はちらつき防止のためレベル変更を行わない
         guard let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         else { return }
         let alongsideTerminal = front == ItermBridge.bundleID
@@ -215,17 +196,11 @@ public final class SidebarPanel: NSObject {
         }
     }
 
-    /// iTerm2 のウィンドウ枠。読み方は SidebarRoom と共通にしてある
-    /// (別々に持つと、追いかける窓と寄せる窓が食い違う)
+    /// iTerm2 のウィンドウ矩形取得（SidebarRoom と共通のロジックを使用）
     private func itermBounds() -> CGRect? { SidebarRoom.currentItermBounds() }
 
-    /// いま端末の幅を触ってはいけないか。
-    ///
-    /// - 幅を変えている途中 (端のドラッグ・設定のスライダー)
-    /// - マウスのボタンを押している間 (窓や縁を掴んでいる可能性がある)
-    ///
-    /// どちらも「人が手を動かしている最中」で、そこへ割り込んで窓を動かすと
-    /// 掴んでいるものが飛ぶ。落ち着いてから1回だけ寄せれば足りる
+    /// iTerm2 の幅・位置調整を保留すべき状態かどうかを判定する。
+    /// 幅変更操作中やマウスボタン押下中など、ユーザー操作中のウィンドウ移動競合を防ぐ。
     private var handsOff: Bool {
         if Date().timeIntervalSince(lastWidthChange) < widthSettleDelay { return true }
         return NSEvent.pressedMouseButtons != 0
@@ -253,51 +228,42 @@ public final class SidebarPanel: NSObject {
             return
         }
 
-        // 座標を入れ替える基準はメイン画面。CGWindowList の原点は
-        // 「メイン画面の左上」、AppKit の原点は「メイン画面の左下」なので、
-        // どの画面に乗っている窓でも、引き算に使う高さはメイン画面のものになる
+        // CGWindowList の原点はメイン画面左上、AppKit の原点はメイン画面左下のため、
+        // 座標変換の基準高さにはメイン画面の高さを使用する
         guard let primary = NSScreen.screens.first else { return }
-        // 寄せるのも置くのも、**その窓が乗っている画面**を基準にする。
-        // メイン画面で決め打ちにすると、別の画面に出した端末では左端も高さも
-        // 別物を見ることになり、場所を空け損ねたうえにサイドバーが画面の外へ出る
+        // マルチディスプレイ環境で正しく配置・リサイズするため、対象ウィンドウが存在する画面を取得する
         let screen = SidebarRoom.screen(containing: bounds) ?? primary
 
-        // 左に隙間が無ければ iTerm2 を右へ寄せて場所を作る。
-        // 動かせたなら枠が変わっているので、置くのは次の周回で読み直してから。
-        //
-        // 手が動いている間は待つ。幅のドラッグ中やマウスを押している間に
-        // 端末を動かすと、掴んでいる窓が手の中で飛んだり、iTerm2 側の
-        // 引き戻しとぶつかって全画面へ戻されたりする
+        // 必要に応じて iTerm2 を右へ寄せてパネルの表示領域を確保する。
+        // 移動・リサイズ直後はウィンドウ枠の再取得が必要なため次回ポーリングで配置する
         if appearance.makeRoomForSidebar, handsOff == false,
            room.makeRoom(itermBounds: bounds, screen: screen, width: width) {
             pollInterval = 0.016
             return
         }
 
-        // CGWindowList の原点は画面の左上、AppKit は左下。ここで入れ替える。
-        // 左端で止めるのはその画面の縁であって 0 ではない。0 で止めると、
-        // メイン画面より左に置いた画面 (枠の x が負になる) の端末に付いていけない。
-        // 縁を visibleFrame で測るのは makeRoom と揃えるため。Dock が左にあるとき、
-        // frame で測ると場所を空けられなかった場合に Dock の下へ潜り込む
+        // CGWindowList（左上原点）から AppKit（左下原点）の座標系へ変換する。
+        // メイン画面の左側に配置されたディスプレイ（x が負）にも追従できるよう、
+        // 左端境界は 0 ではなく該当ディスプレイの visibleFrame.minX を下限とする
+        // （Dock 等との重なりも防止）。
         let target = NSRect(x: max(screen.visibleFrame.minX, bounds.minX - width),
                             y: primary.frame.height - (bounds.minY + bounds.height),
                             width: width, height: bounds.height)
 
         if target != lastTarget {
-            // ドラッグ/リサイズ中。滑らかに追いかけたいので細かく回す
+            // 移動・リサイズ中は追従精度を高めるため更新頻度を上げる
             panel.setFrame(target, display: true, animate: false)
             lastTarget = target
             stationaryCount = 0
             pollInterval = 0.016
         } else {
-            // 止まっている。間隔を落として電池を使わない
+            // 静止時はポーリング頻度を落として負荷を低減する
             stationaryCount += 1
             if stationaryCount > 10 { pollInterval = 0.5 }
         }
 
         if !isShowing {
-            // 出し直すときは高さも決め直す。隠れている間にアプリを移られると
-            // アクティブになった知らせを取り逃がしている
+            // 非表示期間中のアクティブ状態変化を反映するためレベルを再計算する
             updateLevel()
             panel.orderFront(nil)
             isShowing = true
@@ -305,7 +271,7 @@ public final class SidebarPanel: NSObject {
         }
     }
 
-    /// 寄せた分の iTerm2 の幅を返す。終了するときに呼ぶ
+    /// 寄せた分の iTerm2 の幅を元の状態に復元する
     public func restoreRoom() { room.restore() }
 
     public func toggle() {
@@ -314,11 +280,11 @@ public final class SidebarPanel: NSObject {
             panel.orderOut(nil)
             isShowing = false
             onVisibilityChange?(false)
-            // 隠したなら場所を空けておく理由が無い。詰めた分を返す
+            // 非表示時は退避した表示領域を復元する
             room.restore()
         } else {
             userHidden = false
-            // 次の追従で必ず置き直させる
+            // 次回追従時に即座に再配置させるため前回の矩形をリセット
             lastTarget = .zero
             wakeUp()
         }
