@@ -97,12 +97,9 @@ public enum AntigravityMetadataReader {
     // MARK: - 3. Transcript Prompt Reader
 
     /// 最初の `USER_INPUT` を探す。
+    /// 最初の `USER_INPUT` を探す。
     ///
-    /// **頭から少しずつ読む。** 欲しいのは最初のプロンプト1つなのに、
-    /// transcript はセッションが進むと数MBまで育つ。丸ごと文字列にして
-    /// 全行に分けると、その1行のために台帳の更新のたびに数MBを触ることになる。
-    /// 足りなければ窓を倍にして読み直し、それでも見つからなければ諦める
-    /// (最初のプロンプトがそこまで後ろに居ることはない)。
+    /// ログファイル肥大化時の読み込み負荷を避けるため、先頭から段階的にウィンドウサイズを広げて探索する。
     private static func readFirstPrompt(conversationID: String) -> String? {
         let transcriptPath = (cliHome as NSString)
             .appendingPathComponent("brain/\(conversationID)/.system_generated/logs/transcript.jsonl")
@@ -116,8 +113,7 @@ public enum AntigravityMetadataReader {
                   let data = try? handle.read(upToCount: window), !data.isEmpty
             else { return nil }
             let text = String(decoding: data, as: UTF8.self)
-            // 窓を使い切っているなら、最後の行は途中で切れている見込み。
-            // 半端な行を JSON として解こうとしても外れるだけなので捨てる
+            // 読み取り境界で分割された末尾の不完全な行は除外する
             var lines = text.components(separatedBy: "\n")
             let truncated = data.count == window
             if truncated, !lines.isEmpty { lines.removeLast() }
@@ -130,7 +126,6 @@ public enum AntigravityMetadataReader {
                 else { continue }
                 return extractPromptSummary(from: raw)
             }
-            // 読み切っていれば、この先にも無い
             guard truncated, window < ceiling else { return nil }
             window *= 2
         }
@@ -139,7 +134,7 @@ public enum AntigravityMetadataReader {
     private static func extractPromptSummary(from raw: String) -> String? {
         var text = raw
         if let start = raw.range(of: "<USER_REQUEST>"),
-           let end = raw.range(of: "</USER_REQUEST>", range: start.upperBound..<raw.endIndex) {
+            let end = raw.range(of: "</USER_REQUEST>", range: start.upperBound..<raw.endIndex) {
             text = String(raw[start.upperBound..<end.lowerBound])
         }
         for line in text.components(separatedBy: .newlines) {
@@ -175,24 +170,10 @@ public enum AntigravityMetadataReader {
         }
     }
 
-    /// Antigravity のサブエージェントである場合、親の conversationID と素性（Role/TypeName/Prompt）を解決する。
+    /// Antigravity のサブエージェントである場合、親の conversationID とメタデータ（Role/TypeName/Prompt）を解決する。
     ///
-    /// Antigravity はサブエージェントごとに独立した conversationId を発行し、フックもその ID で届く。
-    /// 親の transcript.jsonl に記録された invoke_subagent の生成ログを辿ることで、
-    /// 親子関係を結び、独立タスクではなく親セッションの配下にぶら下げられるようにする。
-    ///
-    /// 親の候補は**呼ぶ側が渡す**。ここから台帳を読みに行かないのは、
-    /// 台帳の出入り口を1つに保つため (Repository どうしで呼び合わない)。
-    /// 渡すのは台帳に載っている Antigravity セッションの sessionId で、
-    /// 普段は1〜2件しかない。**agy を1枚しか開いていなければ、親自身の
-    /// イベントでは候補が0件になり I/O は起きない**。2枚以上開いていれば
-    /// 他方のログを 64KB 読んで空振りする分は掛かる。
-    ///
-    /// **見つからないことは普通にある。** 親が喋り続けると生成の記録が
-    /// 読み取り窓 (末尾64KB) から流れ出てしまう。一度結び付いた親子を
-    /// 離さないための覚えは呼ぶ側が持つこと (台帳の subagentRuns)。
-    ///
-    /// - Parameter activeParentIDs: 親になりうるセッションの conversationId。
+    /// 親セッションの transcript.jsonl 内にある `invoke_subagent` ログと照合して親子関係を特定する。
+    /// 親セッションの候補一覧は呼び出し元から受け取る。
     public static func resolveSubagentInfo(conversationID: String,
                                            activeParentIDs: [String]) -> SubagentInfo? {
         guard !conversationID.isEmpty else { return nil }
@@ -210,16 +191,11 @@ public enum AntigravityMetadataReader {
             guard let fileSize = try? handle.seekToEnd(), fileSize > 0 else { continue }
             let readSize: UInt64 = 65536 // 末尾 64KB
             let offset = fileSize > readSize ? fileSize - readSize : 0
-            // **末尾まで読ませない。** transcript は親が書いている最中で、読んでいる
-            // 間にも伸びる。readDataToEndOfFile だと窓の大きさを決めた意味が無くなる
-            // (CodexMetadataReader.lastTokenCount と同じ理由・同じ読み方)
+            // ログ追記中のサイズ変動に対応するため、指定した読み込み範囲のみ取得する
             guard (try? handle.seek(toOffset: offset)) != nil,
                   let data = try? handle.read(upToCount: Int(fileSize - offset))
             else { continue }
-            // **切り出した先頭がマルチバイト文字の途中になることがある。**
-            // String(data:encoding:) はそこで nil を返すので、親のログが
-            // 手元にあるのに読まずに捨ててしまう (日本語のログでは頻繁に起きる)。
-            // 壊れたバイトは置換文字にして読み進める
+            // 切り出し境界でマルチバイト文字が欠損した場合にもデコード失敗しないよう String(decoding:as:) を使用する
             let chunk = String(decoding: data, as: UTF8.self)
             guard chunk.contains(conversationID) else { continue }
 
@@ -230,11 +206,8 @@ public enum AntigravityMetadataReader {
         return nil
     }
 
-    /// **文字列で当たりを付けてから解く。**
-    ///
-    /// 64KB には数百行が入っている。素直に全部 JSON にすると、欲しい1行の
-    /// ために毎回それだけ払うことになる。目印は地の文にそのまま出るので、
-    /// 先に絞り込めば解くのは1〜2行で済む。
+    /// ログチャンクからサブエージェント情報を抽出する。
+    /// JSON パースの負荷を抑えるため、キーワードで事前フィルタを行ってから対象行のみデコードする。
     private static func parseSubagentInfo(from chunk: String, childID: String, parentID: String) -> SubagentInfo? {
         let lines = chunk.components(separatedBy: .newlines)
 
@@ -245,19 +218,14 @@ public enum AntigravityMetadataReader {
                   let contentStr = step["content"] as? String
             else { continue }
 
-            // **文言だけで決めない。** 親が自分のログを grep や cat で覗くと、
-            // そのコマンド出力にも同じ文言と子の ID がそのまま乗る。
-            // それを生成の記録と取り違えると、遡って見つかる invoke_subagent が
-            // 別の呼び出しになり、他の子の素性を配ってしまう。
-            // 本物は文言の直後が必ず JSON の始まりなので、そこで見分ける
+            // 親エージェントが grep や cat 等で自身のログを参照した際の出力行との誤判定を防ぐため、
+            // 生成メッセージ直後に有効な JSON ブロックが存在することを確認する。
             if let block = createdSubagentsBlock(in: contentStr), block.contains(childID) {
-                // 一度に何体も起こせるので、**この子が何番目に生まれたか**を数える。
-                // 頼んだ側の配列 (Subagents) には conversationId が入っておらず、
-                // 結び付ける手掛かりは並び順しか無い
+                // invoke_subagent の引数配列には conversationId が含まれないため、
+                // 生成通知ブロック内のインデックス順と対応付けてメタデータを解決する。
                 let position = createdConversationIDs(in: block).firstIndex(of: childID)
 
-                // 素性 (Role/Prompt) は頼んだ側にしか無く、生成の記録より
-                // 必ず前に来る。だから見つけた行から手前へ遡る
+                // 生成通知行より前のステップから invoke_subagent の呼び出し引数を逆順探索する
                 for prevIndex in (0..<index).reversed() {
                     guard lines[prevIndex].contains("invoke_subagent"),
                           let prevStep = decodeStep(lines[prevIndex]),
@@ -273,8 +241,8 @@ public enum AntigravityMetadataReader {
                         } else if let array = args["Subagents"] as? [[String: Any]] {
                             requested = array
                         }
-                        // 並び順が読めなければ、1体しか頼んでいないときだけ当てにする。
-                        // 何体も居るのに先頭を配ると、2体目以降に1体目の素性が付く
+                        // インデックスが取得できない場合は、要求配列が単一要素の場合のみ採用する
+                        // （複数要素時に誤った要素のメタデータが割り当てられるのを防ぐ）
                         let entry: [String: Any]?
                         if let position, position < requested.count {
                             entry = requested[position]
@@ -300,12 +268,8 @@ public enum AntigravityMetadataReader {
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 
-    /// 生成の記録の**本体だけ**を切り出す。見つからなければ nil。
-    ///
-    /// 本物は文言の直後が JSON の始まりになっている。偽物の弾き方は呼ぶ側に書いた。
-    ///
-    /// 切り出すのは、続く `createdConversationIDs` に**文言より前を見せない**ため。
-    /// 前の方に別の `"conversationId"` があると、数えた位置が丸ごとずれる。
+    /// 生成記録の JSON ブロックを切り出す。
+    /// コマンド実行ログ等に含まれる同一文言と区別するため、直後が JSON 形式であることのみを対象とする。
     private static func createdSubagentsBlock(in content: String) -> Substring? {
         guard let phrase = content.range(of: "Created the following subagents:") else {
             return nil
@@ -316,19 +280,14 @@ public enum AntigravityMetadataReader {
         return block
     }
 
-    /// 生成の記録に並んだ conversationId を**出てきた順に**拾う。
-    ///
-    /// 頼んだ側の Subagents 配列と順番が対応しているので、位置で結び付けるのに使う。
-    /// JSON の断片が地の文に埋まった形なので、鍵の名前を目印に拾う。
+    /// 生成記録に含まれる conversationId を出現順に抽出する。
+    /// 呼び出し側の Subagents 配列とのインデックス突合に使用する。
     private static func createdConversationIDs(in content: Substring) -> [String] {
         let marker = "\"conversationId\""
         var ids: [String] = []
         var rest = content
         while let markerRange = rest.range(of: marker) {
             rest = rest[markerRange.upperBound...]
-            // "conversationId" : "…" の値だけを取る。空白とコロンは読み飛ばす。
-            // **値が文字列でなければ諦める** (null など)。次に出てきた引用符を
-            // 拾ってしまうと、無関係な文字列を ID として並べることになる
             let afterColon = rest.drop { $0.isWhitespace || $0 == ":" }
             guard afterColon.first == "\"" else { continue }
             let valueStart = afterColon.index(after: afterColon.startIndex)
@@ -341,68 +300,27 @@ public enum AntigravityMetadataReader {
 
     // MARK: - 5. Approval Probe
 
-    /// 承認待ちのステップに付く status。**Antigravity の内部 enum の番号**
-    /// (`CORTEX_STEP_STATUS_WAITING`)。
-    ///
-    /// **宣言順と番号が一致しない。** 実物は PENDING=1 RUNNING=2 DONE=3 …
-    /// GENERATING=8 WAITING=9 と飛ぶので、名前の並びから数えると外れる。
-    /// 引き直すときは agy のバイナリに埋まっている protobuf の descriptor を解く
-    /// (`\x12<長さ>\x0a<長さ>CORTEX_STEP_STATUS_<名前>\x10<番号>` を拾う)。
-    ///
-    /// 公開された口ではないので、向こうが振り直せば黙って効かなくなる。
-    /// 気づけるのは「許可待ちなのに ⏳ が出ない」という形だけ
+    /// 承認待ちステップの状態値 (Antigravity 内部 enum: CORTEX_STEP_STATUS_WAITING = 9)
     private static let waitingStepStatus = 9
 
-    /// 会話の記録が積まれる場所。
-    ///
-    /// **見張る側に渡すためだけに公開している。** 置き場を知っているのは
-    /// ここ (Repository) だけにしておきたいので、パスを組み立てさせない。
-    /// **中を並べてはいけない** (理由は下の `isAwaitingApproval`)
+    /// 会話データベースの保存先ディレクトリパス
     public static var conversationsDirectory: String {
         (cliHome as NSString).appendingPathComponent("conversations")
     }
 
-    /// その会話が、いま人の承認を待って止まっているか。
+    /// 指定した会話が現在ユーザーの承認待ちで停止しているかどうかを判定する。
     ///
-    /// **Antigravity には「訊いている」を知らせるフックが無い。** 送ってくるのは
-    /// PreToolUse / PostToolUse / PreInvocation / PostInvocation / Stop の5つだけで、
-    /// しかも PreToolUse は許可の判定より**前**に走る (あれの stdout の `decision` が
-    /// 人に訊くかどうかを決める入力そのもの)。断られたときもフックは飛ばない。
-    /// つまり挙げる合図も降ろす合図もフックからは来ないので、
-    /// あちらが書いている会話の記録を直接見るしかない。
+    /// Antigravity は確認待ち遷移時のフックを発火しないため、会話 DB のステップ状態を直接確認する。
+    /// WAL ファイルの一時的なフラッシュ等による読み取り失敗時に承認解除と誤認するのを防ぐため、
+    /// 取得結果が不確定な場合は nil を返す。
     ///
-    /// **置き場を走査してはいけない。** タイトルの自動生成のような裏方が、
-    /// 2ステップだけの短命な会話を次々作る。見に行くのは台帳に載っている
-    /// conversationId だけにすること。
-    ///
-    /// 末尾のステップではなく status で引くのは、裏で走っている仕事が
-    /// 後ろに積まれても手の挙がっているステップを見落とさないため
-    /// (`idx_steps_status` があるので、どちらでも値段は変わらない)。
-    ///
-    /// **読めなかったときは nil。「待っていない」と一緒にしてはいけない。**
-    ///
-    /// この DB は WAL なので、読むだけでも `-shm` が要る。ところが agy は
-    /// **待たせている最中にも記録を畳んで閉じる**ことがあり、その一瞬だけ
-    /// `-shm` も `-wal` も消える。読み取り専用では作れないので、開くこと自体が失敗する。
-    ///
-    /// ここで false を返すと、**挙がっていた手が勝手に降りる** ——
-    /// 権限確認が出たままなのに ⏳ が消え、次に確かめるまで戻らない。
-    /// 実際にそれが起きたので、答えを3つに分けてある。
-    /// 読めた結果だけが答えで、読めなかったのは**何も言っていない**。
-    ///
-    /// (`immutable=1` を付ければ `-shm` 無しでも開けるが、あれは `-wal` を
-    /// まるごと無視する。書かれたばかりの手が `-wal` の中に居ると見落とすので、
-    /// 「読めない」を「待っていない」に化けさせる元の間違いをやり直すことになる。)
-    ///
-    /// - Returns: 待っているなら true、待っていないなら false、**分からなければ nil**
+    /// - Returns: 承認待ちなら true、非待機なら false、判定不能時は nil
     public static func isAwaitingApproval(conversationID: String) -> Bool? {
         guard !conversationID.isEmpty else { return nil }
         let dbPath = (conversationsDirectory as NSString)
             .appendingPathComponent("\(conversationID).db")
 
-        // **開けなくても取っ手は返る。** 閉じずに戻ると、開けない会話を
-        // 何度も叩くこの道では取っ手が積み上がる。
-        // だから defer を張ってから開けたかどうかを見る
+        // オープン失敗時もリソースリークを防ぐため確実に close する
         var db: OpaquePointer?
         let opened = sqlite3_open_v2(dbPath, &db, SQLITE_OPEN_READONLY, nil)
         defer { sqlite3_close(db) }
@@ -417,7 +335,6 @@ public enum AntigravityMetadataReader {
         switch sqlite3_step(stmt) {
         case SQLITE_ROW: return true
         case SQLITE_DONE: return false
-        // 読んでいる最中に畳まれた・壊れていた。**言い切らない**
         default: return nil
         }
     }

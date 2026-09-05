@@ -1,32 +1,22 @@
 import Foundation
 import Utility
 
-/// 取ってきたアイコンの置き場。ファイルの出し入れはここだけにする。
+/// 取得したアバター画像のローカルキャッシュ管理。
 ///
-/// **いつ取り直すかは決めない。** それは「古いと見なすのは何日からか」という
-/// 方針であって、置き場の仕事ではない (`FetchOrganizationAvatar` が決める)。
-/// ここが答えるのは「どこに置くか」と「いつ書かれたか」まで。
+/// 保存先の解決と更新日時の取得のみを責務とし、キャッシュ有効期限の判断は上位層が行う。
 public enum AvatarCache {
-    /// その持ち主のアイコンを置く場所。まだ無くても場所は答える。
-    /// **置き場の中を指せない名前なら nil** (理由は `fileName`)
+    /// 指定オーナーのアバターファイル保存先 URL。不正なパスになる場合は nil。
     public static func file(for owner: String) -> URL? {
         let safe = String(owner.map { allowed.contains($0) ? $0 : "-" })
         guard !safe.isEmpty else { return nil }
         let url = Paths.avatarsDir.appendingPathComponent(safe)
-        // 置き場の直下から出ていないことを確かめる。通す字を絞ってあるので
-        // ここに引っかかることはないはずだが、**この URL は消す操作にも渡る**。
-        // 外を指したまま `discard` に入ると台帳ごと消えるので、二重に見る。
-        //
-        // **URL どうしではなく path で比べる。** `appendingPathComponent` は
-        // 実在するディレクトリにだけ末尾の "/" を付けるので、置き場をまだ
-        // 作っていない初回は `avatars` と `avatars/` になって URL が食い違い、
-        // **一枚も保存できなくなる**。`path` なら末尾の "/" は落ちる
+        // ディレクトリトラバーサル防止のため、キャッシュディレクトリ配下に収まっているかをパス文字列で検証する
         guard url.deletingLastPathComponent().standardizedFileURL.path
             == Paths.avatarsDir.standardizedFileURL.path else { return nil }
         return url
     }
 
-    /// 最後に書かれてからの時間。まだ無ければ nil
+    /// キャッシュファイルの最終更新からの経過時間（秒）。ファイルが存在しない場合は nil。
     public static func age(of owner: String) -> TimeInterval? {
         guard let path = file(for: owner)?.path else { return nil }
         guard let modified = try? FileManager.default
@@ -34,27 +24,15 @@ public enum AvatarCache {
         return Date().timeIntervalSince(modified)
     }
 
-    /// 手元の1枚を捨てる。読めなかったものを次に持ち越さないために使う
+    /// キャッシュファイルを破棄する。
     public static func discard(_ owner: String) {
         guard let file = file(for: owner) else { return }
         try? FileManager.default.removeItem(at: file)
     }
 
-    /// ファイル名に通す字。GitHub の login が取りうる範囲 (英数字とハイフン) に、
-    /// 念のため下線を足しただけ。**それ以外は落とす。**
-    ///
-    /// 持ち主の名前をそのままファイル名にできない理由が2つある。
-    ///
-    /// 1. `/` が入る書き方がある (GitLab の入れ子グループ)。そのままでは
-    ///    置き場の下にディレクトリを掘ってしまう
-    /// 2. **`.` や `..` は名前ではなく場所を指す。** `avatars/..` は台帳のある
-    ///    ディレクトリそのもので、そこへ `discard` が走ると
-    ///    `state.json` ごと消える。remote に `github.com/../x.git` と
-    ///    書いてあるだけでそうなる
-    ///
-    /// 拡張子を付けないのは、**中身が PNG とは限らないから。** GitHub が返すのは
-    /// アップロードされた画像そのもので、JPEG のことがある。`.png` と名乗らせると
-    /// 名前が嘘をつく (読む側は中身で判別するので動きはする)
+    /// ファイル名として許可する文字種。
+    /// ディレクトリトラバーサルや不正な階層作成（"/" や ".." など）を防止するためホワイトリストで制限する。
+    /// また、画像フォーマットが PNG / JPEG 等で異なるため拡張子は固定しない。
     private static let allowed = Set(
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
 }
