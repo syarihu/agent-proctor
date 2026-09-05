@@ -69,7 +69,7 @@ enum TaskGrouping {
     /// **並べ直しは要らない。** `recency` はタスクが1つも無ければ `.max` を返すので、
     /// セッションの無いリポジトリは放っておいても下に落ちる。しかも `stable` は
     /// 引き分けで入力順を保ち、渡される `worktrees` は
-    /// `CollectWorktrees.runDetailed` が台帳の時刻の新しい順に並べたものなので、
+    /// `CollectWorktrees.collect` が台帳の時刻の新しい順に並べたものなので、
     /// 落ちたものどうしの並びもそのまま引き継がれる。
     /// **ただしその時刻は24時間に1回しか書き直されない**
     /// (`RecordHookEvent.repoMemoryRefresh`) ので、同じ日のうちに触った

@@ -97,7 +97,7 @@ public struct TaskRecord: Codable, Equatable {
     /// 「この作業はこれ」と決めて付けた名前。
     ///
     /// **書き手は2つある。** 人が端末のタブに付けたタイトル (`tab_title`) と、
-    /// セッション自身が付けた名前 (`proctor title` = `NameSession.run`)。
+    /// セッション自身が付けた名前 (`proctor title` = `NameSession.name`)。
     /// 同じ欄を共有していて、**後から来たほうが勝つ**。既定のフックは `tab_title` を
     /// 送らないので今は衝突しないが、毎イベント送るフックを書くと、セッションが
     /// 付けた名前はその次のイベントで静かに上書きされる。

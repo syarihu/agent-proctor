@@ -106,7 +106,10 @@ let package = Package(
         // -------------------------------------------------------------
         .target(
             name: "FeatureSettings",
-            dependencies: ["Model", "Utility", "Resources", "DesignSystem", "ItermBridge"],
+            dependencies: [
+                "Model", "Utility", "Resources", "DesignSystem", "ItermBridge",
+                "UseCaseSession",
+            ],
             path: "Sources/Feature/Settings",
             swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(
@@ -119,7 +122,7 @@ let package = Package(
             dependencies: [
                 "Model", "Utility", "Resources",
                 "DesignSystem", "AppState",
-                "UseCaseTask", "UseCaseWorktree", "UseCaseNotice",
+                "UseCaseTask",
                 "ItermBridge"
             ],
             path: "Sources/Feature/Sidebar",

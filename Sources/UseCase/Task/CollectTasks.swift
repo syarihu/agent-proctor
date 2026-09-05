@@ -28,10 +28,10 @@ public enum CollectTasks {
     ///     問い合わせごと止められるようにしておく。
     ///     **数えないときに何を返すかはここで決める。** 表示側が後から 0 を
     ///     被せる形にすると、「数えた結果 0」との区別が View 任せになる
-    public static func run(repo: String? = nil, allRepos: Bool = false,
-                           itermOnly: Bool = false,
-                           withOrigin: Bool = false,
-                           countDiff: Bool = true) -> [CollectedTask] {
+    public static func collect(repo: String? = nil, allRepos: Bool = false,
+                               itermOnly: Bool = false,
+                               withOrigin: Bool = false,
+                               countDiff: Bool = true) -> [CollectedTask] {
         var records = LedgerStore.tasks()
         if !allRepos, let repo {
             records = records.filter { $0.repo == repo }
@@ -46,7 +46,7 @@ public enum CollectTasks {
             return CollectedTask(
                 record: record,
                 repoName: URL(fileURLWithPath: record.repo).lastPathComponent,
-                origin: withOrigin ? ResolveRepoOrigin.run(repo: record.repo) : nil,
+                origin: withOrigin ? ResolveRepoOrigin.resolve(repo: record.repo) : nil,
                 exists: exists,
                 // 動いていた場所を手で消された場合。台帳には残っているので消失として見せる
                 status: exists ? record.status : TaskStatus.missing,
@@ -126,7 +126,7 @@ public enum CollectTasks {
         //
         // **行数と未追跡は別々に潰す。** コミットが1つも無いリポジトリでは
         // `diff HEAD` だけが失敗するので、まとめて潰すと未追跡の数まで消える
-        let counted = CountChanges.run(worktree: record.worktree)
+        let counted = CountChanges.count(worktree: record.worktree)
         let lines = counted.lines
         return DiffCounts(
             added: lines?.added ?? 0,

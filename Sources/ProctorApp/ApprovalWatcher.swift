@@ -100,7 +100,7 @@ final class ApprovalWatcher {
         // 会話の記録を読むのも台帳を書くのもメインスレッドから外す
         // (理由は LedgerWriter)
         writer.submit({
-            ((try? RecordPendingApproval.run()) ?? false)
+            ((try? RecordPendingApproval.record()) ?? false)
         }, changed: onChange)
     }
 }

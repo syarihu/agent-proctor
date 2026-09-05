@@ -18,7 +18,7 @@ public enum CollectWorktrees {
     ///   - repo: このリポジトリ本体だけに絞る。allRepos が true なら無視される
     ///   - allRepos: 覚えているリポジトリを全部見る
     ///   - withOrigin: 持ち主 (remote) まで引く。**既定は false。要る人だけが払う**
-    ///     (理由は CollectTasks.run と同じ)
+    ///     (理由は CollectTasks.collect と同じ)
     ///   - countDiff: 未コミットの変更を数える。**既定は true (今までどおり)**。
     ///     false にすると `diffKnown` が false のまま返るので、
     ///     `isRemovable` も立たない。**数え切れていないものを「消してよい」と
@@ -30,16 +30,16 @@ public enum CollectWorktrees {
     ///   - also: 台帳が覚えていなくても見に行くリポジトリ。
     ///     いま人が見ている場所を混ぜるために使う。台帳には書かないので、
     ///     ちょっと覗いただけのリポジトリが記憶の枠を食うことはない
-    public static func run(repo: String? = nil, allRepos: Bool = false,
-                           withOrigin: Bool = false,
-                           countDiff: Bool = true,
-                           tasks: [CollectedTask]? = nil,
-                           also: [String] = [],
-                           now: Int = Int(Date().timeIntervalSince1970))
+    public static func collect(repo: String? = nil, allRepos: Bool = false,
+                               withOrigin: Bool = false,
+                               countDiff: Bool = true,
+                               tasks: [CollectedTask]? = nil,
+                               also: [String] = [],
+                               now: Int = Int(Date().timeIntervalSince1970))
         -> [CollectedRepoWorktrees] {
-        runDetailed(repo: repo, allRepos: allRepos, withOrigin: withOrigin,
-                    countDiff: countDiff,
-                    tasks: tasks, also: also, now: now).groups
+        collect(repo: repo, allRepos: allRepos, withOrigin: withOrigin,
+                countDiff: countDiff,
+                tasks: tasks, repos: nil, also: also, now: now).groups
     }
 
     /// 数え上げた結果と、**読み切れたかどうか**。
@@ -48,22 +48,22 @@ public enum CollectWorktrees {
     ///   一覧を丸ごと置き換える側 (アプリ) は、これが立っていたら**前の値を残す**。
     ///   読めなかったことを「worktree が無い」として映すと、
     ///   何も起きていないのに行が消えたように見える
-    /// - Parameter repos: 台帳が覚えているリポジトリ。渡さなければここで読む。
+    /// - Parameter repos: 台帳が覚えているリポジトリ。nil を渡せばここで読む。
     ///   `tasks` と同じ分担で、既に読んであるなら渡す (アプリは同じ台帳を
     ///   「一覧に残すか」の判断とも分け合うので、読むのは1回で済む)。
-    ///   **`run` のほうには足していない** —— 使うのはここを呼ぶアプリだけで、
+    ///   **単純版 `collect` のほうには足していない** —— 使うのはここを呼ぶアプリだけで、
     ///   対称性のためだけの引数は「これは誰が使うのか」を探させることになる
-    public static func runDetailed(repo: String? = nil, allRepos: Bool = false,
-                                   withOrigin: Bool = false,
-                                   countDiff: Bool = true,
-                                   tasks: [CollectedTask]? = nil,
-                                   repos: [String: Int]? = nil,
-                                   also: [String] = [],
-                                   now: Int = Int(Date().timeIntervalSince1970))
+    public static func collect(repo: String? = nil, allRepos: Bool = false,
+                               withOrigin: Bool = false,
+                               countDiff: Bool = true,
+                               tasks: [CollectedTask]? = nil,
+                               repos: [String: Int]?,
+                               also: [String] = [],
+                               now: Int = Int(Date().timeIntervalSince1970))
         -> (groups: [CollectedRepoWorktrees], incomplete: Bool) {
         // 自分で集める回にも同じ答えを渡す。ここで数えてしまうと、
         // 「数えない」と言われた回に git がセッションのぶんだけ起きる
-        let sessions = tasks ?? CollectTasks.run(allRepos: true, countDiff: countDiff)
+        let sessions = tasks ?? CollectTasks.collect(allRepos: true, countDiff: countDiff)
 
         // 覚えているリポジトリと、いま動いているセッションのリポジトリを合わせる。
         // 台帳を覚えるより前から居座っているセッションがあっても取りこぼさない
@@ -176,7 +176,7 @@ public enum CollectWorktrees {
         return CollectedRepoWorktrees(
             repo: repo,
             repoName: URL(fileURLWithPath: repo).lastPathComponent,
-            origin: withOrigin ? ResolveRepoOrigin.run(repo: repo) : nil,
+            origin: withOrigin ? ResolveRepoOrigin.resolve(repo: repo) : nil,
             worktrees: sorted)
     }
 
@@ -202,7 +202,7 @@ public enum CollectWorktrees {
     /// 片方が空だっただけの場所が「変更なし」として片付けの候補に並ぶ。
     /// 欠けたぶんを 0 で埋めるセッションの側 (`CollectTasks.diff`) とはそこが違う
     static func diff(at worktree: String) -> DiffCounts? {
-        let counted = CountChanges.run(worktree: worktree)
+        let counted = CountChanges.count(worktree: worktree)
         guard let lines = counted.lines, let untracked = counted.untracked else { return nil }
         return DiffCounts(added: lines.added, removed: lines.removed,
                           untracked: untracked, binary: lines.binary,

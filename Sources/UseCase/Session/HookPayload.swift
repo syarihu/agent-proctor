@@ -66,8 +66,8 @@ public struct HookPayload {
     /// **hooks から台帳を触る UseCase は、必ずここを通すこと。** 呼び忘れても
     /// 型は何も言わないし動きもする (親子が結ばれず、子が独立した行として
     /// 生えるだけ)。新しい入り口を足すときは忘れやすいので気を付ける。
-    /// いま通しているのは `RecordHookEvent.touch` / `.countSubagent` と
-    /// `RecordSessionStats.run` の3つ。
+    /// いま通しているのは `RecordHookEvent.record` / `.countSubagent` と
+    /// `RecordSessionStats.record` の3つ。
     ///
     /// 手順は2段。まず台帳を見て、既にどこかの子として載っていればそれを使う。
     /// **一度結び付いた親子は離さない**ためで、親のログを遡る手だけに頼ると、

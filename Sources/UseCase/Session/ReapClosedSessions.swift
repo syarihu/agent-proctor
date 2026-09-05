@@ -22,7 +22,7 @@ public enum ReapClosedSessions {
     /// - Parameter isAlive: プロセスの生死。差し替えられるようにしてあるのは試験のため。
     /// - Returns: 台帳から外した ID
     @discardableResult
-    public static func run(
+    public static func reap(
         aliveSessionIDs alive: Set<String>,
         isAlive: (Int, Int?) -> Bool = { ProcessLiveness.isAlive(pid: $0, startedAt: $1) }
     ) throws -> [String] {

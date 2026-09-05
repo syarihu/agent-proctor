@@ -135,7 +135,7 @@ public enum RecordHookEvent {
     ///   届いた状態そのままとは限らない値を返す。
     ///   記録しなかったとき (git の外など) は届いた状態をそのまま返す
     @discardableResult
-    public static func touch(status: String, payload raw: HookPayload) throws -> Outcome {
+    public static func record(status: String, payload raw: HookPayload) throws -> Outcome {
         let top = GitClient.toplevel(from: raw.workingDirectory)
         // git の外での実行は追いかけない。行が無いので囁く相手もいない
         guard !top.isEmpty else { return Outcome(status: status, unnamed: false) }
@@ -406,12 +406,18 @@ public enum RecordHookEvent {
         }
     }
 
+    @available(*, deprecated, renamed: "record(status:payload:)")
+    @discardableResult
+    public static func touch(status: String, payload raw: HookPayload) throws -> Outcome {
+        try record(status: status, payload: raw)
+    }
+
     /// サブエージェントの出入りを記録する。
     ///
     /// `agent_id` が付いているなら1体ずつ持つ (SubagentStart / SubagentStop)。
     /// 付いていないエージェントは今まで通り数だけを増減させる
     /// (PreToolUse(Task) で増やし、SubagentStop で減らす)。
-    /// どちらの経路も、取りこぼしはターンの終わり (touch done) で戻る。
+    /// どちらの経路も、取りこぼしはターンの終わり (_touch done) で戻る。
     public static func countSubagent(delta: Int, payload raw: HookPayload) throws {
         // 親子の解決は親のログを読むので、ロックを取る前に済ませる
         let payload = raw.resolvingAntigravitySubagent(in: LedgerStore.read())

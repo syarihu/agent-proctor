@@ -9,7 +9,7 @@ import RepositoryLedger
 public enum RecordSessionStats {
     /// statusline は描画のたびに呼ばれるため、内容が変わらないときは書き込まない。
     /// 書くと台帳の更新時刻が動いてサイドバーが無駄に数え直す。
-    public static func run(_ raw: HookPayload) throws {
+    public static func record(_ raw: HookPayload) throws {
         // 親子の解決は台帳と親のログを読む。ロックを取る前に済ませる。
         //
         // **台帳を読むのはこの1回だけにする。** ここは statusline が描画のたびに

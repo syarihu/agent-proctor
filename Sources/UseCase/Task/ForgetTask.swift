@@ -16,7 +16,7 @@ public enum ForgetTask {
     /// - Parameter id: 台帳のID。前方一致でも引ける (LedgerStore.find と同じ)
     /// - Returns: 外した記録。呼ぶ側が「何を消したか」を伝えられるようにする
     @discardableResult
-    public static func run(id: String) throws -> TaskRecord {
+    public static func forget(id: String) throws -> TaskRecord {
         let task = try LedgerStore.find(id: id)
         try LedgerStore.drop(ids: [task.id])
         return task

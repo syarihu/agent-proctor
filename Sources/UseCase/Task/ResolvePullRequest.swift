@@ -9,9 +9,9 @@ import RepositoryGitHub
 /// ここが持つのはそれ以外の3つ ——「そもそも聞きに行ってよい相手か」
 /// 「何秒で古いと見なすか」「取れなかった答えをどう扱うか」。
 ///
-/// **いつ聞き直すかの間隔はすべてここに置く** (`OrganizationGrouping` と同じ役目)。
+/// **いつ聞き直すかの間隔はすべてここに置く** (`FetchOrganizationAvatar` と同じ役目)。
 ///
-/// **`CollectTasks.run()` からは呼ばないこと。** あちらは台帳が動くたびに
+/// **`CollectTasks.collect()` からは呼ばないこと。** あちらは台帳が動くたびに
 /// (= ツール1回ごとに) 通る道で、ここは1回につきネットワークに出る。
 /// 混ぜると、いちばん編集している最中に worktree の数だけ gh が起きる。
 public enum ResolvePullRequest {
@@ -24,7 +24,7 @@ public enum ResolvePullRequest {
     ///     出す前に必ず今のブランチと突き合わせる (`Entry.branch`)
     ///   - origin: リポジトリの持ち主。gh が答えられる相手かの判断に使う
     /// - Returns: PR。無いか、手に入らなければ nil
-    public static func run(worktree: String, origin: RepoOrigin?) -> PullRequestRef? {
+    public static func resolve(worktree: String, origin: RepoOrigin?) -> PullRequestRef? {
         // **GitHub 以外には聞きに行かない。** gh は GitHub 専用の道具なので、
         // GitLab や remote の無いリポジトリで呼んでも失敗するだけ。
         // ここで弾いておくと、そのぶんプロセスが起きない

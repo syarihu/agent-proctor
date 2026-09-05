@@ -23,8 +23,8 @@ public enum CollectNotices {
     ///   - watching: いま人が見ている iTerm2 のタブ。見ていなければ nil。
     ///     **目の前で起きたことは知らせない** — 通知は「見ていないところで
     ///     起きたこと」を運ぶためのもので、見ている画面の写しではない
-    public static func run(previous: [TaskRecord]?, current: [TaskRecord],
-                           wanted: Set<String>, watching: String? = nil) -> NoticeChanges {
+    public static func collect(previous: [TaskRecord]?, current: [TaskRecord],
+                               wanted: Set<String>, watching: String? = nil) -> NoticeChanges {
         // 前を知らないうちは何も出さない。**取り下げも出さない** —
         // 何を出したかを知らないのに取り下げると、他の何かを消しかねない
         guard let previous else { return NoticeChanges(post: [], withdraw: []) }

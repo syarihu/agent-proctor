@@ -248,7 +248,7 @@ public final class TaskStore: ObservableObject {
     /// 数百ミリ秒かかることがあり、押したのに消えない時間ができてしまう。
     public func forget(id: String) {
         do {
-            try ForgetTask.run(id: id)
+            try ForgetTask.forget(id: id)
         } catch {
             return  // 既に消えているなど。台帳が正なので何もしない
         }
@@ -262,7 +262,7 @@ public final class TaskStore: ObservableObject {
     /// **判断は写さない。** 何がどう変わるかは台帳を読み直した結果から来るので、
     /// ここに「確認待ちは待機へ」のような写しを置かない
     public func clearAttention(ids: [String]) {
-        guard (try? ClearAttention.run(ids: ids)) == true else { return }
+        guard (try? ClearAttention.clear(ids: ids)) == true else { return }
         reloadRecords()
         if let quick = CollectTasks.reapplied(tasks, records: records) { tasks = quick }
         // 差分と worktree は次の数え直しで揃える
@@ -516,7 +516,7 @@ public final class TaskStore: ObservableObject {
         let countDiff = wantsDiff()
         // 持ち主を先に引いておく相手 (下の「温める」を見よ)。**手元にある顔ぶれから
         // 採る。** 台帳を読み直せば正確だが、そのために JSON を丸ごとデコードするのは
-        // 温めるためだけの支払いになる。絞る回の CollectTasks.run が見るのは
+        // 温めるためだけの支払いになる。絞る回の CollectTasks.collect が見るのは
         // ここと同じ (どちらも isItermManaged で絞った顔ぶれ) なので、これで足りる
         let knownRepos = Set(records.map(\.repo))
         // git の起動を待つ間 UI を止めない。数え終わったらメインに戻して差し替える
@@ -528,7 +528,7 @@ public final class TaskStore: ObservableObject {
             // **読むのは worktree を数える回だけ。** 数えない回は visible を
             // 呼ばないので、残すかどうかの判断そのものが要らない。
             // LedgerStore.repos() は台帳 JSON を丸ごとデコードするので、
-            // 毎回読むと、同じ Task.detached の中で CollectTasks.run が既に
+            // 毎回読むと、同じ Task.detached の中で CollectTasks.collect が既に
             // 1回読んでいるぶんと合わせて、10秒ごと (とツールが動くたび) に
             // デコードが2回走ることになる。
             //
@@ -539,7 +539,7 @@ public final class TaskStore: ObservableObject {
             // 読み手が2つ (下の outcome と、その前の「温める」) に増えているので、
             // どちらかを countWorktrees と無関係に読める形へ広げないこと。
             // 広げた瞬間、数えない回でも台帳のデコードが走り、同じ Task.detached の
-            // 中で CollectTasks.run が読むぶんと合わせて、10秒ごと
+            // 中で CollectTasks.collect が読むぶんと合わせて、10秒ごと
             // (とツールが動くたび) に同じ台帳を2回デコードすることになる
             let ledgerRepos = countWorktrees ? LedgerStore.repos() : nil
 
@@ -562,7 +562,7 @@ public final class TaskStore: ObservableObject {
             // 役目なので、ここを外すと「今いる場所」がいちばん温まらない。
             // 実体の無いパスを渡しても、引けなかったことごと覚えるので git は1回きり
             warm.formUnion(here)
-            for repo in warm { _ = ResolveRepoOrigin.run(repo: repo) }
+            for repo in warm { _ = ResolveRepoOrigin.resolve(repo: repo) }
 
             // **かかった時間を測って、次までの間隔に食わせる。**
             // 時計は ContinuousClock を使う。Date は NTP で飛ぶので、
@@ -577,8 +577,8 @@ public final class TaskStore: ObservableObject {
             // 「誰もいない」に見えてしまう (片付けてよい場所として並ぶ)。
             // とはいえ絞らない回はその分だけ git が増えるので、
             // 突き合わせが要らない回は今までどおり絞ってから数える
-            let everything = CollectTasks.run(allRepos: true, itermOnly: !countWorktrees,
-                                              withOrigin: true, countDiff: countDiff)
+            let everything = CollectTasks.collect(allRepos: true, itermOnly: !countWorktrees,
+                                                  withOrigin: true, countDiff: countDiff)
             let sessionSeconds = TaskStore.seconds(since: sessionStart)
             // 読み切れなかった回は、そのまま映さずに前の値を残す。
             // git が一度答えなかっただけで行が消えると、何が起きたのか分からない。
@@ -594,12 +594,12 @@ public final class TaskStore: ObservableObject {
                 // 最後のタブを閉じても、しばらくは一覧に残しておくリポジトリ。
                 // 読んだ台帳を使い回すだけなので、ここでは何も起きない
                 // (measure の外に置いてあるのはそのため)
-                let kept = CollectRecentRepos.run(repos: ledgerRepos)
+                let kept = CollectRecentRepos.collect(repos: ledgerRepos)
                 let start = ContinuousClock.now
-                let counted = CollectWorktrees.runDetailed(allRepos: true, withOrigin: true,
-                                                           countDiff: countDiff,
-                                                           tasks: everything,
-                                                           repos: ledgerRepos, also: here)
+                let counted = CollectWorktrees.collect(allRepos: true, withOrigin: true,
+                                                       countDiff: countDiff,
+                                                       tasks: everything,
+                                                       repos: ledgerRepos, also: here)
                 // 読み切れなかった回も、git を待った時間は同じだけかかっている
                 let seconds = TaskStore.seconds(since: start)
                 // worktree のほうが読めなくても、残す顔ぶれは分かっている。

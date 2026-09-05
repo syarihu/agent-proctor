@@ -48,7 +48,7 @@ public enum MarkSessionSeen {
     /// 失敗にも印を付ける。表示では失敗のまま出す (見たからといって
     /// 片付いたわけではない) が、二度目に気づかせる必要はもう無い。
     @discardableResult
-    public static func run(itermSession: String?, policy: Policy) throws -> Bool {
+    public static func mark(itermSession: String?, policy: Policy) throws -> Bool {
         guard let session = itermSession, !session.isEmpty else { return false }
 
         // 変化が無いときにロックを取らないよう、先に読んで確かめる。

@@ -71,7 +71,7 @@ View（CLI とアプリ）は UseCase を呼んで整形するだけにする。
   SwiftUI の色は `DesignSystem` の `Palette` がそれぞれ持つ。`TaskStatus` が知っているのは
   「どんな状態があり、どんな記号と名前で呼ぶか」まで
 - **View は Repository を直接触らない。** アプリ側は `TaskStore`（`AppState`）が台帳を包む
-- **集計は `CollectTasks.run()` だけを通る。** 表示側に集計を書かない
+- **集計は `CollectTasks.collect()` だけを通る。** 表示側に集計を書かない
 - **人に見せる言葉をコードに直接書かない。** `Localized.text("…")` で引く。
   訳文は `Sources/Resources/Resources/{en,ja}.lproj/Localizable.strings` にあり、
   **鍵は必ず両方に足す**（片方にしか無い鍵は、もう片方の言語では鍵がそのまま出る）。

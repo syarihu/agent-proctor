@@ -23,7 +23,7 @@ public enum RecordPendingApproval {
     ///
     /// - Returns: 書き換えたら true
     @discardableResult
-    public static func run() throws -> Bool {
+    public static func record() throws -> Bool {
         // 挙げる相手と降ろす相手を先に決める。ここまでは台帳を読むだけ
         var raise: Set<String> = []
         var lower: Set<String> = []
@@ -48,7 +48,7 @@ public enum RecordPendingApproval {
             }
         }
 
-        // 何も動かないならロックを取らない (`ClearAttention.run` と同じ考え方)。
+        // 何も動かないならロックを取らない (`ClearAttention.clear` と同じ考え方)。
         // ここは数秒ごとに通る道なので、素通りできる回を素通りさせないと、
         // 誰も待たせていない間ずっと台帳の奪い合いに加わることになる
         guard !raise.isEmpty || !lower.isEmpty else { return false }
