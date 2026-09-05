@@ -1,4 +1,6 @@
 import Foundation
+import Model
+import RepositoryLedger
 
 /// 「もう知らせなくていい」を人が押したときの片付け。
 ///

@@ -1,4 +1,5 @@
 import Foundation
+import Model
 
 /// 台帳の前と後を突き合わせて、macOS の通知に出すものを決める。
 ///

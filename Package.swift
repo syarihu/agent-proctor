@@ -64,7 +64,7 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(
             name: "UseCaseWorktree",
-            dependencies: ["Model", "Utility", "Resources", "RepositoryGit", "UseCaseTask"],
+            dependencies: ["Model", "Utility", "Resources", "RepositoryLedger", "RepositoryGit", "UseCaseTask"],
             path: "Sources/UseCase/Worktree",
             swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(

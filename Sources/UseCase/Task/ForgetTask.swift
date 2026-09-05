@@ -1,4 +1,6 @@
 import Foundation
+import Model
+import RepositoryLedger
 
 /// 一覧から1件外す。
 ///

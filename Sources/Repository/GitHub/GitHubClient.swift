@@ -1,4 +1,6 @@
 import Foundation
+import Model
+import Utility
 
 /// GitHub への問い合わせ。gh (GitHub CLI) を呼ぶのはここだけにする。
 ///

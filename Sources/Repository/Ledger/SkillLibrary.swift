@@ -1,4 +1,6 @@
 import Foundation
+import Model
+import Resources
 
 /// 作業中の手順を書いた手引きの置き場。
 ///

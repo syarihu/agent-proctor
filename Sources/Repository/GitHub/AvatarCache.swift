@@ -1,4 +1,5 @@
 import Foundation
+import Utility
 
 /// 取ってきたアイコンの置き場。ファイルの出し入れはここだけにする。
 ///

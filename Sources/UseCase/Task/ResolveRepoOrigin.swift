@@ -1,4 +1,6 @@
 import Foundation
+import Model
+import RepositoryGit
 
 /// リポジトリの持ち主を突き止める。
 ///

@@ -1,4 +1,7 @@
 import Foundation
+import Model
+import RepositoryGit
+import RepositoryGitHub
 
 /// worktree に紐づく PR を1つ手に入れる。
 ///

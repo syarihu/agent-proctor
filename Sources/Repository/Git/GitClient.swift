@@ -1,4 +1,6 @@
 import Foundation
+import Model
+import Utility
 
 /// git への問い合わせ。git を呼ぶのはここだけにする。
 ///

@@ -1,4 +1,7 @@
 import Foundation
+import Model
+import RepositoryLedger
+import Utility
 
 /// 閉じられたタブの記録を片付ける。
 ///

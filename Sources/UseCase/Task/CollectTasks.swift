@@ -1,4 +1,7 @@
 import Foundation
+import Model
+import RepositoryGit
+import RepositoryLedger
 
 /// 台帳に動的な情報を足して返す。表示側の共通の入り口。
 ///

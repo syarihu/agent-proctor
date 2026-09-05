@@ -1,4 +1,6 @@
 import Foundation
+import Model
+import RepositoryLedger
 
 /// statusline から届く情報を台帳に写す。
 ///

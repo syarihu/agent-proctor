@@ -1,4 +1,7 @@
 import Foundation
+import Model
+import RepositoryGit
+import RepositoryLedger
 
 /// セッションも worktree も無くなったあとも、一覧に残しておくリポジトリ。
 ///

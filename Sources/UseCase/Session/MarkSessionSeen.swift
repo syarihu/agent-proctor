@@ -1,4 +1,6 @@
 import Foundation
+import Model
+import RepositoryLedger
 
 /// そのタブを見たことにする。
 ///

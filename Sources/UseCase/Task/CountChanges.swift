@@ -1,4 +1,6 @@
 import Foundation
+import Model
+import RepositoryGit
 
 /// 未コミットの変更を数える。**数え直すか、覚えた答えを返すかを決めるのはここ**。
 ///
