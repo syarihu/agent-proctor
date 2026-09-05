@@ -6,11 +6,7 @@ import Resources
 import UseCaseWorktree
 import Utility
 
-/// worktree の一覧。セッションではなく**場所**を並べる。
-///
-/// セッションが終わっても worktree は残るので、`ls` では見えない
-/// 「誰も使っていない作業場」がここに出る。片付けの判断材料になる列
-/// (取り込み済みか・未コミットがあるか・どれだけ放置されているか) を並べる。
+/// worktree の一覧を表示する。セッションの有無に関わらず作業ディレクトリ単位で状態や差分を出力する。
 func cmdWorktree(_ args: Args) throws -> Int32 {
     let sub = args.positional.first ?? "ls"
     guard sub == "ls" else {
@@ -44,8 +40,7 @@ func cmdWorktree(_ args: Args) throws -> Int32 {
                         worktree.branch ?? "-",
                         Terminal.color(code, label),
                         Terminal.diff(worktree.diff),
-                        // コミットが1つも無い worktree では経過を出さない
-                        // (0 と出すと「たった今まで使っていた」に見える)
+                        // コミットが存在しない worktree は経過時間の誤読を防ぐため "-" 表示とする
                         worktree.lastCommitAt > 0 ? Terminal.elapsed(worktree.idleSeconds) : "-"]
             })
     }

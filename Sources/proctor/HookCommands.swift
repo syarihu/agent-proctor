@@ -4,19 +4,10 @@ import Resources
 import UseCaseSession
 import Utility
 
-/// hooks と statusline から呼ばれるコマンド。人が打つものではない。
-/// 判断は UseCase 側が持ち、ここは受け渡しだけにする。
+/// hooks および statusline 連携用コマンド。判断は UseCase 層に委譲し、ここでは入出力の仲介のみを行う。
 
-/// UserPromptSubmit のフックが「会話に一言足す」ときの返し方。
-///
-/// **View の仕事なので Kit には持たせない。** これは Claude Code という
-/// 特定の相手との約束事の形であって、proctor が何を伝えたいかの話ではない
-/// (伝えたい中身を決めるのは `NameSession.namingHint`)。
-///
-/// 組み立てに `compactJSON` を通す理由は2つ。文字列の逃がし方を手で書かないため
-/// (本文には引用符も改行も入りうる) と、改行を入れないため (理由は `compactJSON`)。
-///
-/// イベント名は綴らずに `HookPayload.userPromptSubmitEvent` から引く (理由はそちら)
+/// UserPromptSubmit フックでエージェント（Claude Code）に追加コンテキスト（命名指示）を返す JSON を生成する。
+/// エスケープ処理と1行出力を担保するため compactJSON を通す。
 private func namingHookJSON(_ context: String) -> String {
     (try? compactJSON(["hookSpecificOutput": [
         "hookEventName": HookPayload.userPromptSubmitEvent,
@@ -24,8 +15,7 @@ private func namingHookJSON(_ context: String) -> String {
     ]])) ?? "{}"
 }
 
-/// 記録した状態を stdout に返す。呼び出し側が「結局どうなったか」を使えるようにする
-/// (タブの色を変えるなど)。判断をシェル側に写すと、片方だけ直したときに食い違う。
+/// 記録後の確定状態を標準出力に返す。呼び出し側のタブ色変更等に利用する。
 func cmdTouch(_ args: Args) throws -> Int32 {
     let accepted = TaskStatus.fromHooks + ["notification"]
     var status = try args.require(
@@ -35,56 +25,32 @@ func cmdTouch(_ args: Args) throws -> Int32 {
             "cli.error.invalid_status", accepted.joined(separator: "/"), status))
     }
 
-    // hooks を書く側が `--agent=codex` と名乗れる。payload の形だけでは
-    // Codex と Claude Code の区別が付かないため、名乗りがあればそれを優先する
+    // ペイロード形式だけでは判定困難なエージェント（Codex と Claude Code 等）を識別するため、引数の明示指定を優先する
     let payload = HookPayload.fromStandardInput().naming(agent: args.value("--agent"))
 
-    // notification は権限確認でもアイドル通知でも飛んでくる。
-    // どちらなのかの判断は UseCase が持つ。
-    //
-    // **アイドル通知も台帳まで通す。** あれは「応答が終わって暇になった」の合図で、
-    // 確認待ちで居座っている行を降ろすのに使う (理由は TaskStatus.settled)。
-    // 降ろしたのかどうかは、下と同じく**記録した状態**として返る
+    // 権限確認かアイドル通知（settled）かの判別は UseCase に委譲する。
+    // アイドル通知は確認待ち状態の解除に使用される。
     if status == "notification" {
         guard let resolved = RecordHookEvent.resolveNotification(payload) else {
             if args.has("--json") { print("{}") }
-            // 状態と関係のない通知 (認証できた等)。
-            // 何も出さないことで、呼び出し側に「変えない」を伝える
+            // 状態変更を伴わない通知時は何も出力しない
             return 0
         }
         status = resolved
     }
-    // 返すのは**台帳に記録した状態**。届いた状態とは限らない
-    // (子がまだ走っているセッションは、done が来ても実行中のまま記録する)。
-    // 呼び出し側がタブの色をこれで決めるので、ここで届いた値をそのまま返すと
-    // 一覧は実行中なのにタブだけ緑、という食い違いが起きる。
-    //
-    // ただし**食い違いが消えるわけではない**。保留していた終わりを確定させるのは
-    // SubagentStop で、あちらは何も返さない。今度はタブだけ実行中のまま残る。
-    // 向きを変えて先送りしているだけなので、タブまで揃えたいなら
-    // 呼び出し側が定期的に聞きに来る仕組みがいる。
-    //
-    // 記録しなかった場合 (git の外など) は届いた状態がそのまま返る。
-    // Antigravity (agy) の hooks.json から呼ばれる場合は --json で空 JSON を返す
+    // 呼び出し側のタブ色等と台帳表示の乖離を防ぐため、受領状態ではなく台帳に記録された確定状態（サブエージェント稼働中の done 保留など）を返す
     func emit(status value: String, hint: String?) {
-        // 囁きがあるのは UserPromptSubmit のときだけ (`NameSession.namingHint`)。
-        // **`--json` でも囁きを優先する** ——「状態の文字列を出さない」という
-        // `--json` の約束は、JSON を出すことで守られている
+        // 命名ヒントがある場合は UserPromptSubmit 向けの JSON 形式で出力する
         if let hint {
             print(namingHookJSON(hint))
             return
         }
-        // **UserPromptSubmit の素の stdout は、そのまま会話の文脈に注ぎ込まれる。**
-        // ここで状態を返すと、毎ターン "running" の一語が会話に混ざる。
-        // このイベントで喋ってよいのは上の囁きだけなので、それが無いなら黙る
+        // UserPromptSubmit の標準出力は会話コンテキストに混入するため、命名ヒントがない場合は文字列を出力しない
         if payload.isUserPromptSubmit {
             if args.has("--json") { print("{}") }
             return
         }
-        // **指示はそのまま返さない。** settled は「もう待っていない」の合図で、
-        // 状態ではない。台帳に映せなかったとき (git の外・まだ載っていない・
-        // 書けなかった) にそのまま返すと、タブの色を決める側に
-        // 実在しない状態が渡る。映せたときは実際に書いた状態が返る
+        // settled は内部指示であり状態名ではないため、台帳非更新時（git 外など）にそのまま出力するのを防ぐ
         guard value != TaskStatus.settled else {
             if args.has("--json") { print("{}") }
             return
@@ -95,9 +61,7 @@ func cmdTouch(_ args: Args) throws -> Int32 {
     do {
         outcome = try RecordHookEvent.record(status: status, payload: payload)
     } catch {
-        // 台帳に書けなくても、このイベントが何を意味するかは伝える。
-        // 黙って落ちると、呼び出し側はタブの色を決められない。
-        // 囁きは台帳を見ないと決められないので、書けなかった回は出さない
+        // 台帳書き込み失敗時も、呼び出し側がタブ色等を反映できるよう受領状態を出力してからエラーを再送出する
         emit(status: status, hint: nil)
         throw error
     }

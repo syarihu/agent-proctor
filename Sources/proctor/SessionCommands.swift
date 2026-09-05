@@ -7,13 +7,13 @@ import UseCaseSession
 import UseCaseTask
 import Utility
 
-/// 人が使うコマンド。UseCase を呼んで、結果を端末向けに整えるだけにする。
+/// ユーザー対話用 CLI コマンド。UseCase を呼び出して結果を整形する。
 
 func cmdLs(_ args: Args) throws -> Int32 {
     let all = args.has("--all")
     let repo = all ? nil : GitClient.mainWorktree(from: EnvironmentSource.currentDirectory())
     if !all && repo == nil && !args.has("--json") {
-        // 黙って全件出すと、絞り込めているのか区別がつかない
+        // カレントディレクトリが git リポジトリ外の場合は全件表示になる旨を通知する
         Terminal.note(Localized.text("cli.outside_repo"))
     }
     let tasks = CollectTasks.collect(repo: repo, allRepos: all)
@@ -34,8 +34,7 @@ func cmdLs(_ args: Args) throws -> Int32 {
             return [task.id, Terminal.color(code, label), task.branch,
                     Terminal.diff(task.diff), Terminal.age(task.createdAt)]
         },
-        // 走っているサブエージェントはその行の下にぶら下げる。
-        // 列に入れると数しか置けず、何をさせているかが出せない
+        // 実行中サブエージェントは親タスク行の下にツリー形式で表示する
         notes: tasks.map { task in
             let subs = task.currentSubagents
             return subs.enumerated().map { index, sub in
@@ -45,18 +44,15 @@ func cmdLs(_ args: Args) throws -> Int32 {
     return 0
 }
 
-/// そのセッションのエージェント (claude / agy / codex) を開く。会話の続きから始める。
-///
-/// 自分のプロセスをエージェントに置き換えるので、成功した場合ここから戻らない。
-/// サイドバーの行をクリックしたとき、タブが既に閉じていればこれが新しいタブで走る。
+/// セッションのエージェント（claude / agy / codex）を起動し、会話を再開する。
+/// プロセスを execvp で置き換えるため、正常時はこのプロセスには戻らない。
 func cmdAttach(_ args: Args) throws -> Int32 {
     let task = try LedgerStore.find(id: try args.require(0, Localized.text("cli.arg.session_id")))
     guard FileManager.default.fileExists(atPath: task.worktree) else {
         throw ProctorError(Localized.text("cli.error.worktree_missing", task.worktree))
     }
 
-    // 続きから開く言い方はエージェントごとに違う。
-    // codex だけは副コマンド (`codex resume <ID>`) で、旗ではない
+    // エージェントごとのセッション再開用引数を構築する
     let binary: String
     var resumption: [String] = []
     switch task.agent {
@@ -78,31 +74,24 @@ func cmdAttach(_ args: Args) throws -> Int32 {
     var cargs: [UnsafeMutablePointer<CChar>?] = argv.map { strdup($0) }
     cargs.append(nil)
     execvp(binary, &cargs)
-    // execvp は成功すれば戻らない。ここに来たのは起動できなかったということ
+    // execvp 成功時は戻らないため、到達した場合は起動失敗エラーを送出する
     throw ProctorError(Localized.text("cli.error.launch_failed", binary))
 }
 
-/// 台帳から1件外す。
-///
-/// 掃除はプロセスの生死で自動的に回るので、普段は要らない。
-/// プロセスを追えないまま残った古い記録 (この仕組みより前のもの・Claude Code 以外) を
-/// 期限切れを待たずに片付けるための逃げ道として置いてある。
+/// 台帳からタスクレコードを削除する。
+/// 通常はプロセスの生死監視で自動消去されるが、手動での即時クリーンアップ用として提供する。
 func cmdRm(_ args: Args) throws -> Int32 {
     let task = try ForgetTask.forget(id: try args.require(0, Localized.text("cli.arg.session_id")))
-    // 消したのは記録だけ。作業していた場所は残っていることを断っておく
+    // 作業ディレクトリ自体は削除されず記録のみ消去された旨を通知する
     print(Localized.text("cli.removed", task.id, task.worktree))
     return 0
 }
 
-/// いま自分が動いているセッションに名前を付ける。
-///
-/// **どのセッションかを引数で受けない。** 誰の行かは環境変数から特定する
-/// (理由は `NameSession.locate`)。
+/// カレントセッションにタイトルを設定する。セッションの特定は環境変数経由で行う。
 func cmdTitle(_ args: Args) throws -> Int32 {
-    // 先に `require` を通すのは、**引数なしと空文字を分ける**ため。
-    // 前者は打ち間違いなので止め、後者は「名前を外す」という指示として通す
+    // 引数なし（エラー）と空文字（タイトル削除）を区別するため先に require を通す
     _ = try args.require(0, Localized.text("cli.arg.title"))
-    // 引用符を忘れた呼び方 (`proctor title 台帳を直す`) でも通るように繋ぐ
+    // クォートなしの複数単語指定も許容するため空白で結合する
     let text = args.positional.joined(separator: " ")
     let task = try NameSession.name(title: text)
     print(task.title.map { Localized.text("cli.title.set", task.id, $0) }
@@ -110,10 +99,7 @@ func cmdTitle(_ args: Args) throws -> Int32 {
     return 0
 }
 
-/// iTerm2 の左側に吸着するサイドバー (Agent Proctor.app) を起動する。
-///
-/// 描画も iTerm2 との連携もアプリ側が持つので、ここは起動して渡すだけ。
-/// どこに入っているかは置き方で変わるので、探すのは Paths に任せる。
+/// サイドバーアプリ（Agent Proctor.app）を起動する
 func cmdSidebar(_ args: Args) throws -> Int32 {
     guard let bundle = Paths.appBundle?.path else {
         throw ProctorError(Localized.text("cli.error.app_not_found"))

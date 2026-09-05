@@ -2,64 +2,53 @@ import Foundation
 import Model
 import Resources
 
-/// 端末に出すための道具。色も桁揃えも CLI だけの関心なので、
-/// 共有層には置かない (アプリは SwiftUI で別に色を持っている)。
+/// ターミナル出力用のフォーマッタおよび ANSI エスケープ処理
 enum Terminal {
-    /// 端末に出すときだけ色を付ける。パイプやファイルに流すときは素の文字にする。
+    /// 標準出力が端末の場合のみ ANSI カラーコードを付与する
     static func color(_ code: String, _ text: String) -> String {
         isatty(1) == 1 ? "\u{1B}[\(code)m\(text)\u{1B}[0m" : text
     }
 
-    /// 進捗の知らせ。--json の出力を汚さないよう stderr に出す。
+    /// 進捗メッセージを標準エラー出力に書き出す（標準出力の JSON や表出力を汚さないため）
     static func note(_ message: String) {
         FileHandle.standardError.write(Data((message + "\n").utf8))
     }
 
-    /// 状態ごとの ANSI 色。記号とラベルは Model の TaskStatus が持つ
+    /// ステータス別の ANSI カラーコード
     static let statusColors: [String: String] = [
         TaskStatus.idle: "2",
         TaskStatus.running: "36",
         TaskStatus.waiting: "33",
         TaskStatus.done: "32",
-        // 見終わったものは役目を終えているので、色を引いて背景に馴染ませる
+        // 確認済みは視覚的優先度を下げるため薄暗い色にする
         TaskStatus.seen: "2",
         TaskStatus.failed: "31",
         TaskStatus.missing: "31",
     ]
 
-    /// 状態を (表示用のラベル, ANSI の色) にする。
+    /// 状態に応じた（表示ラベル, ANSI 色コード）を返す
     static func style(_ status: String) -> (label: String, color: String) {
         ("\(TaskStatus.mark(status)) \(TaskStatus.label(status))",
          statusColors[status] ?? "0")
     }
 
-    /// 差分を人向けの1セルに整形する。
-    ///
-    /// **`changedFiles` には記号を当てない。** `~` はバイナリの意味で決まっていて、
-    /// リネームやモード変更をそこに混ぜると記号の意味がぼやける。行が動かない変更は
-    /// 「空欄のまま、消してよいとは言わない」で足りる (判断は `DiffCounts.isEmpty`
-    /// が持っていて、こちらはその判断を映すだけ)
+    /// 差分件数を1行の表示文字列にフォーマットする。
+    /// バイナリファイル等の行数を持たない変更は行数差分と明確に区別する。
     static func diff(_ counts: DiffCounts) -> String {
         var parts: [String] = []
         if counts.added > 0 { parts.append(color("32", "+\(counts.added)")) }
         if counts.removed > 0 { parts.append(color("31", "-\(counts.removed)")) }
         if counts.untracked > 0 { parts.append(color("36", "?\(counts.untracked)")) }
-        // バイナリは行数を言えないので、数え方が違うことが分かる別の記号にする。
-        // `+`/`-` に混ぜると、何行変わったかを答えたように読めてしまう
+        // 行数が算出できないバイナリ変更は行数差分記号（+/-）と区別するため ~ を用いる
         if counts.binary > 0 { parts.append(color("33", "~\(counts.binary)")) }
         return parts.joined(separator: " ")
     }
 
-    /// worktree の状態を (表示用のラベル, ANSI の色) にする。
-    ///
-    /// セッションが乗っているかどうかを最優先で出す。使われている作業場を
-    /// 「取り込み済み」と並べて見せると、消してよさそうに読めてしまう。
+    /// worktree の状態に応じた（表示ラベル, ANSI 色コード）を返す。
+    /// 削除可否を誤認させないよう、セッション存在時はセッション件数を最優先で表示する。
     static func worktreeState(_ worktree: CollectedWorktree) -> (label: String, color: String) {
         if !worktree.sessions.isEmpty {
-            // **「実行中」とは言わない。** 終わったセッションもタブが開いている限り
-            // 台帳に残るので、ここに数えるのは「その場所を誰かが開いている」まで。
-            // 状態そのものは ls のほうで見るもので、ここで欲しいのは
-            // 「手を出してよい場所か」の判断材料
+            // セッションが存在する場合は稼働中・終了後問わず保持中のセッション数を表示する
             return (Localized.text("cli.worktree.state.sessions", worktree.sessions.count), "36")
         }
         if worktree.isMain { return (Localized.text("cli.worktree.state.main"), "0") }
@@ -85,9 +74,7 @@ enum Terminal {
 
     private static let ansiPattern = try! NSRegularExpression(pattern: "\u{1B}\\[[0-9;]*m")
 
-    /// 全角を2桁として数えた表示幅。日本語ラベルを含む表を揃えるのに使う。
-    ///
-    /// 色付けした文字列をそのまま渡せるよう、エスケープシーケンスは数えない。
+    /// 全角を2桁としてカウントした表示幅（ANSI エスケープシーケンスは除外）
     static func width(_ text: String) -> Int {
         let range = NSRange(text.startIndex..., in: text)
         let plain = ansiPattern.stringByReplacingMatches(
@@ -99,10 +86,7 @@ enum Terminal {
         text + String(repeating: " ", count: max(0, size - width(text)))
     }
 
-    /// サブエージェント1体を1行に整える。
-    ///
-    /// アプリは幅が狭いので2行に分けているが、端末は横に余裕があるので
-    /// 1行に畳む。出している中身は同じ (名前・何をさせているか・手元・経過)。
+    /// サブエージェント情報を1行の文字列にフォーマットする
     static func subagent(_ sub: CollectedSubagent, isLast: Bool) -> String {
         var parts = [color("35", sub.name)]
         if let label = sub.label { parts.append(label) }
@@ -111,10 +95,7 @@ enum Terminal {
         return color("2", "  \(isLast ? "└" : "├") ") + parts.joined(separator: " · ")
     }
 
-    /// 表を1つ書く。列の幅は中身から決める。
-    ///
-    /// - Parameter notes: 行ごとにぶら下げる補足 (サブエージェントの一覧)。
-    ///   桁揃えの外側に出すので、長くても列幅を押し広げない
+    /// ターミナル用のテーブルを描画する。notes に指定した補足行は列幅計算から除外して各行の下に展開する。
     static func table(headers: [String], rows: [[String]], notes: [[String]] = []) {
         let widths = (0..<headers.count).map { i in
             max(width(headers[i]), rows.map { width($0[i]) }.max() ?? 0)
@@ -134,7 +115,7 @@ enum Terminal {
 }
 
 private extension Unicode.Scalar {
-    /// East Asian Width が W か F か。表を揃えるのに足りる粒度で持つ。
+    /// East Asian Width が Wide または Fullwidth かどうかを判定する
     var isEastAsianWide: Bool {
         switch value {
         case 0x1100...0x115F,      // ハングル字母
