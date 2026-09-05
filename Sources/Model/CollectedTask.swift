@@ -10,9 +10,9 @@ public struct CollectedSubagent: Encodable, Identifiable, Equatable {
     public var name: String
     /// 何をさせているか (Task ツールの description)。無いこともある
     public var label: String?
-    /// この子がいま触っているツール
+    /// サブエージェントが現在実行中のツール
     public var activity: String?
-    /// 生まれてからの時間。長いと、重い調べものか詰まっているかの手がかりになる
+    /// サブエージェント生成からの経過時間（秒）。値が大きい場合は長時間の調査や処理詰まりの可能性がある
     public var elapsedSeconds: Int
 
     public init(run: SubagentRun, elapsedSeconds: Int) {
@@ -84,9 +84,9 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
 
     /// iTerm2 のタブとして開き直せるか。判定は TaskRecord.isItermManaged と同じ。
     ///
-    /// 数え上げてから絞りたい側 (アプリ) のために持つ。**数える前に絞ると、
-    /// 端末の外で動いているセッションが worktree の突き合わせから漏れ、
-    /// 使われている作業場が「誰もいない」に見える**
+    /// 数え上げてから絞りたい側 (アプリ) のために持つ。
+    /// 数える前に絞ると、端末外で動いているセッションが worktree 突合から漏れ、
+    /// 使用中の作業ツリーが未使用と判定されるため。
     public var isItermManaged: Bool { !(itermSession ?? "").isEmpty }
 
     /// 一覧に出す状態。タブを開いたあとの完了は確認済みに畳む。
@@ -95,7 +95,7 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         TaskStatus.display(status: status, seenAt: seenAt, openedAt: openedAt)
     }
 
-    /// 要確認と通知に出す状態。**開いただけでは畳まない** (`TaskStatus.attention`)
+    /// 要確認と通知に出す状態。閲覧しただけでは畳まない (`TaskStatus.attention`)。
     public var attentionStatus: String {
         TaskStatus.attention(status: status, seenAt: seenAt)
     }
@@ -106,32 +106,24 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         status == TaskStatus.running ? activity : nil
     }
 
-    /// いま出してよい「何の承認を待っているか」。確認待ちのあいだだけ返す。
-    ///
-    /// **状態で門番をする。** 承認したあと台帳から消えるまでには
-    /// 次のフックが1回要るので、素通しにすると動き出したセッションに
-    /// 「承認待ち」の文が残る
+    /// 承認待ちの要求内容。確認待ちの間だけ返す。
+    /// 承認後に台帳から消えるまでに1回フックが必要なため、
+    /// 状態を確認せずに返すと実行再開後も承認待ち内容が表示され続ける。
     public var currentRequest: String? {
         status == TaskStatus.waiting ? request : nil
     }
 
-    /// いま出してよい「ターンの締め」。終わったあとだけ返す。
-    ///
-    /// **ここも状態で門番をする** (`currentRequest` と同じ理由)。子を待って
-    /// 保留された done でも台帳には載るので、素通しにすると、まだ動いている行に
-    /// 終わったときの言葉が出る
+    /// ターンの締めメッセージ。完了または失敗時のみ返す。
+    /// サブエージェント待ちで保留された done も台帳に載るため、
+    /// 状態を確認しないと実行中にも完了時メッセージが表示されてしまう。
     public var currentSummary: String? {
         status == TaskStatus.done || status == TaskStatus.failed ? summary : nil
     }
 
-    /// いま出してよいサブエージェント。
-    ///
-    /// 確認待ちの間も出す。手を挙げているのが子のほうだったとき、
-    /// 消してしまうと何を聞かれているのか分からなくなる。
-    ///
-    /// **終わったセッションでも台帳には子が残っていることがある。**
-    /// 子は親のターンより長く生きるので、台帳側で消すわけにいかない
-    /// (消すと走っている最中の子が一覧から落ちる)。門番はここに置く
+    /// 現在表示すべきサブエージェント。
+    /// 承認待ち中も子エージェントの入力を確認できるよう表示対象に含める。
+    /// 親のターン完了後もサブエージェントが台帳に残ることがあるため、
+    /// 実行中または確認待ちの状態に絞って表示する。
     public var currentSubagents: [CollectedSubagent] {
         CollectedTask.visibleSubagents(subagentRuns, status: status)
     }
@@ -180,11 +172,9 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         subagentRuns = (record.subagentRuns ?? []).map {
             CollectedSubagent(run: $0, elapsedSeconds: max(0, now - $0.startedAt))
         }
-        // 中身が分かっているならそれを数える。数のほうは、古い繋ぎ方
-        // (PreToolUse で +1 する) を残したままだと二重に増えるため当てにしない。
-        //
-        // **数にも同じ門番を通す。** アプリの 🤖 は数だけを見て出しているので、
-        // 素通りさせると、行は出ていないのに完了した行で 🤖 だけが脈打つ
+        // サブエージェントの実体一覧が取得できている場合はその件数を使用する。
+        // （古い連携で PreToolUse で +1 された場合の二重カウントを防ぐため）
+        // 表示側で状態に応じたフィルタを行っているため、カウント側も同じ条件で絞り込む。
         subagents = subagentRuns.isEmpty
             ? (record.subagents ?? 0)
             : CollectedTask.visibleSubagents(subagentRuns, status: status).count

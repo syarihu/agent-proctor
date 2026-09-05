@@ -1,35 +1,23 @@
 import Foundation
 import Resources
 
-/// 親セッションの下で走っているサブエージェント1体。
-///
-/// 数 (`TaskRecord.subagents`) では「2体いる」までしか言えず、何をさせているのかは
-/// 結局タブを見に行くしかなかった。ここに1体ずつ持たせることで、
-/// 誰が何をしているかまで一覧の中で分かるようにする。
-///
-/// 個体を見分ける鍵は Claude Code が hooks に載せてくる `agent_id`。
-/// これが無いエージェント (Antigravity など) は今まで通り数だけを持つので、
-/// この配列は空のままになる。
+/// 親セッション配下で実行中のサブエージェント情報。
+/// 各サブエージェントの実行タスクやアクティビティを一覧表示するために使用する。
+/// Claude Code 等が送信する `agent_id` をキーとして識別する。
 public struct SubagentRun: Codable, Equatable, Identifiable {
-    /// hooks の `agent_id`。始まりと終わりを結ぶ鍵になる
+    /// hooks の `agent_id`。ライフサイクル追跡の識別子
     public var id: String
-    /// hooks の `agent_type` ("Explore" など)。分かるまでは nil
+    /// hooks の `agent_type` ("Explore" など)。未特定の期間は nil
     public var type: String?
     /// Task ツールの `description` ("レビュー指摘の突き合わせ" など)。
-    ///
-    /// **何をさせているか**はこれでしか分からない。`agent_type` は
-    /// "general-purpose" のように器の名前でしかないことが多い
+    /// `agent_type` は "general-purpose" 等の総称になりやすいため、具体的な指示内容の表示に使用する。
     public var label: String?
-    /// この子がいま触っているツール ("Grep: TaskStatus" など)
+    /// サブエージェントが現在実行中のツール ("Grep: TaskStatus" など)
     public var activity: String?
-    /// 生まれた時刻。**経過の表示はこちらを使う**
+    /// 開始時刻。経過時間の表示に使用する。
     public var startedAt: Int
-    /// 最後にこの子の声を聞いた時刻。
-    ///
-    /// **打ち切り (subagentTTL) の起点はこちら。** 生まれた時刻で切ると、
-    /// 何時間も走り続けている子が「今まさに喋っているのに」時間切れで消される。
-    /// 消えた拍子に親の預かった終わりが確定してしまい、走っている最中に
-    /// 完了の印が付く。無いときは生まれた時刻で代用する
+    /// 最終アクティビティ時刻。
+    /// タイムアウト判定 (subagentTTL) の基準。開始時刻で判定すると長時間動作中のサブエージェントが誤って破棄されるため。
     public var lastSeenAt: Int?
 
     public init(id: String, type: String? = nil, label: String? = nil,
@@ -42,7 +30,7 @@ public struct SubagentRun: Codable, Equatable, Identifiable {
         self.lastSeenAt = lastSeenAt
     }
 
-    /// 最後に声を聞いた時刻。生まれてから一度も聞いていなければ生まれた時刻
+    /// 最終アクティビティ時刻。未記録の場合は開始時刻を返す
     public var lastSeen: Int { lastSeenAt ?? startedAt }
 
     /// 一覧に出す見出し。名乗るものが何も無いときのための最後の受け皿を持つ

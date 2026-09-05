@@ -1,12 +1,9 @@
 import Foundation
 
-/// エージェントに渡す読み物1つぶん。
-///
-/// 手引きには2種類ある。作業中に読ませる手順 (`proctor skill`) と、
-/// proctor を繋ぐための一度きりの設定 (`proctor setup`)。
-/// どちらも「名前・題・何が書いてあるか」しか持たないので、器は1つにしてある。
+/// エージェント向けガイド文書（スキルまたはセットアップ手順）のメタデータ。
+/// `proctor skill` および `proctor setup` の一覧表示や取得で使用する。
 public struct Guide: Encodable, Identifiable, Equatable {
-    /// `proctor skill <id>` / `proctor setup <id>` で引く名前
+    /// ガイドの識別子（サブコマンド引数として指定される名前）
     public var id: String
     public var title: String
     public var summary: String

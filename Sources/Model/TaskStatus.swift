@@ -1,15 +1,11 @@
 import Foundation
 import Resources
 
-/// 状態の語彙。ここが正本で、CLI もサイドバーもメニューバーもこれを使う。
+/// 状態の語彙定義。CLI・サイドバー・メニューバーで共通して使用する。
 ///
-/// 語彙は状態を流し込む hooks 側と揃えている
-/// (▶ 実行中 / ⏳ 確認待ち / ✅ 完了)。
-/// 状態を1つ足すときにここだけ直せば済むよう、表示側には定義を持たせない。
-///
-/// ただし**色は持たない**。端末の ANSI とアプリの SwiftUI では表現が違うので、
-/// それぞれの View 側で決める。ここが知っているのは「何という状態があり、
-/// どんな記号と名前で呼ぶか」まで。
+/// 状態の追加時に修正箇所を局所化するため、語彙の正本をここに集約する。
+/// 色の決定は各 View (CLI の ANSI / アプリの SwiftUI Palette) の責務とし、
+/// ここでは状態の種類・記号・表示名の定義までを責務とする。
 public enum TaskStatus {
     public static let idle = "idle"
     public static let running = "running"
@@ -17,9 +13,7 @@ public enum TaskStatus {
     public static let done = "done"
     public static let failed = "failed"
     public static let missing = "missing"
-    /// 終わったあと、そのタブを見たもの。**台帳には書かれない**。
-    /// 見たかどうかは openedAt / seenAt という別の事実で、状態遷移とは独立に決まる。
-    /// 表示のときだけ done を畳んでここに寄せる (display を参照)
+    /// 閲覧済みの完了状態。台帳には保持せず、表示時に done を畳んで表現する。
     public static let seen = "seen"
 
     public static let marks: [String: String] = [
@@ -47,45 +41,20 @@ public enum TaskStatus {
     /// 一覧に出したい順。数の要約もこの順に並べる
     public static let order = [waiting, running, done, seen, failed, missing, idle]
 
-    /// 一覧に出す状態。台帳の status とは別で、完了は見たかどうかで分ける。
-    ///
-    /// 畳むのは done だけ。失敗は見たあとも失敗のまま出す
-    /// (見たからといって、片付いたわけではないため)。
-    /// openedAt / seenAt そのものは done と failed の両方に付く。
-    ///
-    /// **タブを開いた (openedAt) だけでも畳む。** 一覧に並んでいるのは
-    /// 「どこで何が動いているか」で、そこに出る ✅ は「まだ中を見ていない」の印。
-    /// 開いて中を見たなら役目は終わっているので、片付けを待たずに ✔ にする。
-    /// やることリスト側 (要確認・通知) は下の `attention` が別に見ているので、
-    /// ここで畳んでも「まだ返事をしていない」という事実までは消えない
+    /// 一覧に出す状態。
+    /// 完了 (done) はタブの閲覧 (openedAt) または確認クリア (seenAt) で seen に畳む。
+    /// 失敗 (failed) は閲覧後も確認を要するため畳まない。
     public static func display(status: String, seenAt: Int?, openedAt: Int? = nil) -> String {
         status == done && (seenAt != nil || openedAt != nil) ? seen : status
     }
 
-    /// 要確認と通知に出す状態。**開いただけでは畳まない。**
-    ///
-    /// 降ろすのは「もう知らせなくていい」と決まったとき (seenAt) だけ。
-    /// ここでも openedAt を見ると、とりあえずタブを覗いた時点でやることリストから
-    /// 消えてしまい、返事をしないまま置いていったものに後から気づけない
-    /// (それを避けるための `MarkSessionSeen.Policy.untilCleared`)
+    /// 要確認と通知に出す状態。タブを開いただけでは畳まず、明示的にクリア (seenAt) されるまで維持する。
     public static func attention(status: String, seenAt: Int?) -> String {
         status == done && seenAt != nil ? seen : status
     }
 
-    /// まだ人の手が要るか。確認待ちと、まだ片付けていない完了・失敗。
-    ///
-    /// **見るのは attention のほうで、display ではない。** 開いただけで
-    /// 人の手が要らなくなるわけではないので、ここに openedAt は入らない。
-    ///
-    /// **seenAt の効き方が状態で違うので、線引きはここに1本だけ引く。**
-    /// done は seenAt が付けば attention が seen に畳むのでそれで足りるが、
-    /// failed は見たあとも failed のまま出す (見たからといって片付いたわけでは
-    /// ないため)。この違いを使う側それぞれに書かせると、片方だけ直したときに
-    /// **✓ を押しても消えないもの**ができる (サイドバーの新着からは消えたのに
-    /// 通知センターには残る、など)。
-    ///
-    /// 動いていた場所が消えたもの (missing) は入れない。そこへ戻っても
-    /// 見るものが無く、急かしたところで片付けられない。
+    /// ユーザーによる対応が必要かどうか。
+    /// 判定基準の不整合を防ぐため、attention 側の状態を基準に判定する。
     public static func needsPerson(status: String, seenAt: Int?) -> Bool {
         switch attention(status: status, seenAt: seenAt) {
         case waiting, done: return true
@@ -94,29 +63,17 @@ public enum TaskStatus {
         }
     }
 
-    /// 「もう待っていない」の合図。**状態ではなく指示** (`clear` と同じ立場)。
-    ///
-    /// 権限確認をキャンセル (Esc) すると、Claude Code はターンを止めるが
-    /// **フックを1つも飛ばさない** (`PermissionDenied` は auto mode 専用で、
-    /// 手で断ったときには発火しない)。何もしないと、そのタブで次に何か打つまで
-    /// 確認待ちのまま居座る。
-    ///
-    /// 唯一届くのがアイドル通知 (`notification_type: idle_prompt` =
-    /// 「応答が終わって60秒、その間何も打っていない」) で、これは
-    /// **権限確認が出ている間は成立しない条件**なので、届いた時点で
-    /// 「あのプロンプトはもう無い」と読める。
+    /// 待機状態の終了を示す指示値。
+    /// 権限確認のキャンセル等でフックが発火しない場合に、アイドル通知から待機解除を判定するために使用する。
     public static let settled = "settled"
 
-    /// hooks から受け取れる状態。notification はここに含めない
-    /// (何を意味するかが payload 次第なので、確定した後の値がここに来る)
+    /// hooks から受け取れる状態。notification は payload 解析後の確定値が渡されるためここには含めない。
     ///
-    /// failed は Claude Code の StopFailure (レートリミットや overloaded で
-    /// ターンが落ちたとき) 用。このとき Stop は発火しないので、受け取れないと
-    /// 落ちたセッションが「実行中」のまま一覧に居座る。
+    /// failed は Claude Code の StopFailure（レートリミットや過負荷によるターン中断）用。
+    /// Stop イベントが発火しない場合でも、異常終了したセッションが実行中のまま残存するのを防ぐ。
     ///
-    /// idle はセッションが始まった (再開した) だけで、まだ何もしていないとき。
-    /// これが無いと、resume したセッションは最初のプロンプトを送るまで台帳に載らず、
-    /// その worktree が「誰もいない」に見え続ける
+    /// idle はセッション開始・再開直後の待機状態。
+    /// プロンプト送信前でも台帳にセッションを登録し、対象 worktree が未占有と誤認されるのを防ぐ。
     public static let fromHooks = [idle, running, waiting, done, failed, "clear", settled]
 
     public static func mark(_ status: String) -> String { marks[status] ?? "?" }
@@ -125,28 +82,13 @@ public enum TaskStatus {
         return Localized.text(key)
     }
 
-    /// 状態ごとの件数。メニューバーの要約などで使う。
-    ///
-    /// **確認済みは数えない。** ここに出したいのは「まだ片付けていないもの」で、
-    /// 見終わったものまで数えると、片付けても数字が減らない。
-    /// 逆に「中に何件あるか」を出したい側は、下の displayStatuses 版を直に呼ぶ。
-    ///
-    /// **数えるのは attention のほう。** ここはメニューバーに出る「残り」で、
-    /// 要確認のストリップと同じものを数えていないと、上と下で数が食い違う
-    /// (タブを開いた時点でメニューバーからは消えたのに要確認には残る、あるいは
-    /// 失敗を片付けたのにメニューバーには残る、など)。
-    /// そのため `needsPerson` を通して「まだ人の手が要るもの」だけを数える
+    /// ユーザーの対応を要する状態の件数集計。メニューバーの要約などで使用する。
     public static func counts(_ tasks: [TaskRecord]) -> [(status: String, count: Int)] {
         let actionable = tasks.filter { needsPerson(status: $0.status, seenAt: $0.seenAt) }
         return counts(displayStatuses: actionable.map(\.attentionStatus))
     }
 
-    /// 表示に使う状態そのものから数える。**渡されたものは全部数える。**
-    ///
-    /// 数えた一覧 (CollectedTask) からも呼べるように状態だけを受ける。
-    /// 数え方 (件数が 0 の状態は入れない・order の順) を写し取らせないために口を分けている。
-    /// どれを数えるかは呼ぶ側が決める。ここで黙って間引くと、
-    /// 「状態の配列を渡したら数えてくれる」つもりの呼び出しが静かに欠ける
+    /// 指定された状態一覧から件数を集計する。
     public static func counts(displayStatuses: [String]) -> [(status: String, count: Int)] {
         var tally: [String: Int] = [:]
         for status in displayStatuses {

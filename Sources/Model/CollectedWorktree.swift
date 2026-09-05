@@ -24,9 +24,9 @@ public struct CollectedWorktree: Encodable, Identifiable, Equatable {
     public var diff: DiffCounts
     /// 差分を最後まで数え切れたか。
     ///
-    /// **数えられなかったことを「変更なし」と混ぜない。** 読めない worktree や
-    /// 壊れた index でも git は静かに空を返すので、そのまま受けると
-    /// 「何も残っていない = 消してよい」に化ける
+    /// 取得失敗と「変更なし」を区別するために保持する。
+    /// 読み取れない worktree や破損した index でも git が空出力を返すため、
+    /// 混同すると誤って安全に削除可能と判定してしまうのを防ぐ。
     public var diffKnown: Bool
     /// 取り込み先のブランチに入っているか。
     /// squash merge では false のままになる (歴史が繋がらないため)
@@ -40,15 +40,10 @@ public struct CollectedWorktree: Encodable, Identifiable, Equatable {
     /// ベアリポジトリ本体。作業する場所ではない
     public var isBare: Bool
 
-    /// 片付けてよさそうか。
+    /// 片付けの候補に挙げてよいか。
     ///
-    /// **これは「消してよい」ではなく「候補に挙げてよい」。** 取り込み済みで、
-    /// 未コミットの変更が無く、誰も使っていないものだけを true にする。
-    /// squash merge されたものはここに出てこないので、
-    /// これが false でも消せないとは限らない (PR の状態を見る側が補う)。
-    ///
-    /// **実体を失っているもの (prunable) もここには入れない。** あれは
-    /// `git worktree prune` の相手であって、消す前に中を確かめる相手ではない
+    /// マージ済み・未コミット変更なし・未使用のもののみ true とする。
+    /// 実体を失っているもの (prunable) は git worktree prune の対象であるためここには含めない。
     public var isRemovable: Bool {
         !isMain && !isBare && !isPrunable && merged
             && diffKnown && diff.isEmpty && sessions.isEmpty && !isLocked
