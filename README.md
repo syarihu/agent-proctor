@@ -268,7 +268,7 @@ Proctor is split into layered Swift Package Manager targets so that the logic se
 | UseCase | `UseCaseTask`, `UseCaseSession`, `UseCaseWorktree`, `UseCaseNotice` | One per action. Every decision lives here |
 | UI / Features | `DesignSystem`, `AppState`, `FeatureSettings`, `FeatureMenuBar`, `FeatureSidebar` | UI components, shared app state, and views |
 
-`Localized` sits in `Resources`, because every layer needs words and looking one up decides nothing. The executables — `proctor` for the CLI, `ProctorApp` for the app — compose use cases and features.
+`Localized` sits in `Resources`, because every layer needs words and looking one up decides nothing. The executables — `proctor` for the CLI, `ProctorApp` for the app — compose use cases and features. See [docs/architecture.md](docs/architecture.md) for detailed target relationships and dependency diagrams.
 
 | File | Role |
 | --- | --- |
