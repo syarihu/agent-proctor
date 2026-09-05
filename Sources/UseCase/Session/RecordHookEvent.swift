@@ -4,116 +4,64 @@ import RepositoryGit
 import RepositoryLedger
 import Utility
 
-/// hooks から届く出来事を台帳に写す。
-///
-/// 台帳に載るのは、hooks が知らせてくれたセッションだけ。
-/// proctor から worktree を作ることはないので、記録の入り口はここ1つになる。
+/// hooks から通知されるセッションイベントを台帳に反映する。
 public enum RecordHookEvent {
-    /// 終了を取りこぼしたセッションの記録を捨てるまでの猶予
+    /// 終了イベントを取りこぼしたセッション（PID 不明時）を自動破棄するまでの猶予期間（秒）
     public static let sessionTTL = 24 * 3600
 
-    /// SubagentStop を取りこぼしたサブエージェントを捨てるまでの猶予。
-    ///
-    /// 親のターンの終わりでは掃除できない (子は親より長く生きる) ので、
-    /// 時間で切るしかない。数えるのは**最後に声を聞いてから**なので、
-    /// 動いている限り何時間走っていても消えない (`SubagentRun.lastSeen`)。
-    ///
-    /// 以前は 6時間だったが、中断 (Ctrl+C) やフックの取りこぼしが起きた際に
-    /// 親タスクごと長時間「実行中」で居座ってしまうため、重いビルドや長考でも
-    /// 誤判定されにくく、かつ実用的に回収できる 10分 (600秒) にしている。
+    /// SubagentStop を取りこぼしたサブエージェントを自動回収するまでの猶予期間（秒）。
+    /// 最終観測時刻（lastSeen）から起算して 10 分でタイムアウトとする。
     public static let subagentTTL = 10 * 60
 
-    /// 「生きている」印を書き換える間隔。
-    ///
-    /// 子のイベントごとに書き換えると、中身の変わらないイベントでも台帳が動く。
-    /// 台帳の更新時刻はサイドバーが変化を知る合図なので、そのたびに起こしてしまう。
-    /// 打ち切りが時間単位である以上、分単位まで据え置いても困らない
+    /// サブエージェントの生存時刻（lastSeenAt）を更新する最小間隔（秒）。
+    /// 頻繁な台帳ファイル更新とそれに伴う UI 再集計を抑制する。
     public static let subagentHeartbeat = 60
 
-    /// リポジトリを「最近見た」と書き直す間隔。
-    ///
-    /// hook のたびに時刻を入れ直すと、そのたびにサイドバーが起きて数え直す
-    /// (理由は subagentHeartbeat と同じ)。この時刻は覚えているリポジトリが
-    /// 上限を超えたときに古い順で落とすためだけの値なので、日単位でも困らない
+    /// リポジトリの最終参照日時を更新する最小間隔（秒）。
+    /// 台帳ファイルの不要な更新を抑えるため 24 時間間隔とする。
     public static let repoMemoryRefresh = 24 * 3600
 
-    /// 覚えておくリポジトリの数の上限。
-    ///
-    /// 使わなくなったリポジトリのパスが際限なく溜まらないようにするための蓋。
-    /// 溢れたら「最後に見た」が古いものから落とす
+    /// 台帳に記憶しておくリポジトリ数の上限。上限超過時は最終参照の古い順に削除する。
     public static let repoMemoryLimit = 50
 
-    /// 終わった子の墓標を持っておく時間。
-    ///
-    /// 弾きたいのは「SubagentStop の直後に遅れて届いた、その子のイベント」なので、
-    /// 秒の単位で足りる。長く持ちすぎても台帳が太るだけ。
-    ///
-    /// **`agent_id` が使い回されない前提**に乗っている。同じ id を再利用する
-    /// エージェントを繋ぐと、5分間その子が一覧に出なくなる
+    /// 終了したサブエージェントの ID を保持しておく期間（秒）。
+    /// SubagentStop 直後に遅れて到着した PostToolUse イベント等によって完了済みサブエージェントが再生成されるのを防ぐ。
     public static let finishedSubagentTTL = 300
 
-    /// Notification フックが何を意味するかを決める。
-    ///
-    /// このイベントは権限確認や質問のほかに、「応答が終わって60秒、その間
-    /// 何も打っていない」のアイドル通知でも発火する。アイドルまで確認待ちに
-    /// すると、終わったあと放置しただけで印が付いてしまう。
-    ///
-    /// アイドル通知は捨てずに `settled` として受ける。**あれが届いたということは
-    /// 応答が終わっているということ**なので、確認待ちで居座っている行を降ろせる
-    /// (権限確認をキャンセルするとフックが1つも飛ばない。理由は TaskStatus.settled)。
-    ///
-    /// **見分けるのは種別 (`notification_type`) で、文言では見ない。**
-    /// 文言は版で変わるし、公式に決まっているのは種別のほう。
-    /// 種別を送ってこない古い版のためだけに、文言の当て推量を残してある。
-    ///
-    /// - Returns: 記録すべき状態か指示。**何もしないときは nil**。
-    ///
-    /// このイベントは人に用がある通知だけではない。認証できた・ダイアログが
-    /// 閉じた・利用制限から自動再開した、も同じ口から届く。**全部を確認待ちに
-    /// 寄せると、認証しただけで印が付き、その後フックが来なければ居座る。**
+    /// Notification イベントの内容から反映すべきステータスを判定する。
+    /// アイドル通知（idle_prompt）等は完了後の放置による誤った waiting マーク付与を防ぐため settled（確認待ち解除）を返す。
+    /// 未知の種別の場合は見落とし防止のため waiting 側に倒す。
+    /// - Returns: 遷移先ステータス文字列。状態変更を伴わないイベントなら nil
     public static func resolveNotification(_ payload: HookPayload) -> String? {
         guard let type = payload.notificationType else {
-            // 種別を送ってこない古い版。文言しか手がかりが無い。
-            // 当たらなければ確認待ちに寄せる (下の default と同じ理由)
+            // notificationType を送信しない古いクライアント向けのメッセージ文言フォールバック
             return payload.message.contains("waiting for your input")
                 ? TaskStatus.settled : TaskStatus.waiting
         }
         switch type {
-        // 人に用がある。手を挙げているのはこれら
         case "permission_prompt",          // ツールの権限確認
-             "elicitation_dialog",         // MCP サーバーが入力を求めた
-             "elicitation_url_dialog",     // MCP サーバーがブラウザを開くよう求めた
-             "agent_needs_input",          // 裏で走っているセッションが入力待ちになった
-             "quota_auto_resume_stale":    // 制限が明けて Enter 待ちになった
+             "elicitation_dialog",         // MCP サーバーからの入力要求
+             "elicitation_url_dialog",     // MCP サーバーからのブラウザ操作要求
+             "agent_needs_input",          // バックグラウンドセッションの入力待ち
+             "quota_auto_resume_stale":    // レートリミット解除後の Enter 待ち
             return TaskStatus.waiting
-        // 待たせていたものが終わった。確認待ちで居座っている行を降ろす
-        case "idle_prompt",                // 応答が終わって60秒、その間入力なし
-             "elicitation_complete",       // 入力フォームが送られた・破棄された
-             "elicitation_response":       // その応答がサーバーへ返った
+        case "idle_prompt",                // 応答終了後の無操作
+             "elicitation_complete",       // 入力フォームの送信・破棄
+             "elicitation_response":       // 入力応答のサーバー送信完了
             return TaskStatus.settled
-        // 状態の話ではない。触らない
         case "auth_success", "agent_completed",
              "quota_auto_resume_fired", "quota_auto_resume_disabled":
             return nil
         default:
-            // 知らない種別。**見落とすより、余分に印が付くほうを取る。**
-            // 種別は版ごとに増えるので、ここに落ちるのは新しい版で使う人
             return TaskStatus.waiting
         }
     }
 
-    /// touch が何をしたか。
-    ///
-    /// **状態だけでは足りなくなった。** UserPromptSubmit のとき、その行にまだ
-    /// 名前が無ければ「付けてほしい」と囁く (`NameSession.namingHint`) ので、
-    /// 台帳を見なければ分からない事実をここに載せて持ち帰る。
-    /// 呼ぶ側で台帳を読み直す形にすると、いま書いた値とずれる (書いた直後に
-    /// 別のフックが同じ行を触りうる)
+    /// イベント処理の結果情報
     public struct Outcome {
-        /// **実際に記録した状態**。届いた状態とは限らない (今までの戻り値と同じ意味)
+        /// 台帳に記録されたステータス
         public let status: String
-        /// この行にまだ名前 (`title`) が無いか。
-        /// 行が無いとき (git の外・登録しなかった・消した) は false
+        /// 対象タスクに名前（title）が設定されていないかどうか
         public let unnamed: Bool
 
         public init(status: String, unnamed: Bool) {
@@ -122,30 +70,21 @@ public enum RecordHookEvent {
         }
     }
 
-    /// その行にまだ名前が無いか。空文字は「無い」に寄せる
-    /// (`tab_title` に空文字が来たときの扱いと揃える)
     private static func isUnnamed(_ task: TaskRecord) -> Bool {
         (task.title ?? "").isEmpty
     }
 
-    /// 状態を書き込む。知らないセッションなら新しく登録する。
-    ///
-    /// - Returns: **実際に記録した状態**と、その行に名前があるかどうか (`Outcome`)。
-    ///   呼び出し側 (タブの色を変える hooks など) が台帳と食い違わないように、
-    ///   届いた状態そのままとは限らない値を返す。
-    ///   記録しなかったとき (git の外など) は届いた状態をそのまま返す
+    /// イベント状態を台帳に記録する。未登録のセッションであれば新規登録する。
+    /// - Returns: 記録結果（実際のステータスと未命名フラグ）
     @discardableResult
     public static func record(status: String, payload raw: HookPayload) throws -> Outcome {
         let top = GitClient.toplevel(from: raw.workingDirectory)
-        // git の外での実行は追いかけない。行が無いので囁く相手もいない
+        // git リポジトリ外の作業は追跡対象外とする
         guard !top.isEmpty else { return Outcome(status: status, unnamed: false) }
 
         let now = Int(Date().timeIntervalSince1970)
 
-        // 読むだけで済む仕事はここで全部片付ける (理由は LedgerStore.withLock)。
-        //
-        // 支度が要るかどうかを台帳を覗いて決めているが、**見立てを外しても害は無い。**
-        // 用意したものを使うかはロックの中で改めて確かめるので、二重には登録されない
+        // ロック時間を最小化するため、台帳の読み取りや外部情報（Git、メタデータ等）の解決はロック外で行う
         let snapshot = LedgerStore.read()
         let payload = raw.resolvingAntigravitySubagent(in: snapshot)
         let facts = SessionFacts(payload)
@@ -154,45 +93,23 @@ public enum RecordHookEvent {
             ? draftRegistration(status: status, payload: payload, facts: facts,
                                 top: top, now: now)
             : nil
-        // 動いている場所が変わっていたら、引き直す材料をここで作る (理由は relocation)
         let moved = known.flatMap { relocation(of: snapshot.tasks[$0], to: top) }
-        // リポジトリ本体の場所。**ここで git を起こし直さない。**
-        // 既に居るセッションなら台帳が答えを持っているし、初めてなら支度 (draft) を
-        // 組み立てたときに引いている。hooks は際限なく飛んでくるので、
-        // 分かっている答えのために毎回プロセスを起こすわけにいかない
-        // (場所が変わった回だけは moved が引き直した答えを持っている)
         let repo = moved?.repo ?? known.map { snapshot.tasks[$0].repo } ?? draft?.repo
 
         return try LedgerStore.withLock { ledger in
             if let repo { rememberRepo(&ledger, path: repo, now: now) }
-            // このフックを送ってきたセッションだけは掃除から外す。生きている証拠が
-            // いま届いているのに消すのはおかしいし、--resume で開き直したときに
-            // 「前のプロセスが死んでいる」を理由に落とすと、付けた名前も経過時間も
-            // 引き継げず、別のタスクとして並び直してしまう
+            // 現在イベントを送信してきたセッションは、プロセス再開時（--resume）等の競合による誤回収を防ぐため sweepLedger の対象から除外する
             let current = findTask(in: ledger, payload: payload).map { ledger.tasks[$0].id }
             sweepLedger(&ledger, now: now, keeping: current)
 
-            // 親に付いた子が、以前は独立した行として登録されていたなら引き取る。
-            //
-            // 子の最初のイベントの時点では親子を結べないことがある (生成の記録が
-            // まだ親のログに書かれていない)。そのとき子は自分の名前で登録され、
-            // あとから結ばれると**誰もその行を見に来なくなる**。
-            // Antigravity は pid を出さないので期限切れの掃除にも掛からず、
-            // 「実行中」のまま永久に居座ってしまう
+            // サブエージェントが親と結びつく前に一時的に単独セッションとして登録されていた場合、重複タスクを削除する
             if let subID = payload.subagentID, payload.sessionID != subID {
                 ledger.tasks.removeAll { $0.sessionId == subID }
             }
 
             guard let index = findTask(in: ledger, payload: payload) else {
-                // 支度が無いのは、ロックを取る前には居たのに今は居ない場合
-                // (入れ違いで `clear` が来た・アプリが片付けた)。
-                // その回は捨てる。次のフックで登録し直される
                 let enrolled = try enroll(&ledger, draft: draft, top: top,
                                           agentKey: payload.agentKey)
-                // **登録したその回にも囁く。** 依頼文を受け取った直後は、名前を
-                // 付ける材料がいちばん揃っているとき。ここを飛ばすと、1ターンで
-                // 終わるセッションは一度も訊かれないまま消える。
-                // 条件を「その行に名前が無いこと」1つに保ちたいので、例外も作らない
                 return Outcome(status: status,
                                unnamed: enrolled.map { isUnnamed($0) } ?? false)
             }
@@ -203,51 +120,32 @@ public enum RecordHookEvent {
                     settleHold(&ledger.tasks[index], now: now)
                     return .init(status: status, unnamed: isUnnamed(ledger.tasks[index]))
                 }
-                // セッションが終わったら一覧から消す
                 ledger.tasks.remove(at: index)
-                // 行ごと消えたので、名前が無いも何もない
                 return .init(status: status, unnamed: false)
             }
 
-            // 「もう待っていない」の合図。**確認待ちを降ろすためだけに使う。**
-            //
-            // 何をしていたかは分からないので、完了にはしない (キャンセルされた
-            // ターンに ✅ を付けると、見るべき結果があることになってしまう)。
-            // 動いている最中や終わったあとに届いた分は何もしない —— あれは
-            // ただの「暇になった」で、状態の話ではない
+            // settled は確認待ち（waiting）の解除のみに使用する。
+            // 子エージェント起因のイベントで親の確認待ちを誤って解除しないよう subagentID が nil であることを確認する。
             if status == TaskStatus.settled {
-                // **子の手元で起きた通知で親を降ろさない。** 親自身のプロンプトが
-                // 開いている最中に子が暇になっただけ、という組み合わせがある
                 guard payload.subagentID == nil,
                       ledger.tasks[index].status == TaskStatus.waiting else {
                     return .init(status: ledger.tasks[index].status,
                                  unnamed: isUnnamed(ledger.tasks[index]))
                 }
-                // 降ろし方は人が押したときと同じところを通す (理由はそちら)
                 let stood = ClearAttention.standDown(&ledger.tasks[index])
                 return .init(status: stood, unnamed: isUnnamed(ledger.tasks[index]))
             }
 
-            // **既に居るセッションを idle で塗り替えない。**
-            //
-            // SessionStart は再開のときだけでなく、会話の圧縮 (compact) や
-            // clear でも飛ぶ。素直に受けると、動いている最中のセッションが
-            // その拍子に「待機中」へ落ちる。idle が意味を持つのは
-            // 「まだ台帳に居ないセッションが始まった」ときだけ。
-            // ただし「誰がどこで動いているか」は入れ直す (理由は rebind)
+            // 既存セッションへの idle 反映は、会話圧縮や clear による意図しない待機中への遷移を防ぐためステータスは上書きしない。
+            // ただし古い承認待ちメッセージ（request）は解除する。
             if status == TaskStatus.idle {
                 rebind(&ledger.tasks[index], payload: payload, moved: moved)
-                // **承認待ちの文だけは持ち越さない。** SessionStart が届いたのは
-                // セッションが開き直された (あるいは圧縮・clear された) ときなので、
-                // 前に出ていた権限確認はもう画面に無い。状態を塗り替えない方針は
-                // そのままなので、確認待ちのまま残ることはある (それは別の話)
                 ledger.tasks[index].request = nil
                 return .init(status: ledger.tasks[index].status,
                              unnamed: isUnnamed(ledger.tasks[index]))
             }
 
-            // 子から届いた出来事 (PostToolUse / Stop 等) の場合。
-            // 親自身の状態やタイトルを書き換えてはいけないので、子の手元だけを更新する
+            // 子エージェント起因のイベント（PostToolUse / Stop 等）は親タスクの状態を直接変更せず子エージェント情報のみ更新する
             if let subID = payload.subagentID {
                 if status == TaskStatus.done || status == TaskStatus.failed {
                     removeSubagent(&ledger.tasks[index], id: subID, now: now)
@@ -260,43 +158,24 @@ public enum RecordHookEvent {
                              unnamed: isUnnamed(ledger.tasks[index]))
             }
 
-            // **子がまだ走っているなら「終わった」とは書かない。**
-            //
-            // サブエージェントは非同期に起動されるので、親のターンは子を待たずに
-            // 終わり、その時点で Stop が飛んでくる (子が終わると task-notification で
-            // 親が起こされ、また動き出す)。これをそのまま完了にすると、
-            // まだ誰も待たせていないセッションに緑の印が付き、しばらくして
-            // 実行中に戻る。「色が付いている = まだ手を付けていない」が壊れる
+            // サブエージェントが実行中の場合、親タスクのステータスは running を維持し、done/failed を pendingStatus に保留する
             let hasLiveSubagents = !(ledger.tasks[index].subagentRuns ?? []).isEmpty
             let recorded: String
             if (status == TaskStatus.done || status == TaskStatus.failed), hasLiveSubagents {
                 recorded = TaskStatus.running
-                // 捨てずに預ける。最後の子が帰ってきたときに、これを見て終わらせる
                 ledger.tasks[index].pendingStatus = status
             } else {
                 recorded = status
-                // 預かった終わりを捨てていいのは、**改めて Stop が来ることが
-                // 保証される合図**のときだけ。それが新しいターンの始まりで、
-                // 子に起こされた場合もここを通る (task-notification が prompt に載る)。
-                //
-                // 確認待ち (waiting) では捨てない。親が仕事を再開した証にならないので、
-                // 捨てると最後の子が帰ってきたときに終わらせる者がいなくなり、
-                // 確認待ちのまま居座る
+                // 新しいターンが開始された場合は保留状態をクリアする
                 if payload.isTurnStart {
                     ledger.tasks[index].pendingStatus = nil
                 }
             }
 
-            // 変わったところだけ触る。何も変わらなければ LedgerStore.withLock が
-            // 書き込みごと省くので、台帳の更新時刻が動かずサイドバーも数え直さない。
-            // PostToolUse のように何度も飛んでくるイベントを受けられるのはこのため
             if ledger.tasks[index].status != recorded {
                 ledger.tasks[index].status = recorded
                 ledger.tasks[index].updatedAt = now
-                // また動き出したら「確認した」は無かったことにする。
-                // 次に終わったときは別の結果なので、改めて見てほしい。
-                // **見た印 (openedAt) も一緒に落とす。** 残すと、次に終わったときに
-                // 一覧の行が最初から ✔ で出て、新しい結果が出たことに気づけない
+                // 再び実行中または確認待ちになった場合は、次回の完了通知を正常に行うため既読・開覧状態をリセットする
                 if recorded == TaskStatus.running || recorded == TaskStatus.waiting {
                     ledger.tasks[index].seenAt = nil
                     ledger.tasks[index].openedAt = nil
@@ -323,10 +202,8 @@ public enum RecordHookEvent {
             if let ctx = facts.contextPercent, ledger.tasks[index].contextPercent != ctx {
                 ledger.tasks[index].contextPercent = ctx
             }
-            // レートリミットは普通 statusline (`_stats`) が運んでくる。
-            // **Codex には statusline に相当する差し込み口が無い**ので、
-            // そちらだけは hooks の経路でも受け取る。他のエージェントの payload には
-            // 入っていないので、ここは素通りするだけで何も変わらない
+            // レートリミット情報は通常 statusline (`_stats`) 経由で取得するが、
+            // Codex は statusline に対応していないためフックイベント経由でも更新を受け付ける。
             if let limits = facts.rateLimits {
                 if ledger.tasks[index].rateLimits != limits {
                     ledger.tasks[index].rateLimits = limits
@@ -336,12 +213,10 @@ public enum RecordHookEvent {
                     ledger.agentRateLimits[key] = limits
                 }
             }
-            // いま何をしているか。updatedAt はここでは動かさない
-            // (ツールのたびに動かすと「経過」が 0 に戻り、並び順も落ち着かない)。
-            //
-            // ここに渡すのは書き込む状態 (recorded) ではなく**届いた状態**。
-            // 子を待っている親は実行中のままにするが、親自身はもう何も
-            // 触っていないので、ツールの行は消したい
+            // ツールの実行状況（activity）。ツール実行ごとに updatedAt を更新すると
+            // 経過時間がリセットされ表示順序が不安定になるため、updatedAt は更新しない。
+            // 子タスク完了待ちの親タスクで不要なツール表示が残り続けるのを防ぐため、
+            // 記録用ステータス（recorded）ではなく受信イベント本来の status を用いて解決する。
             switch resolveActivity(status: status, payload: payload) {
             case .keep:
                 break
@@ -350,7 +225,7 @@ public enum RecordHookEvent {
             case .set(let text):
                 ledger.tasks[index].activity = text
             }
-            // 何の承認を待っているか。**渡すのも届いた状態**で、理由は上と同じ
+            // 承認要求内容（request）。親タスクの状態との不整合を防ぐため、受信本来の status を用いて解決する
             switch resolveRequest(status: status, payload: payload) {
             case .keep:
                 break
@@ -367,12 +242,8 @@ public enum RecordHookEvent {
                     ledger.tasks[index].request = text
                 }
             }
-            // ターンが最後に言ったこと。**渡すのも届いた状態**で、理由は上2つと同じ。
-            //
-            // 子を待って保留された done でもここは通る (載せるのは届いた状態で
-            // 決まるため)。台帳には載るが、表示は状態で門番されているので
-            // 実行中のあいだ出ることはなく、最後の子が帰って完了が確定した
-            // ときには、もう文が載っている
+            // ターン終了時の最終発言テキスト（summary）の更新。
+            // 子の完了待ちで保留された done イベント時もこの時点で記録しておく（最後の子が完了した際に表示可能とするため）。
             switch resolveSummary(status: status, payload: payload) {
             case .keep:
                 break
@@ -385,23 +256,13 @@ public enum RecordHookEvent {
                     ledger.tasks[index].summary = text
                 }
             }
-            // サブエージェントの素性と手元。親の行とは別に持つ
             applySubagents(&ledger.tasks[index], payload: payload, status: status, now: now)
 
             if (status == TaskStatus.done || status == TaskStatus.failed),
                !hasLiveSubagents, (ledger.tasks[index].subagents ?? 0) != 0 {
-                // 数だけを持つエージェント (agent_id を送ってこないもの) の取りこぼしを戻す。
-                // あちらは SubagentStop を落とすと数がずれたままになるので、
-                // ターンの終わりを唯一の掃除どころにしている。
-                //
-                // **1体ずつ持てるほうはここで消さない。** 子は親のターンより
-                // 長く生きるので、ここで消すと走っている最中の子が一覧から消え、
-                // 次のツールでラベルを失った状態で生え直す。
-                // あちらの掃除は SubagentStop (と subagentTTL) が引き受ける
+                // カウント値のみを管理するエージェントにおいて、SubagentStop を取りこぼした場合のズレをターン終了時にリセットする
                 ledger.tasks[index].subagents = 0
             }
-            // 名前があるかを見るのは**`tab_title` を映したあと**。この回に名前が
-            // 付いたなら、その場で囁くのはもう余計
             return .init(status: recorded, unnamed: isUnnamed(ledger.tasks[index]))
         }
     }
@@ -412,14 +273,9 @@ public enum RecordHookEvent {
         try record(status: status, payload: raw)
     }
 
-    /// サブエージェントの出入りを記録する。
-    ///
-    /// `agent_id` が付いているなら1体ずつ持つ (SubagentStart / SubagentStop)。
-    /// 付いていないエージェントは今まで通り数だけを増減させる
-    /// (PreToolUse(Task) で増やし、SubagentStop で減らす)。
-    /// どちらの経路も、取りこぼしはターンの終わり (_touch done) で戻る。
+    /// サブエージェントの増減を記録する。
+    /// agent_id が存在する場合は個別管理（SubagentRun）し、存在しない場合はカウント値（subagents）を増減させる。
     public static func countSubagent(delta: Int, payload raw: HookPayload) throws {
-        // 親子の解決は親のログを読むので、ロックを取る前に済ませる
         let payload = raw.resolvingAntigravitySubagent(in: LedgerStore.read())
         try LedgerStore.withLock { ledger in
             guard let index = findTask(in: ledger, payload: payload) else { return }
@@ -427,37 +283,26 @@ public enum RecordHookEvent {
             pruneSubagents(&ledger.tasks[index], now: now)
 
             guard let id = payload.subagentID else {
-                // 数だけを持つエージェント。ここは今までどおり updatedAt を動かす
                 ledger.tasks[index].subagents =
                     max(0, (ledger.tasks[index].subagents ?? 0) + delta)
                 ledger.tasks[index].updatedAt = now
-                // 最後の1体が帰ったなら、預かった終わりを確定させる。
-                // **1体ずつ持てる経路と揃える** (下の removeSubagent のあとと同じ)。
-                // ここが無いと、この経路のセッションだけ預かったものが宙に浮く
                 if ledger.tasks[index].subagents == 0 {
                     settleHold(&ledger.tasks[index], now: now)
                 }
                 return
             }
 
-            // 1体ずつ持てる経路では **updatedAt を動かさない。** 子が出入りする
-            // たびに動かすと「経過」がその都度 0 に戻り、長く走っているセッションを
-            // 見失う (いま触っているツールを載せるときと同じ理由)。
-            // 状態が本当に変わるとき (預かった終わりの確定) だけは動かす
+            // 個別管理の場合は、セッション経過時間の不要なリセットを防ぐため updatedAt を更新しない
             if delta > 0 {
                 upsertSubagent(&ledger.tasks[index], id: id, now: now) { run in
                     if let type = payload.subagentType { run.type = type }
                 }
             } else {
                 removeSubagent(&ledger.tasks[index], id: id, now: now)
-                // 古い繋ぎ方 (PreToolUse でも +1 する) が残ったままでも
-                // 数が居座らないよう、こちらも一緒に戻す
                 if let count = ledger.tasks[index].subagents, count > 0 {
                     ledger.tasks[index].subagents = count - 1
                 }
-                // 最後の1体が帰ってきた。親が先に終わりを告げていたなら、
-                // ここで確定させる。そうしないと、終わったセッションが
-                // 実行中のまま一覧に居座る (Stop はもう二度と来ない)
+                // 全サブエージェント終了時に保留されたステータス（pendingStatus）があれば適用する
                 settleHold(&ledger.tasks[index], now: now)
             }
         }
@@ -465,21 +310,7 @@ public enum RecordHookEvent {
 
     // MARK: - サブエージェント
 
-    /// 届いた payload からサブエージェントの素性と手元を写す。
-    ///
-    /// 拾えるものが2つある。
-    ///
-    /// - **起動の記録** (Task/Agent ツールの PostToolUse)。`tool_response` に
-    ///   `agentId` と description が揃って入っている唯一の場所で、ここで
-    ///   「どの子に何をさせたか」が結べる
-    /// - **子の手元** (子の中で発火した PostToolUse)。`agent_id` が付いてくるので、
-    ///   親の activity ではなくその子の行に書く
-    ///
-    /// どちらも upsert にしてあるのは、SubagentStart を繋いでいなくても
-    /// 一覧が出るようにするため。順番が入れ替わっても取りこぼさない。
-    /// - Parameter status: 届いた状態。**子の手元にも門番が要る。**
-    ///   確認待ちで届くツールは権限確認に出ているだけで、まだ実行されていない
-    ///   (親の行に載せない理由と同じ。`resolveActivity` を参照)
+    /// payload からサブエージェントの起動情報または実行中ツールの情報を更新する。
     static func applySubagents(_ task: inout TaskRecord, payload: HookPayload,
                                status: String, now: Int) {
         if let launched = payload.launchedSubagent {
@@ -491,6 +322,7 @@ public enum RecordHookEvent {
         if let id = payload.subagentID {
             upsertSubagent(&task, id: id, now: now) { run in
                 if let type = payload.subagentType { run.type = type }
+                // 承認待ち中のツールは未実行のため activity には反映しない
                 if status != TaskStatus.waiting, let activity = payload.toolActivity {
                     run.activity = activity
                 }
@@ -503,15 +335,11 @@ public enum RecordHookEvent {
         var runs = task.subagentRuns ?? []
         if let index = runs.firstIndex(where: { $0.id == id }) {
             edit(&runs[index])
-            // まだ生きている印。打ち切りはここから数える。
-            // 毎回書き換えると無変更のイベントでも台帳が動くので、間隔を空ける
             if now - runs[index].lastSeen >= subagentHeartbeat {
                 runs[index].lastSeenAt = now
             }
         } else {
-            // もう終わった子なら生やさない。hooks は非同期に飛ぶので、
-            // SubagentStop のあとにその子の PostToolUse が遅れて届く。
-            // ここで受けると、二度と終わりを告げられない行が生まれてしまう
+            // 終了済みサブエージェント（遅延到着イベント）の再生成を防ぐ
             guard task.finishedSubagents?[id] == nil else { return }
             var run = SubagentRun(id: id, startedAt: now)
             edit(&run)
@@ -520,8 +348,7 @@ public enum RecordHookEvent {
         task.subagentRuns = runs
     }
 
-    /// 1体消す。空になったらキーごと落とす (無い項目は書き出さない台帳の流儀に合わせる)。
-    /// 消した相手は墓標に残す (遅れて届くその子のイベントを弾くため)
+    /// サブエージェントを完了とし、遅延イベント抑制のため終了リスト（finishedSubagents）に記録する
     static func removeSubagent(_ task: inout TaskRecord, id: String, now: Int) {
         var runs = task.subagentRuns ?? []
         runs.removeAll { $0.id == id }
@@ -532,13 +359,8 @@ public enum RecordHookEvent {
         task.finishedSubagents = finished
     }
 
-    /// 声を聞かなくなった子と、古い墓標を捨てる。
-    ///
-    /// 子のほうは、終わりを取りこぼしたときの受け皿。親のターンの終わりでは
-    /// 掃除できない (子は親より長く生きる) ので、時間で切るしかない。
-    /// **数えるのは生まれてからではなく、最後に声を聞いてから。**
-    /// 生まれた時刻で切ると、長く走っている子を動いている最中に消してしまい、
-    /// その拍子に親の預かった終わりが確定して完了の印が付く。
+    /// タイムアウトしたサブエージェントおよび期限切れの終了記録（finishedSubagents）を削除する。
+    /// 稼働中サブエージェントの誤消去を防ぐため、開始時刻ではなく最終観測時刻（lastSeen）から経過時間を測る。
     static func pruneSubagents(_ task: inout TaskRecord, now: Int) {
         if var runs = task.subagentRuns {
             runs.removeAll { now - $0.lastSeen >= subagentTTL }
@@ -550,20 +372,13 @@ public enum RecordHookEvent {
         }
     }
 
-    /// 預かった終わりを確定させる。子が誰も居なくなっていれば。
-    ///
-    /// **いまの状態は見ない。確認待ちでも上書きする。** 預かりを持つのは
-    /// 「親がもう Stop を告げている」ということなので、そのあとの確認待ちは
-    /// 子が上げたもの。その子が帰ってきた時点で、待たせている相手はもういない。
-    /// ここを「実行中のときだけ」に絞ると、確認待ちのまま居座る経路ができる
+    /// 全サブエージェントが終了している場合、保留中のステータス（pendingStatus）を適用して確定する。
+    /// 子エージェント起因の承認待ちをクリアするため request も nil にリセットする。
     static func settleHold(_ task: inout TaskRecord, now: Int) {
         guard task.subagentRuns == nil, let held = task.pendingStatus else { return }
         task.status = held
         task.pendingStatus = nil
         task.updatedAt = now
-        // 確認待ちが解けたのだから、承認待ちの文も一緒に落とす。
-        // **表示は状態で隠せるが、台帳に残すと次の確認を弾いてしまう**
-        // (弱い方の書き込みは request が空のときだけ入るため)
         task.request = nil
     }
 
@@ -580,49 +395,38 @@ public enum RecordHookEvent {
         case set(String)
     }
 
-    /// - ターンが終わった (done / failed) → 何もしていないので消す
-    /// - ターンが始まった (UserPromptSubmit) → 前のターンの残りを消す
-    /// - 子が叩いたツール (agent_id 付き) → 触らない。それは子の行に出す
-    /// - 子を起動したツール → 触らない。何をさせたかは子の行が語る
-    /// - ツールを叩いた (PostToolUse) → それを載せる
-    /// - それ以外 → 触らない。確認待ちの間も、直前に何をしていたかは残したい
+    /// ツール実行状況（activity）の更新判定。
+    /// - ターン終了（done / failed）: 実行中ツールをクリア
+    /// - ターン開始（UserPromptSubmit）: 前ターンのツール表示をクリア
+    /// - サブエージェント実行ツール（agent_id 付き）: サブエージェント側で表示するため親側は変更しない
+    /// - サブエージェント起動ツール: 親タスク側には反映しない
+    /// - ツール実行（PostToolUse）: ツール表示を更新
+    /// - その他: 直前のアクティビティを維持
     static func resolveActivity(status: String, payload: HookPayload) -> ActivityUpdate {
         if status == TaskStatus.done || status == TaskStatus.failed { return .clear }
         if payload.isTurnStart { return .clear }
-        // 確認待ちで届くツールは**まだ実行されていない**もの (権限確認)。
-        // ここに載せると、承認していないコマンドを「いま触っているもの」として
-        // 出してしまう。断られたときは実行されないまま残る。載せる先は request
+        // 確認待ち（waiting）のツールは未実行の権限確認であるため、
+        // 承認前のコマンドが実行中アクティビティとして表示されるのを防ぐ（request 側に記録する）。
         if status == TaskStatus.waiting { return .keep }
-        // 子のツールは親と同じ session_id で飛んでくる。区別せずに載せると、
-        // 親の行が子の作業で塗り替わって「親がいま何をしているか」が分からなくなる
+        // 子タスクのツール実行は同一 session_id で通知されるため、親タスクの表示汚染を防ぐ
         if payload.subagentID != nil { return .keep }
         if payload.launchedSubagent != nil { return .keep }
         if let activity = payload.toolActivity { return .set(activity) }
         return .keep
     }
 
-    /// 「何の承認を待っているか」をどうするか。
+    /// 承認要求メッセージ（request）の更新判定。
+    /// - waiting に遷移した場合: 要求内容を反映
+    /// - waiting 以外に遷移した場合: 承認完了等に伴いクリア（実行中タスクに古い承認要求が残存するのを防ぐ）
+    /// - 子タスクの承認要求: 親タスクへの混入を防ぐため変更しない
     ///
-    /// - 確認待ちになった → 何を訊かれているかを載せる
-    /// - それ以外の状態になった → 消す。**承認された瞬間に消えることがここの要**で、
-    ///   残すと動き出したセッションに「承認待ち」の文が付いて回る
-    /// - 子が上げた確認 (agent_id 付き) → 触らない。親の行に子の話を混ぜない
-    ///
-    /// 載せるものは2段構え。ツールの情報が来ていれば `toolActivity` と同じ
-    /// 組み立て ("Bash: mkdir -p /tmp/x") を使い、無ければ通知の文を置く。
-    /// **後者はツール名までしか言わない** ("Claude needs your permission to
-    /// use Bash") ので、コマンドまで出したいなら権限確認そのもののフックを繋ぐ
-    /// (手引きに書いてある)。
+    /// 承認待ちメッセージの更新種別
     enum RequestUpdate: Equatable {
         case keep
         case clear
-        /// ツールから組んだもの。**上書きしてよい**
+        /// ツール実行情報から生成した詳細メッセージ（上書き優先）
         case set(String)
-        /// 通知の文から拾ったもの。**すでに何か載っているなら譲る。**
-        ///
-        /// 権限確認では権限確認のフックと `Notification` の両方が飛び、着く順は
-        /// 決まっていない。譲らせないと、コマンドまで分かっていた行が
-        /// 「ツール名しか言わない文」で塗り潰される (順番次第で消える)
+        /// 通知メッセージから取得したフォールバック文言（詳細メッセージが存在する場合は維持）
         case fallback(String)
     }
 
@@ -635,47 +439,28 @@ public enum RecordHookEvent {
         return .fallback(HookPayload.condensed(message))
     }
 
-    /// 「終わったターンが最後に言ったこと」をどうするか。
-    ///
-    /// **終わったのに文が来ていないときは消さない (`keep`)。** `Stop` に
-    /// `last_assistant_message` を載せないエージェントもあり、そこで消すと
-    /// 載せてくる相手でも**保留されていた終わりが確定した拍子に消える**
-    /// (最後の子が帰ってきたときの done は、文を持たずに飛んでくる)
-    ///
-    /// **文は来たのに載せられなかったときは消す (`clear`)。** そちらは
-    /// 「分からない」ではなく「このターンに載せる地の文は無い」と分かっている。
-    /// 残すと前のターンの締めが今のターンの結論として読まれる
+    /// 最終発言テキスト（summary）の更新種別
     enum SummaryUpdate: Equatable {
         case keep
         case clear
         case set(String)
     }
 
-    /// - 子から届いた (agent_id 付き) → 触らない。親の行に子の話を混ぜない
-    ///   (`resolveActivity` と同じ線引き)
-    /// - 終わった (done / failed) → 言い残したことを載せる。
-    ///   届いたのに地の文が残らなかったときは消す
-    /// - また動き出した / 確認待ちになった → 消す。**前のターンの締めが残ると、
-    ///   いま動いている作業をもう終わったことのように読ませる**
-    /// - それ以外 → 触らない
+    /// ターン終了時の最終メッセージ（summary）を更新するかどうかを判定する。
+    /// 完了・失敗時はメッセージがあれば設定し、本文があるにもかかわらず地の文が空だった場合は前回値をクリアする。
+    /// 新規実行・確認待ちへの遷移時は前ターンの発言をクリアする。
     static func resolveSummary(status: String, payload: HookPayload) -> SummaryUpdate {
         if payload.subagentID != nil { return .keep }
         if status == TaskStatus.done || status == TaskStatus.failed {
             if let message = payload.lastMessage { return .set(message) }
-            // 届いた本文が箇条書き・見出し・コードだけだったなら、均した結果は空になる。
-            // 載せる文が無いことは分かっているので、前のターンの締めは残さない
             return payload.carriesLastMessage ? .clear : .keep
         }
         if status == TaskStatus.running || status == TaskStatus.waiting { return .clear }
         return .keep
     }
 
-    /// payload から取り出すのに**外の世界を触る**値をまとめて持つ。
-    ///
-    /// どれも見た目はただのプロパティだが、名前も文脈量もエージェントの手元の
-    /// 記録を読みに行く (SQLite やログの走査)。**写しにしておくのは、
-    /// ロックの中でうっかり読ませないため。** 登録と更新の両方で同じ値が要るので、
-    /// 素直に書くとどちらかがロックの内側に残る
+    /// 外部アクセス（ファイル読み取りや SQLite アクセス）を伴うメタデータ抽出結果を保持する構造体。
+    /// 台帳ロックの保持時間を短縮するため、ロック取得前に一括抽出する。
     struct SessionFacts {
         var name: String?
         var tabTitle: String?
@@ -692,7 +477,6 @@ public enum RecordHookEvent {
         }
     }
 
-    /// 登録するときに載せる値。`keep` と `clear` はどちらも「まだ無い」に落ちる
     private static func firstText(_ update: ActivityUpdate) -> String? {
         if case .set(let text) = update { return text }
         return nil
@@ -705,20 +489,8 @@ public enum RecordHookEvent {
         }
     }
 
-    /// 新しく登録する1件を組み立てる。**ロックの外で呼ぶこと**
-    /// (git が2〜3回起きる。引くものは `relocation` と同じなので、数え方もあちらと同じ)。
-    ///
-    /// 新しく登録するのは、これから動き出すときだけにする。
-    /// done や clear が単独で届くのは、終了処理が入れ違いになったときで
-    /// (clear は同期・done は非同期なので追い越しうる)、ここで作ると
-    /// 終わったはずのセッションが幽霊として一覧に戻ってしまう。
-    ///
-    /// セッションIDが取れないものも登録しない。次に来たときに照合できず、
-    /// 呼ばれるたびに新しいタスクが積み上がる。
-    ///
-    /// - Returns: 登録すべきものが無ければ nil。
-    ///   **ID はまだ空。** 他と重ならない名前は台帳を見ないと決められないので、
-    ///   採番は `enroll` がロックの中で行う
+    /// 新規登録用ドラフトを作成する（ロック外で呼び出し、Git コマンドを実行）。
+    /// 終了系イベント単独での誤登録を防ぐため、稼働中ステータス（running / waiting / idle）のみを対象とする。
     private static func draftRegistration(status: String, payload: HookPayload,
                                           facts: SessionFacts,
                                           top: String, now: Int) -> TaskRecord? {
@@ -741,30 +513,16 @@ public enum RecordHookEvent {
             createdAt: now,
             updatedAt: now,
             agent: payload.agent,
-            // 最初の1件目が PostToolUse や権限確認のこともある (前のセッションの
-            // 記録を消したあとなど)。そのときも何をしているか・何を待っているかを
-            // 載せておく。**判断は更新のときと同じところを通す** —
-            // ここに書き分けを作ると、登録した回だけ違うものが載る
-            // (子が叩いたツールを載せない門番も、そちらが持っている)
             activity: firstText(resolveActivity(status: status, payload: payload)),
             request: firstText(resolveRequest(status: status, payload: payload)),
             title: facts.tabTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
             name: facts.name,
             model: facts.model,
             contextPercent: facts.contextPercent,
-            // statusline を持たないエージェント (Codex) はここでしか渡す機会がない。
-            // 持っているほうは payload に入っていないので nil のまま通る
             rateLimits: facts.rateLimits)
     }
 
-    /// 組み立てておいた1件を台帳に載せる。**ここだけがロックの中。**
-    ///
-    /// やるのは採番と追加だけ。外から材料を持ち込む形にしてあるのは、
-    /// ロックを握っている時間を数ミリ秒に抑えるため。
-    ///
-    /// - Returns: 載せた記録。載せなかったら nil。
-    ///   **登録したその回に名前が付いているかを、呼ぶ側が知るために返す**
-    ///   (ロックの中で台帳を引き直させないため)
+    /// 新規タスクレコードを採番して台帳に追加する（ロック内で実行）。
     @discardableResult
     private static func enroll(_ ledger: inout LedgerFile, draft: TaskRecord?,
                                top: String, agentKey: String) throws -> TaskRecord? {
@@ -779,30 +537,14 @@ public enum RecordHookEvent {
         return record
     }
 
-    /// 動いている場所が変わったときに入れ直す3つ。
-    ///
-    /// セッションは同じまま cwd だけが別の worktree へ移ることがある
-    /// (Claude Code の `EnterWorktree` がまさにこれをする)。登録時の場所を
-    /// 持ち続けると、移った先の worktree は**誰も使っていない場所**として一覧に並び
-    /// (`isRemovable` の判断もそこを見るので、動いている仕事が片付けの候補に挙がる)、
-    /// ブランチも登録時のままなので `BRANCH` 列が移る前の名前を出し続ける。
-    /// PR も出ない —— あれは `ResolvePullRequest` が**この worktree を鍵に**
-    /// 引くもので、鍵が本体を指したままだと本体のブランチの PR を探しに行く。
-    ///
-    /// **ID は付け替えない。** あれは登録した場所から採った名前だが、
-    /// 人が呼ぶ名前であり、`PROCTOR_ID` として外にも出ているので、
-    /// 場所が変わったからといって別の名前になってはいけない。
+    /// 作業ツリー移動時の追従情報。ID は変更せず worktree、repo、branch のみを更新する。
     struct Relocation {
         var worktree: String
         var repo: String
         var branch: String
     }
 
-    /// 場所が変わっていれば、入れ直す値を引く。**ロックの外で呼ぶこと**
-    /// (git が2〜3回起きる。ブランチで1回、`mainWorktree` がその中でもう1〜2回)。
-    ///
-    /// 変わっていなければ git に触らずに nil を返す。hooks はツールのたびに
-    /// 飛んでくるので、動かない答えのために毎回プロセスを起こすわけにいかない。
+    /// 作業ツリーディレクトリが変更されている場合に更新情報を算出する（ロック外で呼び出し）。
     static func relocation(of record: TaskRecord, to top: String) -> Relocation? {
         guard record.worktree != top else { return nil }
         let branch = GitClient.currentBranch(top)
@@ -811,15 +553,9 @@ public enum RecordHookEvent {
                           branch: branch.isEmpty ? "-" : branch)
     }
 
-    /// 記録を**いま動いているプロセスとタブと場所に結び直す**。状態には触らない。
-    ///
-    /// `--resume` は同じセッションIDのまま別のプロセス・別のタブで開き直すので、
-    /// ここを入れ直さないと、死んだプロセスの記録として掃除されてしまう。
-    /// 変わらなければ何も書かないので、台帳の更新時刻は動かない。
+    /// 既存レコードのプロセス ID、端末セッション、作業ディレクトリ等を現在の実行環境に結び直す。
     static func rebind(_ record: inout TaskRecord, payload: HookPayload,
                        moved: Relocation? = nil) {
-        // 既に入っているなら書かない。ロックを取るまでの間に別のフックが
-        // 同じことを済ませていることがあり、書かなければ台帳の更新時刻も動かない
         if let moved, record.worktree != moved.worktree {
             record.worktree = moved.worktree
             record.repo = moved.repo
@@ -840,28 +576,21 @@ public enum RecordHookEvent {
         }
     }
 
-    /// セッションを見たリポジトリを覚えておく。
-    ///
-    /// worktree の一覧はここに載っているリポジトリだけを見に行く。
-    /// 初めて見たときと、記録が古くなったときにだけ書く (理由は repoMemoryRefresh)。
+    /// セッションが実行されたリポジトリを台帳に記録する（24時間以上経過している場合のみ更新）。
     static func rememberRepo(_ ledger: inout LedgerFile, path: String, now: Int) {
         if let seen = ledger.repos[path], now - seen < repoMemoryRefresh { return }
         ledger.repos[path] = now
         guard ledger.repos.count > repoMemoryLimit else { return }
-        // 溢れた分は「最後に見た」が古いものから落とす。
-        // 同じ時刻で並んだときはパスで決着をつける (辞書の順は毎回変わるので、
-        // それに任せると落ちるものが実行のたびに入れ替わる)
         let survivors = ledger.repos.sorted {
             $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key
         }.prefix(repoMemoryLimit)
         ledger.repos = Dictionary(uniqueKeysWithValues: survivors.map { ($0.key, $0.value) })
     }
 
-    /// hook の情報から対象のタスクを引く。
+    /// hook のペイロード情報から対象のタスクを特定する。
     ///
     /// PROCTOR_ID → セッションID の順に照合する。
-    /// 場所では照合しない。セッションは同じリポジトリで何枚も開くものなので、
-    /// パスでまとめると2枚目以降が1枚目の記録を上書きして消えてしまう。
+    /// 同一リポジトリで複数セッションが開かれる可能性があるため、作業ディレクトリのパスでは照合しない。
     static func findTask(in ledger: LedgerFile, payload: HookPayload) -> Int? {
         if let envID = EnvironmentSource.taskID(),
            let index = ledger.tasks.firstIndex(where: { $0.id == envID }) {
@@ -871,29 +600,18 @@ public enum RecordHookEvent {
         return ledger.tasks.firstIndex { $0.sessionId == session }
     }
 
-    /// 台帳ぜんぶに箒をかける。イベントが届くたび、書き込む前に1回。
+    /// 台帳全体の不要なセッションおよびサブエージェント記録を整理する。
     ///
-    /// やることは3つ。**どれも「当人からはもうイベントが来ない」記録が相手**なので、
-    /// 全件を見るこの場所でしか手が届かない。
+    /// 1. 終了イベントが届かずに終了したセッション記録の削除
+    /// 2. タイムアウトしたサブエージェントおよび終了済み記録の削除
+    /// 3. サブエージェントが完了した親タスクの保留状態の確定
     ///
-    /// 1. 終了を取りこぼしたセッションの記録を捨てる
-    /// 2. 声を聞かなくなった子と古い墓標を捨てる
-    /// 3. 子が居なくなった親の、預かった終わりを確定させる
+    /// セッション終了判断:
+    /// - PIDが記録されているもの: プロセスの生存確認を行い、プロセスが終了していれば状態に関わらず削除する。
+    /// - PIDが未記録のもの: 実行中以外のタスクについてTTL経過で削除する。実行中のタスクは長時間ターンで更新時刻が進まない場合があるため、TTLでは削除しない。
     ///
-    /// 1は SessionEnd が飛ばないまま終わることがあるため (タブごと閉じられた・
-    /// 殺された)。判断は2段構えになっている。
-    ///
-    /// - **プロセスが分かるもの**: 生きているかどうかで決める。死んでいれば状態に
-    ///   関係なく落とす。実行中のまま殺されたセッションは、これが無いと
-    ///   期限切れ (下) にも引っかからず永久に残ってしまう
-    /// - **プロセスが分からないもの** (Claude Code 以外・この変更より前の記録):
-    ///   生死を確かめる手立てが無いので期限切れに任せる。
-    ///   ただし実行中のものは残す。更新時刻は状態が変わったときだけ動くので、
-    ///   長いターンを回している間は時刻が古いままになる。まさに追いかけたい
-    ///   「夜通し動いているエージェント」を消してしまっては本末転倒になる
-    ///
-    /// - Parameter keeping: 何があっても残すタスクのID。いま知らせてきた当人を指す。
-    /// - Parameter isAlive: プロセスの生死。差し替えられるようにしてあるのは試験のため。
+    /// - Parameter keeping: 削除対象から除外するタスクID（現在イベント通知中のタスク）。
+    /// - Parameter isAlive: プロセスの生死判定関数。テスト時に差し替え可能にする。
     static func sweepLedger(
         _ ledger: inout LedgerFile, now: Int, keeping: String? = nil,
         isAlive: (Int, Int?) -> Bool = { ProcessLiveness.isAlive(pid: $0, startedAt: $1) }

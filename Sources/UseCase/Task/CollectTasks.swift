@@ -3,31 +3,17 @@ import Model
 import RepositoryGit
 import RepositoryLedger
 
-/// 台帳に動的な情報を足して返す。表示側の共通の入り口。
-///
-/// CLI の表もサイドバーもメニューバーもこの戻り値を整形するだけにする。
-/// 集計をここに閉じ込めることで、表示側にロジックが漏れるのを防ぐ。
-/// 集計を足したくなったらここに書く。
+/// 台帳に動的な情報（Git 差分、存在確認、経過時間等）を付与して集計する。
+/// CLI や UI 側の共通エントリポイントであり、表示側に集計ロジックが分散するのを防ぐ。
 public enum CollectTasks {
     /// - Parameters:
-    ///   - repo: 指定したリポジトリだけに絞る。allRepos が true なら無視される
+    ///   - repo: 指定したリポジトリのみに絞り込む場合に使用。allRepos が true の場合は無視される
     ///   - allRepos: 全リポジトリを対象にする
-    ///   - itermOnly: iTerm2 のタブとして開き直せるものだけに絞る。
-    ///     既定は false。台帳に載っているものをそのまま見せるのが CLI の役目で、
-    ///     絞るかどうかは「押したら開けるか」を気にする側 (アプリ) の都合
-    ///   - withOrigin: リポジトリの持ち主 (remote) まで調べる。
-    ///     **既定は false。要る人だけが払う。** 持ち主を引くには
-    ///     リポジトリごとに git をもう1回起こす必要があり、remote が
-    ///     `origin` でなければ2回、1つも無ければやはり2回になる。
-    ///     答えはプロセスの中に覚えるので、生き続けるアプリでは最初の1回で済むが、
-    ///     **一回きりで終わる CLI では毎回が「最初の1回」**になる。
-    ///     `proctor ls` の表は持ち主を出さないので、既定では引かない
-    ///   - countDiff: 未コミットの変更を数える。**既定は true (今までどおり)**。
-    ///     false にすると差分は 0 のまま返る。大きいリポジトリでは1件につき
-    ///     git が2回起きるので、数字を出さないと決めた側 (アプリの設定) が
-    ///     問い合わせごと止められるようにしておく。
-    ///     **数えないときに何を返すかはここで決める。** 表示側が後から 0 を
-    ///     被せる形にすると、「数えた結果 0」との区別が View 任せになる
+    ///   - itermOnly: iTerm2 で開けるセッションのみに絞り込む
+    ///   - withOrigin: リモートリポジトリ情報（GitHub 等）の解決を行うかどうか。
+    ///     git remote 呼び出しを伴うため、CLI 等で不要な場合は false にしてコストを抑制する。
+    ///   - countDiff: 未コミットの変更差分を集計するかどうか。
+    ///     無効な場合は DiffCounts() (差分 0) を設定する。
     public static func collect(repo: String? = nil, allRepos: Bool = false,
                                itermOnly: Bool = false,
                                withOrigin: Bool = false,
@@ -48,7 +34,7 @@ public enum CollectTasks {
                 repoName: URL(fileURLWithPath: record.repo).lastPathComponent,
                 origin: withOrigin ? ResolveRepoOrigin.resolve(repo: record.repo) : nil,
                 exists: exists,
-                // 動いていた場所を手で消された場合。台帳には残っているので消失として見せる
+                // 作業ディレクトリが手動削除された場合、台帳上は残存していても missing 状態とする
                 status: exists ? record.status : TaskStatus.missing,
                 diff: exists && countDiff ? diff(for: record) : DiffCounts(),
                 ageSeconds: max(0, now - record.createdAt),
@@ -57,23 +43,12 @@ public enum CollectTasks {
         }
     }
 
-    /// 台帳から来る値だけを差し替える。**git を起動しない**。
-    ///
-    /// 状態や「いま触っているツール」はツールのたびに変わるので、差分を
-    /// 数え直すまで出せないと後追いになる。差分と worktree の有無は前回の値を
-    /// そのまま使い、数え直しは呼ぶ側の都合 (間隔・状態の変化) で回す。
-    ///
-    /// 顔ぶれ (ID) が変わっていたら前回の値を当てられないので nil を返す。
-    /// 呼ぶ側はそのとき数え直す。
-    ///
-    /// 持ち主 (`origin`) は前回の値をそのまま持ち越すだけで、ここでは引かない。
-    /// **`withOrigin: false` で集めた一覧を渡すと、持ち主は無いまま伝わり続ける。**
+    /// Git コマンドを実行せず、台帳由来の更新（status、tool、経過時間等）のみを高速に再適用する。
+    /// 差分や worktree 存在確認は前回の集計値を引き継ぐ。
+    /// セッション構成（ID 一覧）に変更があった場合は前回の値と整合しないため nil を返す（呼び出し元で完全再集計を行う）。
     public static func reapplied(_ tasks: [CollectedTask], records: [TaskRecord],
                                  now: Int = Int(Date().timeIntervalSince1970))
         -> [CollectedTask]? {
-        // 顔ぶれの照合は、**どのみち要る辞書に相乗りさせる**。
-        // ここは台帳が動くたび (= ツール1回ごと) に呼ばれるので、
-        // 判定のためだけに Set を2つ作ると、そのぶんの確保が積み上がる
         guard tasks.count == records.count else { return nil }
         var previous: [String: CollectedTask] = [:]
         previous.reserveCapacity(tasks.count)
@@ -95,8 +70,7 @@ public enum CollectTasks {
         }
     }
 
-    /// 新しい順。createdAt が同じものは台帳の並びを保つ
-    /// (Swift の sorted は安定ではないので添字で決着をつける)
+    /// 作成日時の降順。同一時刻の場合は元の並び順を維持する（安定ソート）。
     static func ordered(_ records: [TaskRecord]) -> [TaskRecord] {
         records.enumerated().sorted { lhs, rhs in
             if lhs.element.createdAt != rhs.element.createdAt {
@@ -106,28 +80,13 @@ public enum CollectTasks {
         }.map(\.element)
     }
 
-    /// 作業量を数える。
-    ///
-    /// 見たいのは「そのエージェントが今やった分」なので HEAD からの差分、
-    /// つまり未コミットの変更だけを数える。ベースブランチから数えると、
-    /// もともと積まれていたコミットの歴史がまるごと出てしまい、
-    /// 今の作業量が分からなくなる。
-    ///
-    /// 新規ファイルは git diff に出ないため untracked として別に数える。
-    /// エージェントの成果はファイル追加であることが多く、ここが漏れると
-    /// 「何もしていない」ように見えてしまう。
-    ///
-    /// バイナリも行では数えられないので、件数として別に持つ。
-    /// 行数に混ぜると 0 になり、同じく「何もしていない」に見える。
+    /// 未コミットの変更差分を集計する。
+    /// 現在のセッションの作業量を正確に測るため、ベースブランチではなく HEAD からの差分を集計する。
+    /// 新規作成ファイルは git diff に含まれないため untracked として別計上し、バイナリファイルも件数として計上する。
     public static func diff(for record: TaskRecord) -> DiffCounts {
-        // 聞けなかったときは 0 のまま出す。**ここは行に添える数字**で、
-        // 消してよいかの判断には使わない (それは CollectWorktrees の仕事で、
-        // あちらは「数え切れたか」を持ち回している)。
-        //
-        // **行数と未追跡は別々に潰す。** コミットが1つも無いリポジトリでは
-        // `diff HEAD` だけが失敗するので、まとめて潰すと未追跡の数まで消える
         let counted = CountChanges.count(worktree: record.worktree)
         let lines = counted.lines
+        // コミットが存在しないリポジトリでは diff HEAD が失敗するため、lines と untracked は独立して処理する。
         return DiffCounts(
             added: lines?.added ?? 0,
             removed: lines?.removed ?? 0,
@@ -136,22 +95,8 @@ public enum CollectTasks {
             changedFiles: lines?.files ?? 0)
     }
 
-    /// まだ人が見ていないもの。**サイドバーの最上部に新着として出す分**。
-    ///
-    /// 集まるのは3つ。承認を待って止まっているもの (waiting)、終わったのに
-    /// まだタブを見ていないもの (done)、落ちたのにまだ見ていないもの (failed)。
-    ///
-    /// **「未読」の線は台帳側 (MarkSessionSeen.needsMark) と揃える。** あちらが
-    /// seenAt を打つ相手は done と failed なので、ここで別の線を引くと
-    /// ✓ を押しても消えない行ができてしまう。
-    ///
-    /// done は seenAt が付くと attentionStatus が seen に畳まれるので、それで足りる。
-    /// failed は見たあとも failed のまま出す (見たからといって片付いたわけではない)
-    /// ので、こちらは seenAt を直に見る。
-    ///
-    /// 並びは TaskStatus.order の優先度が先、同じなら最後に動いた順。
-    /// **同じ値のときは渡された順を保つ** (Swift の sorted は安定ではないので
-    /// 添字で決着をつける。`ordered` や TaskGrouping と同じ考え方)
+    /// ユーザーによる確認が必要なタスク（waiting、未確認の done/failed）を抽出する。
+    /// TaskStatus.order の優先度順、同一優先度の場合は直近更新順に整列する。
     public static func awaitingReview(_ tasks: [CollectedTask]) -> [CollectedTask] {
         tasks.filter(needsReview).enumerated().sorted { lhs, rhs in
             let (a, b) = (priority(lhs.element), priority(rhs.element))
@@ -163,30 +108,19 @@ public enum CollectTasks {
         }.map(\.element)
     }
 
-    /// **線引きは持たない。** 同じ問い (まだ人の手が要るか) を macOS の通知側でも
-    /// するので、答えは `TaskStatus.needsPerson` に1本だけ置いてある。
-    /// ここに写しを作ると、片方だけ直したときに上と下で食い違う
+    /// 確認が必要なタスクかどうかの判定。通知判定と整合させるため TaskStatus.needsPerson を使用する。
     private static func needsReview(_ task: CollectedTask) -> Bool {
         TaskStatus.needsPerson(status: task.status, seenAt: task.seenAt)
     }
 
-    /// 状態の並び順を優先度として使う。**ここに独自の順を作らない** —
-    /// 一覧の内訳 (TaskStatus.counts) と違う順に並ぶと、上と下で緊急度が食い違う。
-    ///
-    /// 見るのは attentionStatus。displayStatus はタブを開いた時点で完了を
-    /// seen に畳むので、それで並べると**開いた行だけが要確認の中で下がる**
+    /// 表示優先順位。TaskStatus.order の定義順と一致させる。
     private static func priority(_ task: CollectedTask) -> Int {
         TaskStatus.order.firstIndex(of: task.attentionStatus) ?? TaskStatus.order.count
     }
 
     /// エージェントごとの最新レートリミット情報を集約する。
-    ///
-    /// タスク一覧と台帳のグローバルキャッシュの両方から最新値を集め、
-    /// セッションが 0 件のときでも前回のレートリミットを常時表示できるようにする。
-    /// ただし、リセット予定時刻 (resetsAt) を過ぎた枠は**出さない** — 明けたあとの
-    /// 実際の使用率はエージェントが次に報告するまで分からないので、
-    /// 0% と言い切るのも古い値を出し続けるのも嘘になる。両方の枠が過ぎていれば
-    /// そのエージェントの行ごと消え、次の報告で戻る。
+    /// セッションが 0 件の場合でも直近のレートリミットを常時表示できるよう、タスクと台帳キャッシュの両方から集約する。
+    /// リセット予定時刻（resetsAt）を経過したウィンドウは、実際の消費状況が未確定なため非表示とする。
     public static func summarizedRateLimits(_ tasks: [CollectedTask],
                                            persisted: [String: AgentRateLimits] = LedgerStore.agentRateLimits(),
                                            now: Int = Int(Date().timeIntervalSince1970)) -> [AgentQuotaSummary] {

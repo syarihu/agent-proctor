@@ -3,22 +3,12 @@ import Model
 import RepositoryLedger
 import Utility
 
-/// hooks と statusline が stdin に流してくる JSON。
-///
-/// Claude Code・Antigravity・Codex のどれからも呼ばれるので、キーの名前は
-/// どの流儀も受ける。
+/// hooks と statusline から渡される JSON payload を解釈する。
+/// Claude Code、Antigravity、Codex の各フォーマットに対応する。
 public struct HookPayload {
-    /// ツールの引数から「何をしているか」を取るときに見る鍵。**上から順**。
-    ///
-    /// **Antigravity の引数は PascalCase。** 小文字だけ並べていると何ひとつ
-    /// 当たらず、最後の toolSummary ("File edit" など) に落ちて、どのファイルを
-    /// 触ったのか分からない行になる。
-    ///
-    /// **`path` は最後に置く。** Claude Code の Grep / Glob では `path` が
-    /// 「探す場所」で、載せたいのは `pattern` のほう。先に置くと検索語ではなく
-    /// ディレクトリ名が出て、ファイル名のように見えてしまう。
-    ///
-    /// 組み立て直さないのは、ここがツール1回ごとに通る道だから
+    /// ツールの引数から操作内容を抽出する際のキー一覧（優先度順）。
+    /// Antigravity は PascalCase のキーを使用するため、大文字小文字の両方を含める。
+    /// Claude Code の Grep/Glob 等で検索語（pattern）より先にディレクトリパス（path）が選ばれるのを防ぐため、path は末尾に配置する。
     private static let detailKeys = [
         "command", "CommandLine",
         "file_path", "AbsolutePath", "TargetFile",
@@ -27,53 +17,33 @@ public struct HookPayload {
         "description", "Description", "path", "toolSummary",
     ]
 
-    /// このうちファイルを指すもの
+    /// ファイルパスを表すキー一覧
     private static let pathKeys: Set<String> = [
         "file_path", "AbsolutePath", "TargetFile", "path",
     ]
 
-    /// 日付の読み取りは1つを使い回す。
-    /// `ISO8601DateFormatter` の生成はそれ自体が高く、ここは statusline から
-    /// 描画のたびに通る。使うのは読み取りだけなので、共有しても困らない
+    /// 日付フォーマッタ。statusline の描画頻度が高いため共有インスタンスを使用する。
     private static let iso8601 = ISO8601DateFormatter()
 
     private let box: [String: Any]
     private let antigravitySubagentInfo: AntigravityMetadataReader.SubagentInfo?
 
-    /// **ここでは何も読みに行かない。** 受け取った JSON を包むだけ。
-    ///
-    /// 親子の解決 (`resolvingAntigravitySubagent`) は台帳と transcript を読む
-    /// 仕事なので、いつ・どこで払うかを呼ぶ側が決められるように分けてある。
-    /// 生成のたびに黙ってディスクを触ると、`naming(agent:)` のような
-    /// 写しを作るだけの操作にまで I/O が付いて回る
+    /// 受け取った JSON 辞書をラップする（ディスクアクセスは行わない）。
     public init(_ box: [String: Any] = [:]) {
         self.box = box
         self.antigravitySubagentInfo = nil
     }
 
-    /// 解決済みの素性を引き継いで写しを作る。
+    /// 解決済みのサブエージェント情報を引き継いでインスタンスを複製する。
     private init(_ box: [String: Any],
                  antigravitySubagentInfo: AntigravityMetadataReader.SubagentInfo?) {
         self.box = box
         self.antigravitySubagentInfo = antigravitySubagentInfo
     }
 
-    /// Antigravity のサブエージェントかどうかを見極めた写しを返す。
-    ///
-    /// **ロックを取る前に呼ぶこと。** 親のログを読みに行くので、ロックの中で
-    /// やると台帳に触る全員を待たせる。
-    ///
-    /// **hooks から台帳を触る UseCase は、必ずここを通すこと。** 呼び忘れても
-    /// 型は何も言わないし動きもする (親子が結ばれず、子が独立した行として
-    /// 生えるだけ)。新しい入り口を足すときは忘れやすいので気を付ける。
-    /// いま通しているのは `RecordHookEvent.record` / `.countSubagent` と
-    /// `RecordSessionStats.record` の3つ。
-    ///
-    /// 手順は2段。まず台帳を見て、既にどこかの子として載っていればそれを使う。
-    /// **一度結び付いた親子は離さない**ためで、親のログを遡る手だけに頼ると、
-    /// 親が喋り続けて生成の記録が読み取り窓から流れ出た瞬間に見失い、
-    /// 走っている最中の子が独立したセッションとして生え直してしまう。
-    /// 台帳に載っていなければ、そこで初めて親のログを読みに行く。
+    /// Antigravity のサブエージェント関係を解決したインスタンスを返す。
+    /// 親セッションのログ読み取り（I/O）を伴うため、台帳ロックの外で呼び出す。
+    /// 既に台帳上で親子関係が記録されている場合はそれを再利用し、会話の進行によってログウィンドウから生成記録が外れた場合の見失いを防ぐ。
     public func resolvingAntigravitySubagent(in ledger: LedgerFile) -> HookPayload {
         guard agent == AgentKind.antigravity,
               let childID = rawSessionID, !childID.isEmpty else { return self }
@@ -82,7 +52,6 @@ public struct HookPayload {
             guard let parent = task.sessionId, parent != childID,
                   let run = (task.subagentRuns ?? []).first(where: { $0.id == childID })
             else { continue }
-            // 素性は最初に結んだときのものを引き継ぐ。生成の記録はもう読めない
             return HookPayload(box, antigravitySubagentInfo: .init(
                 parentConversationID: parent, role: run.type, prompt: run.label))
         }
@@ -98,7 +67,7 @@ public struct HookPayload {
                 conversationID: childID, activeParentIDs: candidates))
     }
 
-    /// 標準入力から読む。人が手で叩いたときは空になる。
+    /// 標準入力から JSON を読み取って HookPayload を生成する。tty 入力時は空を返す。
     public static func fromStandardInput() -> HookPayload {
         guard isatty(0) == 0 else { return HookPayload() }
         let data = FileHandle.standardInput.readDataToEndOfFile()
@@ -115,7 +84,7 @@ public struct HookPayload {
         return nil
     }
 
-    /// Claude の session_id と Antigravity の conversationId / conversation_id に対応する。
+    /// Claude の session_id および Antigravity の conversationId に対応する。
     /// Antigravity のサブエージェントの場合は親の conversationId を返す。
     public var sessionID: String? {
         if let subInfo = antigravitySubagentInfo {
@@ -124,7 +93,7 @@ public struct HookPayload {
         return rawSessionID
     }
 
-    /// 作業ディレクトリ。分からなければ今いる場所。
+    /// 作業ディレクトリパス。取得できない場合はカレントディレクトリ。
     public var workingDirectory: String {
         if let cwd = box["cwd"] as? String, !cwd.isEmpty { return cwd }
         if let paths = box["workspacePaths"] as? [String], let first = paths.first {
@@ -136,69 +105,38 @@ public struct HookPayload {
     public var message: String { box["message"] as? String ?? "" }
 
     /// 通知の種別 ("permission_prompt" / "idle_prompt" など)。
-    ///
-    /// **文言 (`message`) ではなくこちらで判じる。** あちらは版で変わるし、
-    /// 公式に決まっているのは種別のほうだけ。持っていない版もあるので、
-    /// 無いときの受け皿は呼ぶ側が用意する
     public var notificationType: String? {
         (box["notification_type"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 
-    /// どのフックが呼んだか ("UserPromptSubmit" / "Notification" / "Stop" など)。
-    ///
-    /// **Claude Code は全イベントに載せてくる。** agy / codex は送ってこないので
-    /// nil になる。だからこれを見て分ける処理は、必ず「載っていないほう」を
-    /// 今までどおりの道に落とすこと。
-    ///
-    /// 状態の文字列 (running / done) では足りない場面のために持つ。
-    /// あちらは呼ぶ側が hooks.json に書いた解釈で、同じ `running` が
-    /// UserPromptSubmit からも PostToolUse からも届く
+    /// フックのイベント名 ("UserPromptSubmit" / "Notification" / "Stop" など)。
     public var hookEventName: String? {
         (box["hook_event_name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 
-    /// ターンの始まりを告げるフックのイベント名。
-    ///
-    /// **この綴りのリテラルを持つのはここだけにする。** 乗っているのは2つ ——
-    /// 届いた payload を見分ける `isUserPromptSubmit` と、Claude Code へ返す
-    /// `hookSpecificOutput.hookEventName` (CLI 側の `namingHookJSON`)。
-    /// **後者は一致しないと黙って捨てられる**ので、打ち間違えても型は何も言わず、
-    /// 囁きが静かに届かなくなるだけになる。だから外にも見せる
+    /// ターン開始フックのイベント名定数
     public static let userPromptSubmitEvent = "UserPromptSubmit"
 
-    /// ターンの始まりを告げるフックか。**人が打ったとは限らない** ——
-    /// 誰が送ったかは `promptSource` を見る。
-    /// 本文の有無で見る `isTurnStart` と違い、こちらはイベント名だけを見る
-    /// (`hook_event_name` を送ってこない相手では常に false)
+    /// ターン開始イベント（UserPromptSubmit）かどうか。
     public var isUserPromptSubmit: Bool {
         hookEventName == HookPayload.userPromptSubmitEvent
     }
 
-    /// そのプロンプトを誰が送ってきたか (`source`)。
-    ///
-    /// Claude Code が載せてくるのは
-    /// `"user"` | `"sdk"` | `"system"` | `"loop_wakeup"` | `"schedule_wakeup"` |
-    /// `"poll_event"` のいずれか。**人が打ったのかどうかはここでしか分からない** ——
-    /// 子が帰ってきたときの task notification も、自動継続も、
-    /// 人が打ったのと同じ UserPromptSubmit として届く
+    /// プロンプトの送信元種別 ("user", "system", "loop_wakeup" など)。
     public var promptSource: String? {
         (box["source"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 
-    /// ターンの始まり (UserPromptSubmit)。人が何か打った直後だけ真になる。
-    /// 空のプロンプトは数えない (前のターンの活動を消してしまうため)
+    /// ユーザーによる入力でターンが開始されたかどうか
     public var isTurnStart: Bool {
         (box["prompt"] as? String).map { !$0.isEmpty } ?? false
     }
 
-    /// 人が明示的に付けた名前。端末のタブに付けたタイトルを hooks が乗せてくる。
+    /// ユーザーが明示的に設定した端末タブのタイトル。
     ///
-    /// エージェントが自分で付ける `session_name` とは別に持つ。あちらは会話から
-    /// 勝手に決まるもので、こちらは人が「この作業はこれ」と決めたもの。
-    /// 一覧に出すのは後者を先にしたいので、混ぜずに分けておく。
-    ///
-    /// **空文字は「消す」の意味**で、キーが無いのは「そのまま」。
-    /// タブのタイトルを外したときに、古い名前が残らないようにするため。
+    /// エージェントが自動生成する `session_name` より優先して表示するため分離して保持する。
+    /// 空文字はタイトルの削除を意味し、キー未存在（nil）は既存値の維持を表す
+    /// （タイトル解除時に古い名称が残存するのを防ぐ）。
     public var tabTitle: String? { box["tab_title"] as? String }
 
     /// いま触っているツールの表示ラベル。PostToolUse の payload から組む。
@@ -242,11 +180,8 @@ public struct HookPayload {
         return HookPayload.condensed(detail.map { "\(name): \($0)" } ?? name)
     }
 
-    /// サブエージェントの個体識別子 (`agent_id` または Antigravity の conversationId)。
-    ///
-    /// **子の中で発火したフックにだけ付く。** つまりこれが入っているイベントは
-    /// 親の手元で起きたことではないので、親の activity を塗り替えてはいけない。
-    /// SubagentStart / SubagentStop でも同じ値が来るので、始まりと終わりが結べる
+    /// サブエージェントの個体識別子（agent_id または Antigravity の conversationId）。
+    /// 子エージェント内で発火したイベントにのみ付与される（親の activity を上書きしないための識別に利用）。
     public var subagentID: String? {
         if antigravitySubagentInfo != nil {
             return rawSessionID
@@ -254,7 +189,7 @@ public struct HookPayload {
         return (box["agent_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 
-    /// サブエージェントの種別 (`agent_type`)。"Explore" や独自エージェント名、Antigravity の Role
+    /// サブエージェントの種別 (agent_type、Role名等)
     public var subagentType: String? {
         if let subInfo = antigravitySubagentInfo {
             return subInfo.role ?? subInfo.typeName
@@ -262,25 +197,18 @@ public struct HookPayload {
         return (box["agent_type"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 
-    /// いま起動されたサブエージェントの素性。
-    ///
-    /// Task/Agent ツールの `PostToolUse` の `tool_response` から取る。
-    /// **`agent_id` と description が同じ payload に入っている唯一の場所**で、
-    /// ここを読めば「どの子に何をさせたか」を余計な突き合わせなしに結べる。
-    /// 非同期で起動される (`async_launched`) ので、子が終わるのを待たずに届く。
+    /// 起動されたサブエージェントの情報（ID、種別、プロンプト/説明）。
+    /// Task/Agent ツールの PostToolUse の tool_response から抽出する。
     public var launchedSubagent: (id: String, type: String?, label: String?)? {
         if let response = box["tool_response"] as? [String: Any],
            let id = response["agentId"] as? String, !id.isEmpty {
             let label = (response["description"] as? String).flatMap {
                 $0.isEmpty ? nil : HookPayload.condensed($0)
             }
-            // 種別は SubagentStart でも届くが、そちらを繋いでいない場合の受け皿として
-            // ツールの引数からも拾っておく
             let type = ((box["tool_input"] as? [String: Any])?["subagent_type"] as? String)
                 .flatMap { $0.isEmpty ? nil : $0 }
             return (id, type, label)
         }
-        // Antigravity のサブエージェントの場合、自身が起動された時の prompt をラベルとして載せる
         if let subInfo = antigravitySubagentInfo, let id = rawSessionID {
             let label = subInfo.prompt.flatMap { HookPayload.condensed($0) }
             return (id, subInfo.role ?? subInfo.typeName, label)
@@ -288,11 +216,7 @@ public struct HookPayload {
         return nil
     }
 
-    /// ツールの引数から1つの文字列を取り出す。
-    ///
-    /// **command は文字列とは限らない。** codex のシェルは `["bash", "-lc", "…"]` の
-    /// ように配列で渡してくるので、文字列だけを見ていると
-    /// 「Bash」とだけ出て何を叩いているのか分からない行になる
+    /// ツールの引数から単一の文字列を抽出する（配列形式のコマンドにも対応）。
     static func plainText(_ value: Any?) -> String? {
         if let text = value as? String { return text.isEmpty ? nil : text }
         if let parts = value as? [Any] {
@@ -302,23 +226,13 @@ public struct HookPayload {
         return nil
     }
 
-    /// 台帳に載せる前に1行へ均す。command にはヒアドキュメントが丸ごと
-    /// 入ってくることがあり、そのまま持つと台帳が肥大化する
+    /// 文字列内の連続空白を単一スペースに平坦化し、上限長に切り詰める。
     static func condensed(_ text: String, limit: Int = 80) -> String {
         let flat = text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
         return flat.count <= limit ? flat : String(flat.prefix(limit))
     }
 
-    /// 終わったターンが最後に言ったこと。
-    ///
-    /// Claude Code の `Stop` / `StopFailure` / `SubagentStop` に入っている。
-    /// **transcript を読みに行かずに済むのがここを使う理由**で、Claude Code 自身が
-    /// そう言っている ("Avoids the need to read and parse the transcript file")。
-    /// 持ってこないエージェントでは nil のまま通るので、繋ぎ方は変えなくていい。
-    ///
-    /// 載せるのは地の文だけを1行に均したもの。エージェントの返事は markdown なので、
-    /// そのまま持つと `**` や `##` が記号のまま一覧に出る。
-    /// 長さは activity より緩くしてある (あちらはツール名、こちらは文)
+    /// ターン終了時のアシスタントの最終発言テキスト（地の文のみ抽出）。
     public var lastMessage: String? {
         guard let text = rawLastMessage else { return nil }
         let prose = HookPayload.plainProse(text)
@@ -326,18 +240,10 @@ public struct HookPayload {
         return HookPayload.condensed(prose, limit: 120)
     }
 
-    /// 締めの文が**本文付きで届いたか**。
-    ///
-    /// **`lastMessage` が nil になる理由は2つある。** 鍵ごと来ていないのか、
-    /// 来てはいるが markdown の骨組みだけで地の文が残らなかったのか。
-    /// 前者は「このターンが何を言ったか分からない」で、後者は「載せる文が無い」と
-    /// 分かっている。台帳に載っている前のターンの締めを残すか消すかがそこで変わる
-    /// (`RecordHookEvent.resolveSummary`)
+    /// 最終発言テキストが payload に含まれていたかどうか。
+    /// 取得結果が空文字や markdown 除去で nil になった場合と、キー自体が存在しなかった場合を区別するために使用する。
     public var carriesLastMessage: Bool { rawLastMessage != nil }
 
-    /// 均す前の締めの文。2つの鍵は同じものの別名なので、先に見つかったほうを使う。
-    /// **空文字は「無い」に寄せる。** 何も言わずに終わったターンを
-    /// 「載せる文が無い」と扱うと、鍵を空で埋めてくるエージェントで締めが消える
     private var rawLastMessage: String? {
         for key in ["last_assistant_message", "lastAssistantMessage"] {
             guard let text = box[key] as? String,
@@ -347,22 +253,12 @@ public struct HookPayload {
         return nil
     }
 
-    /// markdown を人の文に均す。**要るのは地の文だけ。**
-    ///
-    /// 見出し・箇条書き・表・引用・コードブロックは文章の骨組みで、1行に潰すと
-    /// 記号だけが残って読めなくなる (「## 結論 - A - B」)。行ごと落とす。
-    /// 強調とコード記法は文の途中に出るので、記号だけ外して中身は残す。
+    /// Markdown テキストから見出し、箇条書き、コードブロック等を除去して地の文のみを抽出する。
     static func plainProse(_ text: String) -> String {
         var kept: [String] = []
-        // **コードは開きと閉じで挟まれるので、1行ずつの判定では捨てられない。**
-        // フェンスの行だけを落とすと中身がそのまま残り、短い返事では
-        // 2行目がまるごとコードで埋まる ("直したのだ。 let policy = …")
         var insideFence = false
         for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = raw.trimmingCharacters(in: .whitespaces)
-            // 開きと閉じは同じ形なので、出会うたびに裏返す。
-            // 閉じないまま終わる返事では、そこから先が丸ごと落ちる
-            // (中途半端に開いたコードを地の文として読ませるよりはよい)
             if line.hasPrefix("```") {
                 insideFence.toggle()
                 continue
@@ -380,11 +276,7 @@ public struct HookPayload {
             .trimmingCharacters(in: .whitespaces)
     }
 
-    /// 箇条書きの1項目か。記号のもの (`-` `*` `+`) と番号付き (`1.` `1)`) を見る。
-    ///
-    /// **どれも後ろの空白まで見る。** `-` だけで判じると `**結論**` のように
-    /// 強調で書き出した段落を巻き添えにするし、数字だけで判じると
-    /// 「1.5 倍になった」のような文が消える (あちらは `.` の次が空白ではない)
+    /// 箇条書きの行（記号または番号付きリスト）かどうかを判定する。
     static func isListItem(_ line: String) -> Bool {
         for marker in ["- ", "* ", "+ "] where line.hasPrefix(marker) { return true }
         let digits = line.prefix(while: \.isNumber)
@@ -393,12 +285,7 @@ public struct HookPayload {
         return rest.hasPrefix(". ") || rest.hasPrefix(") ")
     }
 
-    /// セッションを動かしているエージェント ("claude" / "agy" / "codex")。
-    ///
-    /// **Codex は Claude Code とほとんど同じ形の payload を送ってくる**
-    /// (`session_id` も `cwd` も `tool_name` も同じ名前)。キーの有無では
-    /// 見分けが付かないので、記録の置き場所で判じる。それも当てにならない
-    /// 場合に備えて、hooks 側から `--agent=codex` で名乗れるようにしてある
+    /// エージェント種別（"claude" / "agy" / "codex"）を判定する。
     public var agent: String? {
         if let explicit = box["agent"] as? String, !explicit.isEmpty { return explicit }
         if box["conversationId"] != nil || box["conversation_id"] != nil
@@ -410,11 +297,7 @@ public struct HookPayload {
         return nil
     }
 
-    /// transcript が codex の rollout かどうか。
-    ///
-    /// codex は `~/.codex/sessions/<年>/<月>/<日>/rollout-<日時>-<id>.jsonl` に
-    /// 会話を積む。Claude Code のほうは `~/.claude/projects/` の下なので、
-    /// ファイル名の頭 (`rollout-`) だけで取り違えずに分けられる
+    /// transcript ファイル名から Codex セッションかどうかを判定する
     private var isCodexTranscript: Bool {
         for key in ["transcript_path", "agent_transcript_path"] {
             guard let path = box[key] as? String, !path.isEmpty else { continue }
@@ -423,21 +306,15 @@ public struct HookPayload {
         return false
     }
 
-    /// hooks を呼ぶ側から名乗られたエージェントを混ぜた payload を返す。
-    ///
-    /// 元の中身は触らない。`agent` は payload に無いものを外から足す唯一の項目なので、
-    /// 読み出し側 (`agent` / `agentKey`) がどちらの経路も同じように扱えるよう、
-    /// 箱に入れた形に揃えてから渡す
+    /// 指定されたエージェント名を付与した複製インスタンスを生成する
     public func naming(agent name: String?) -> HookPayload {
         guard let name, !name.isEmpty else { return self }
         var merged = box
         merged["agent"] = name
-        // 解決済みの素性は持ち越す。作り直すたびに読み直していては、
-        // 名乗りを足すだけの操作にディスクの読み出しが付いて回る
         return HookPayload(merged, antigravitySubagentInfo: antigravitySubagentInfo)
     }
 
-    /// アカウント名 ("work", "personal" など)。
+    /// アカウント名 ("work", "personal" など)
     public var account: String? {
         for key in ["account", "account_name", "profile", "org"] {
             if let value = box[key] as? String {
@@ -470,25 +347,18 @@ public struct HookPayload {
 
     public var sessionName: String? {
         for key in ["session_name", "title", "session_title", "preview"] {
-            // **`Notification` の `title` は通知の見出しであってセッション名ではない。**
-            // 拾うと「Claude Code」や権限確認の文言がそのまま行の名前として居座り、
-            // 次に statusline が来るまで直らない。
-            //
-            // `hook_event_name` を送ってこないエージェント (agy / codex) は
-            // ここを素通りする。あちらの `title` は本当にセッション名なので、
-            // 一律に外してはいけない
+            // Notification イベントの title は通知メッセージの見出しのためセッション名として採用しない
             if key == "title", hookEventName == "Notification" { continue }
             if let value = box[key] as? String {
                 let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty { return trimmed }
             }
         }
-        // Antigravity は payload にタイトルが入ってこないため、DB/アーティファクト/プロンプトから解決する
+        // Antigravity は payload にタイトルが含まれないため、メタデータから解決する
         if agent == AgentKind.antigravity, let session = sessionID {
             return AntigravityMetadataReader.resolveTitle(conversationID: session)
         }
-        // Codex も同じで、名前は payload に載ってこない。あちらが自分で
-        // 持っているセッション台帳 (threads 表) から引く
+        // Codex はセッション履歴 DB からタイトルを解決する
         if agent == AgentKind.codex, let session = sessionID {
             return CodexMetadataReader.resolveTitle(sessionID: session)
         }

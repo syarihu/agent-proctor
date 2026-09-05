@@ -2,22 +2,11 @@ import Foundation
 import Model
 import RepositoryGit
 
-/// 未コミットの変更を数える。**数え直すか、覚えた答えを返すかを決めるのはここ**。
-///
-/// 覚えるのは git の生の答えで、**潰し方は呼ぶ側に任せる**。同じ数字を欲しがる側が
-/// 2つあり、聞けなかったときの扱いが違うため。`CollectTasks.diff(for:)` は
-/// 行数と未追跡を**別々に** 0 へ潰し (コミットの無いリポジトリでは
-/// `diff HEAD` だけが失敗するので、片方を巻き込むと未追跡の数まで消える)、
-/// `CollectWorktrees.diff(at:)` は片方でも欠けたら nil にする
-/// (半端な数字は「消してよい」の判断材料にならない)。
-/// ここで解釈してしまうと、どちらかの意味に寄せた時点でもう片方が壊れる
-/// (PR #15 で差分の使い回しが見送られたのはこれが理由)。
-///
-/// 覚えているのはプロセスの中だけなので、**一回きりで終わる CLI では
-/// 毎回が「最初の1回」**になる (`ResolveRepoOrigin` と同じ性質で、
-/// アプリのように生き続けるプロセスでだけ効く)。
+/// 未コミットの変更差分（行数、未追跡ファイル数）のキャッシュを管理する。
+/// 計測結果の生データを保持し、欠損値の扱い（0 埋めするか nil 扱いにするか）は呼び出し元の用途
+/// （タスク集計か削除判定用 worktree 集計か）に応じて呼び出し元に委任する。
 public enum CountChanges {
-    /// git がそのまま答えた形。nil は「聞けなかった」
+    /// git の計測結果。取得失敗時は各フィールドが nil となる。
     public struct Counted {
         public let lines: (added: Int, removed: Int, binary: Int, files: Int)?
         public let untracked: Int?
@@ -31,14 +20,11 @@ public enum CountChanges {
         }
         lock.unlock()
 
-        // git を呼んでいる間はロックを離す。ここを抱えたままにすると、
-        // 一覧を数え直すときに worktree の数だけ順番待ちが起きる
-        // (`ResolveRepoOrigin` と同じ)
+        // 並行実行時のブロッキングを防ぐため、git 呼び出し中はロックを解放する
         let counted = Counted(lines: GitClient.changedLines(worktree, since: "HEAD"),
                               untracked: GitClient.untrackedCount(worktree))
 
-        // **聞けなかったことは覚えない。** 覚えると、git が一度答えなかっただけで
-        // 次にそこが編集されるまで欠けた答えが出続ける
+        // 一時的なコマンド失敗がキャッシュとして永続化するのを防ぐため、両方成功した場合のみキャッシュする
         guard counted.lines != nil, counted.untracked != nil else { return counted }
         lock.lock()
         cache[worktree] = counted
@@ -46,8 +32,7 @@ public enum CountChanges {
         return counted
     }
 
-    /// ここが変わったので次は数え直す。呼ぶ側 (アプリ) が `WorktreeWatcher` から
-    /// 受け取った場所をそのまま渡す
+    /// 指定された worktree のキャッシュを無効化する（WorktreeWatcher からの変更通知時に呼び出し）
     public static func invalidate(_ worktrees: Set<String>) {
         guard !worktrees.isEmpty else { return }
         lock.lock()
@@ -55,9 +40,7 @@ public enum CountChanges {
         lock.unlock()
     }
 
-    /// 覚えているものを全部捨てる。
-    /// **見張りの取りこぼし (`WorktreeWatcher`) から戻るための道**なので、
-    /// 呼ぶ側はときどきここを通すこと
+    /// 全キャッシュを破棄する（監視イベントの取りこぼし対策としての定期クリア）
     public static func forgetAll() {
         lock.lock()
         cache.removeAll()

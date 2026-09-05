@@ -2,20 +2,12 @@ import Foundation
 import Model
 import RepositoryLedger
 
-/// statusline から届く情報を台帳に写す。
-///
-/// セッション名・モデル・コンテキスト使用率は hooks では取れず、
-/// statusline にしか来ない。一覧に出したいので横流ししてもらう。
+/// statusline から届くセッション統計（モデル名、コンテキスト使用率、レートリミット等）を台帳に反映する。
 public enum RecordSessionStats {
-    /// statusline は描画のたびに呼ばれるため、内容が変わらないときは書き込まない。
-    /// 書くと台帳の更新時刻が動いてサイドバーが無駄に数え直す。
+    /// statusline は描画頻度が高いため、内容に変更がない場合はファイル書き込みをスキップする。
     public static func record(_ raw: HookPayload) throws {
-        // 親子の解決は台帳と親のログを読む。ロックを取る前に済ませる。
-        //
-        // **台帳を読むのはこの1回だけにする。** ここは statusline が描画のたびに
-        // 呼ぶ一番熱い経路で、LedgerStore.tasks() も agentRateLimits() も
-        // 内部でそれぞれ read() を呼ぶ。素直に並べると同じファイルを
-        // 3回開いて3回 JSON を解くことになる
+        // 親子関係の解決（ログ読み取り）を伴うため、台帳読み込みと解決はロック外で行う。
+        // ファイルオープンと JSON パースの回数を最小化するため台帳読み込みは 1 回にまとめる。
         let snapshot = LedgerStore.read()
         let payload = raw.resolvingAntigravitySubagent(in: snapshot)
         guard let session = payload.sessionID else { return }
