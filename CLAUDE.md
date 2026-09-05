@@ -89,6 +89,9 @@ scripts/baseline.sh after    # 変更後
 diff -u /tmp/proctor-baseline/{before,after}.txt
 ```
 
+文言や手引き・ドキュメントを触ったときは `scripts/check-l10n.sh` で
+英語（正本）と日本語（訳）のリソース整合性を確かめる。
+
 アプリの見た目を変えたときは `scripts/switch-cli.sh dev` で入れ直して実機で確かめ、
 終わったら `scripts/switch-cli.sh brew` で戻す。
 
