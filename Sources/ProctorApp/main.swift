@@ -7,7 +7,6 @@ import FeatureSettings
 import FeatureSidebar
 import ItermBridge
 import Model
-import ProctorKit
 import Resources
 import SwiftUI
 import UseCaseNotice

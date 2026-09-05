@@ -1,7 +1,8 @@
 import AppKit
 import FeatureSettings
 import Foundation
-import ProctorKit
+import Model
+import Resources
 import UserNotifications
 
 /// macOS の通知センターへの窓口。

@@ -1,7 +1,9 @@
 import Foundation
-import ProctorKit
+import Model
+import Resources
+import Utility
 
-// ヘルプもシステムの言語で出す。訳文は ProctorKit の Localizable.strings
+// ヘルプもシステムの言語で出す。訳文は Resources の Localizable.strings
 let usage = Localized.text("cli.usage")
 
 func prettyJSON<T: Encodable>(_ value: T) throws -> String {

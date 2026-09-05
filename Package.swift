@@ -126,21 +126,12 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]),
 
         // -------------------------------------------------------------
-        // レガシーブリッジ (移行期間中に順次切り出しを進める)
+        // エントリポイント (CLI & アプリ)
         // -------------------------------------------------------------
-        .target(
-            name: "ProctorKit",
-            dependencies: [
-                "Model", "Utility", "Resources",
-                "RepositoryLedger", "RepositoryGit", "RepositoryGitHub",
-                "UseCaseTask", "UseCaseSession", "UseCaseWorktree", "UseCaseNotice"
-            ],
-            path: "Sources/ProctorKit",
-            swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(
             name: "proctor",
             dependencies: [
-                "ProctorKit", "Model", "Utility", "Resources",
+                "Model", "Utility", "Resources",
                 "RepositoryLedger", "RepositoryGit", "RepositoryGitHub",
                 "UseCaseTask", "UseCaseSession", "UseCaseWorktree", "UseCaseNotice"
             ],
@@ -149,7 +140,7 @@ let package = Package(
         .executableTarget(
             name: "ProctorApp",
             dependencies: [
-                "ProctorKit", "Model", "Utility", "Resources",
+                "Model", "Utility", "Resources",
                 "RepositoryLedger", "RepositoryGit", "RepositoryGitHub",
                 "UseCaseTask", "UseCaseSession", "UseCaseWorktree", "UseCaseNotice",
                 "DesignSystem", "ItermBridge", "AppState",

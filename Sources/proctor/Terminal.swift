@@ -1,8 +1,9 @@
 import Foundation
-import ProctorKit
+import Model
+import Resources
 
 /// 端末に出すための道具。色も桁揃えも CLI だけの関心なので、
-/// 共有の ProctorKit には置かない (アプリは SwiftUI で別に色を持っている)。
+/// 共有層には置かない (アプリは SwiftUI で別に色を持っている)。
 enum Terminal {
     /// 端末に出すときだけ色を付ける。パイプやファイルに流すときは素の文字にする。
     static func color(_ code: String, _ text: String) -> String {
@@ -14,7 +15,7 @@ enum Terminal {
         FileHandle.standardError.write(Data((message + "\n").utf8))
     }
 
-    /// 状態ごとの ANSI 色。記号とラベルは ProctorKit の TaskStatus が持つ
+    /// 状態ごとの ANSI 色。記号とラベルは Model の TaskStatus が持つ
     static let statusColors: [String: String] = [
         TaskStatus.idle: "2",
         TaskStatus.running: "36",

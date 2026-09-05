@@ -7,7 +7,7 @@ import Model
 /// 絵文字は字幅も色も OS 任せで、記号 (▶) と混ざると字面が揃わないうえ、
 /// 数が変わるたびにバーの幅が動いて落ち着かない。
 ///
-/// 状態の語彙そのものは ProctorKit の TaskStatus が正本で、
+/// 状態の語彙そのものは Model の TaskStatus が正本で、
 /// ここが決めるのは「メニューバーではどう描くか」だけ。
 public enum StatusGlyph {
     /// 記号と数字の太さ。
