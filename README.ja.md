@@ -238,16 +238,16 @@ proctor は5分ごとに覚えている数字を全部捨てて数え直しま�
 `proctor ls` と `proctor worktree ls` はこの設定を見ません。いつでも数えます。
 
 ## 設計
- 
+
 ロジックを CLI とアプリの両方から使えるように、階層型 Swift Package Manager ターゲットに分割しています。表示の都合をドメイン・ロジック層に持ち込まないのが境界の引き方で、たとえば端末の ANSI 色は CLI 側、SwiftUI の色は `DesignSystem` 側がそれぞれ持ちます。Model 層が知っているのは「どんな状態があり、どんな記号と名前で呼ぶか」までです。
- 
+
 | 層 | ターゲット | 置くもの |
 | --- | --- | --- |
 | 基盤 | `Model`, `Utility`, `Resources` | データと語彙、共通処理、文言リソース。I/O や業務判断を持ちません |
 | リポジトリ | `RepositoryLedger`, `RepositoryGit`, `RepositoryGitHub` | 外の世界との出入り口。ここだけが台帳・git・GitHub・環境を触ります |
 | ユースケース | `UseCaseTask`, `UseCaseSession`, `UseCaseWorktree`, `UseCaseNotice` | やりたいこと1つに1つ。判断はすべてここが持ちます |
 | UI / 機能 | `DesignSystem`, `AppState`, `FeatureSettings`, `FeatureMenuBar`, `FeatureSidebar` | デザイン定義、共有状態、各種画面・コンポーネント |
- 
+
 `Localized`（人に見せる言葉）は `Resources` に置いています。言葉はどの層からも要るもので、引くだけでは何も決めないためです。実行ターゲット（CLI の `proctor` とアプリの `ProctorApp`）は、ユースケースやフィーチャーを呼んで、返ってきたものを整えるだけです。
 
 | ファイル | 役割 |

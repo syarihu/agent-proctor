@@ -12,7 +12,6 @@ public enum Localized {
     /// SwiftPM が作るリソースバンドルの名前 (パッケージ名_ターゲット名)
     private static let bundleNames = [
         "proctor_Resources.bundle",
-        "proctor_ProctorKit.bundle",
     ]
 
     /// 訳文の入った .lproj を1つだけ選んで持っておく。

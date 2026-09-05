@@ -258,16 +258,16 @@ the least reliable half of the answer on screen.
 count.
 
 ## Design
- 
+
 Proctor is split into layered Swift Package Manager targets so that the logic serves both the CLI and the app. The boundary rule is that presentation concerns never enter the domain and logic layers: terminal ANSI colors live in the CLI and SwiftUI colors in `DesignSystem`, and all the model layer knows is which statuses exist and what to call them.
- 
+
 | Layer | Target | What goes in it |
 | --- | --- | --- |
 | Core | `Model`, `Utility`, `Resources` | Data, vocabulary, helpers, and localized strings. No business logic |
 | Repository | `RepositoryLedger`, `RepositoryGit`, `RepositoryGitHub` | The only doors to the outside: the ledger, git, GitHub, and the environment |
 | UseCase | `UseCaseTask`, `UseCaseSession`, `UseCaseWorktree`, `UseCaseNotice` | One per action. Every decision lives here |
 | UI / Features | `DesignSystem`, `AppState`, `FeatureSettings`, `FeatureMenuBar`, `FeatureSidebar` | UI components, shared app state, and views |
- 
+
 `Localized` sits in `Resources`, because every layer needs words and looking one up decides nothing. The executables — `proctor` for the CLI, `ProctorApp` for the app — compose use cases and features.
 
 | File | Role |
