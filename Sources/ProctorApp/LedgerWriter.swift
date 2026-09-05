@@ -1,28 +1,19 @@
 import Foundation
 
-/// アプリから台帳を書くときの通り道。書く側が1つずつ持つ。
-///
-/// 台帳の書き込みは他のプロセス (hooks) とロックを奪い合うので、**待つ場所を
-/// 選ぶ必要がある。** メインスレッドで待てばUIが固まるが、`Task.detached` も
-/// 答えにならない。`flock` はスレッドを丸ごと止めるので、コア数ぶんしか
-/// スレッドの無い協調プールで待つと他の仕事の前進まで妨げる
-/// (同じプロセスには git を起こす数え直しも居る)。
-///
-/// **走っている最中の依頼は捨てる。** 見張りはタイマーで回っているので、
-/// 前の書き込みが詰まっている間にも次の番が来る。積めばロック待ちの列が
-/// 伸びる一方だが、どれも「台帳を今の姿に合わせる」仕事なので、
-/// 見送っても次のタイマーが拾う。
+/// アプリ側からの台帳書き込みを直列化するユーティリティ。
+/// flock による UI ブロックおよび Swift Concurrency 協調スレッドプールの枯渇を防ぐため、専用のシリアル DispatchQueue で実行する。
+/// 実行中の重複リクエストは破棄し、ロック待ちキューの肥大化を防ぐ。
 @MainActor
 final class LedgerWriter {
     private static let queue = DispatchQueue(
         label: "net.syarihu.proctor.ledger-write", qos: .utility)
 
-    /// いま流している最中か。メインスレッドからしか触らないので鍵は要らない
+    /// 処理実行中フラグ（MainActor で管理）
     private var inFlight = false
 
     /// - Parameters:
-    ///   - write: 台帳を書く。書き換えたら true を返す。**メイン以外で走る**
-    ///   - changed: 書き換えたときにメインスレッドで呼ばれる
+    ///   - write: 台帳書き込み処理。変更があった場合は true を返す（専用キュー上で実行される）
+    ///   - changed: 書き換え完了時にメインスレッドで呼ばれるコールバック
     func submit(_ write: @escaping @Sendable () -> Bool,
                 changed: @escaping @MainActor () -> Void) {
         guard !inFlight else { return }
