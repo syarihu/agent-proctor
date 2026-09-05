@@ -2,56 +2,31 @@ import Foundation
 import AppKit
 import Resources
 
-/// iTerm2 との連携。
+/// iTerm2 との連携層。
 ///
-/// もともとは iTerm2 に同梱された Python から Python API を叩いていたが、
-/// アプリに切り出すにあたって AppleScript に置き換えた。必要な操作は
-/// すべて iTerm2 の AppleScript 辞書にある。
-///
-///   - `id of session` は PTYSession の guid で、シェルの ITERM_SESSION_ID の
-///     ":" 以降と同じ値。だから台帳の itermSession とそのまま突き合わせられる
-///   - `select` でタブにフォーカスできる
-///   - `create tab with default profile command "..."` で新しいタブに命令を渡せる
-///
-/// NSAppleScript はスレッド安全ではないので、必ずメインスレッドから呼ぶ。
+/// iTerm2 の AppleScript を使用してセッションの識別・タブ選択・新規タブ生成を行う。
+/// - `id of session` は PTYSession の GUID であり、環境変数 `ITERM_SESSION_ID` の値（コロン以降）と対応する。
+/// - NSAppleScript はスレッドセーフではないため、すべての操作をメインスレッド（@MainActor）から実行する。
 @MainActor
 public enum ItermBridge {
     // AutomationPermission がメインスレッド外から読むので隔離から外す。
     // 変わらない文字列なので、どのスレッドから読んでも困らない
     nonisolated public static let bundleID = "com.googlecode.iterm2"
 
-    /// オートメーションの許可が下りていないときに一度だけ知らせるための記録。
-    /// 毎回出すと、許可しないと決めた人にとって邪魔にしかならない
+    /// オートメーション権限未許可を通知済みかどうかのフラグ（警告の重複表示防止用）
     private static var permissionWarned = false
 
-    /// 許可の答えが出ているか。**出るまで Apple Event を1つも投げない。**
-    ///
-    /// まだ誰も決めていないうちに投げると、macOS が同意ダイアログを出し、
-    /// **答えるまで送信が戻らない。** 投げているのはメインスレッドなので、
-    /// その間はランループが回らず、タイマーが1つも動かない。サイドバーも
-    /// メニューバーの項目も描かれないまま、画面には何も出ない。
-    /// 戻るのは、人が答えたときか、Apple Event が時間切れになるか、
-    /// iTerm2 が居なくなったときのいずれかになる。
-    ///
-    /// **これは一度きりの通り道ではない。** 許可はバンドルIDと署名の中身に
-    /// 紐づいていて、scripts/sign-app.sh は証明書が無ければアドホック署名に
-    /// 落ちる。署名の中身は組み立てるたびに変わるので、入れ直すたびに
-    /// 未決へ戻り、そのたびにここを通る
+    /// 権限状態が確定しているか。
+    /// 未決定のままメインスレッドから同期で Apple Event を送信するとダイアログ待ちで
+    /// UI とタイマーが停止するため、確定するまで送信を抑止する。
     private static var permissionSettled = false
-    /// いま尋ねている最中の問い合わせ。
-    ///
-    /// **旗ではなく問い合わせそのものを持つ。** 「尋ね中だから」と素通りさせると、
-    /// 答えを待ったつもりの呼び出しが待たずに先へ進んでしまう。持っていれば、
-    /// あとから来た者はその答えに相乗りできる
+    /// 実行中の権限問い合わせタスク（重複要求の相乗り用）
     private static var settling: Task<Void, Never>?
 
-    /// 許可の答えが出るまで待つ。もう出ているなら何もしない。
-    ///
-    /// 尋ねる往復は AutomationPermission がメインスレッドの外へ逃がすので、
-    /// 人が答えるまで待たされるのは向こうのスレッドだけで済む。
+    /// 権限状態が確定するまで待機する。確定済みの場合は即座に戻る。
     public static func settlePermission() async {
         guard !permissionSettled else { return }
-        // 先客が居るなら、その答えを一緒に待つ。二重には尋ねない
+        // 先行タスクがある場合はその完了を待つ
         if let settling {
             await settling.value
             return
@@ -59,22 +34,17 @@ public enum ItermBridge {
         let asking = Task {
             switch await AutomationPermission.request() {
             case .granted, .denied:
-                // 断られたのも「出た答え」。以後の送信はその場で
-                // errAEEventNotPermitted が返るだけで、待たされることはない
+                // 拒否された場合も以降は待機せず即座に errAEEventNotPermitted が返るため確定扱いとする
                 permissionSettled = true
             case .unknown:
-                // どちらとも言えない。**それでも通す。** 待たされる形ではないし、
-                // ここで止め続けると iTerm2 に何も言えないまま動かなくなる。
-                // 何が起きたかは送った先の失敗として出る
+                // 不明な場合も待機は発生しないため確定扱いとする
                 permissionSettled = true
             case .undecided, .targetNotRunning:
-                // まだ答えが無い。**ここで通すと、次の送信でまたダイアログ待ちに
-                // なってメインスレッドが止まる。** 尋ね直せる機会を待つ
+                // 未決定または未起動時は次回ダイアログ待ちになるリスクがあるため未確定のまま維持する
                 permissionSettled = false
             }
         }
-        // **待ちに入る前に預ける。** 待ってから預けると、その間に来た呼び出しが
-        // 先客を見つけられず、同じ問い合わせをもう一度立ててしまう
+        // 重複問い合わせを防ぐため、待機前に保持する
         settling = asking
         await asking.value
         settling = nil
@@ -119,39 +89,18 @@ public enum ItermBridge {
     /// Apple Event の往復を2つに増やしたくない。path は shell integration が
     /// 無くても iTerm2 が追っている。
     ///
-    /// **タブ番号は毎回数え直すしかない。** iTerm2 は位置を答えてくれない。
+    /// タブ番号の取得と最適化方針:
+    /// iTerm2 の AppleScript では `index of tab` は未実装でエラー（-1728）となり、
+    /// `tab.id` や `ITERM_SESSION_ID` は作成順序の固定値で並び順の位置を表さないため、
+    /// `tabs of window` の階層から毎回算出して特定する。
     ///
-    ///   - `index of tab` は辞書 (sdef) に載っているのに実装されておらず、
-    ///     引くと -1728 で落ちる
-    ///   - セッション変数の `tab.id` はタブに貼り付いた通し番号で、位置ではない。
-    ///     真ん中のタブを閉じても後ろのタブの `tab.id` は変わらない
-    ///   - `ITERM_SESSION_ID` の `w0t2p0` は作られたときの位置のまま固まる
+    /// また、AppleScript 内でプロパティ参照ごとに発生する Apple Event（1件あたり約17ms）による
+    /// メインスレッドのブロックを最小限にするため、以下の最適化を行っている:
+    /// - `id of sessions of tabs of windows` で全階層を一括取得し、往復回数を最小化する。
+    /// - 中間変数への代入を避け、直接プロパティを取得して不要なイベント送信を防ぐ。
+    /// - `tell <指定子> to ...` で直接プロパティにアクセスする。
     ///
-    /// 残るのは `tabs of window` を数えながら回す道だけで、これは開く・閉じる・
-    /// 並べ替えのたびに変わる。だから覚え込まず、毎周期そのまま取り直す。
-    ///
-    /// **書き方でイベントの数がまるごと変わる。** `tell application` の中は
-    /// プロパティを1つ引くたびに Apple Event が飛び、1件おおよそ 17ms 掛かる
-    /// (AEDebugSends で数え、NSDate で計った実測値)。ここは1秒ごとに走るうえ、
-    /// NSAppleScript はメインスレッドを塞ぐので、件数がそのままサイドバーの
-    /// 引っかかりになる。守っているのは次の3つ。
-    ///
-    ///   - **`id of sessions of tabs of windows` で全ウィンドウを一発で取る。**
-    ///     ウィンドウ → タブ → セッションの入れ子が保たれたまま1件で返るので、
-    ///     並び順から番号を数えられる。ウィンドウごとに引くと
-    ///     `count of windows` + ウィンドウ数だけ増え、セッションごとに `id of s` を
-    ///     引くとタブ7つで 400ms に膨らむ
-    ///   - **中間変数に受けない。** `set s to current session of …` は
-    ///     その場で1件飛ぶ。`id of current session of …` と続けて書けば1件で済む
-    ///   - **`tell <指定子> to …` は指定子のまま渡る。** path を引くのに
-    ///     セッションを先に解決する必要はない
-    ///
-    /// この形で 4 件・67ms。番号を足す前 (4 件・66ms) と変わらない。
-    ///
-    /// - Parameter withTabNumbers: 番号を数えるか。**要らないなら数える行ごと落とす。**
-    ///   出さない番号のために1秒ごとに1件投げ続けることになる。文面が変われば
-    ///   別のものとしてコンパイル結果が覚えられる (execute の compiled は文面が鍵) ので、
-    ///   設定を切り替えても組み立て直しはそれぞれ一度きり
+    /// - Parameter withTabNumbers: タブ番号を取得するか。無効時は不要なイベント送信を省くためクエリから除外する。
     public static func focusedTab(withTabNumbers: Bool)
         -> (session: String, directory: String, tabNumbers: [String: Int])? {
         var source = """
@@ -190,14 +139,9 @@ public enum ItermBridge {
         return parseFocus(text)
     }
 
-    /// focusedTab の答えを読む。読めない形なら nil。
-    ///
-    /// 並びは (見ているセッションの guid, その現在地) が1組目で、
-    /// 2組目から先が (guid, タブ番号) の繰り返し。
-    ///
-    /// **形が違うものを空扱いにしない。** 空は「窓が1つも無い」という答えで、
-    /// 受け取る側はそれを信じて印を消す。壊れていたのなら、
-    /// 聞けなかったとき (nil) と同じ扱いにさせる。
+    /// focusedTab の応答文字列をパースする。パースに失敗した場合は nil を返す。
+    /// 不正なフォーマットを空配列・空文字として扱うと「ウィンドウが存在しない」と誤認して
+    /// 表示が消えてしまうため、取得失敗時と同様に nil を返して前の状態を維持させる。
     private static func parseFocus(_ text: String)
         -> (session: String, directory: String, tabNumbers: [String: Int])? {
         // 窓が1つも無ければ空文字。これは「どこも見ていない」という確かな答え
@@ -311,30 +255,20 @@ public enum ItermBridge {
         let target = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
         var inside: String?
         for tab in tabs {
-            guard !tab.directory.isEmpty else { continue }  // 居場所が読めないタブ
+            guard !tab.directory.isEmpty else { continue }  // 作業ディレクトリが取得できないタブ
             if tab.directory == target { return tab.session }
             if inside == nil, tab.directory.hasPrefix(target + "/") { inside = tab.session }
         }
         return inside
     }
 
-    /// いま開いている全タブの (guid, 現在地)。聞けなければ nil。
+    /// 開いている全タブの (guid, 現在地) の一覧を取得する。取得失敗時は nil を返す。
     ///
-    /// 空配列と区別する。一時的に答えが返らなかっただけで
-    /// 「どこにもタブが無い」と受け取ると、一覧から行がごっそり消える。
+    /// 一時的な取得失敗で全タスクが非表示になるのを防ぐため、空配列と nil を明確に区別する。
+    /// 現在地が取得できないタブ（リモート接続等）であっても、台帳とのセッションID突合のため guid は保持して返す。
+    /// パスに空白や特殊文字が含まれる場合でも正しく分割できるよう、区切り文字には NUL（\0）を使用する。
     ///
-    /// **現在地が読めないタブも guid だけは返す。** ssh 越しなど、iTerm2 が
-    /// そのタブの居場所を答えられないことがある。そこで組ごと捨てると、
-    /// 台帳と guid で突き合わせる道 (TaskStore.visible) まで塞がる。
-    ///
-    /// 区切りは NUL。パスに絶対に現れない唯一の文字なので、名前にタブや改行を
-    /// 含む worktree でも割れない (git の `--porcelain -z` と同じ考え方)。
-    ///
-    /// 区切りに `tab` と書かないこと。`tell application "iTerm2"` の中では
-    /// `tab` はタブのクラスを指すので、区切りのつもりが文字列 "tab" になる。
-    ///
-    /// - Parameter interactive: 人が押した操作の一部か。裏方の呼び出しでは
-    ///   許可が無くても黙って諦める (execute の説明を参照)
+    /// - Parameter interactive: ユーザー操作起因の呼び出しフラグ。
     public static func openTabs(interactive: Bool) -> [(session: String, directory: String)]? {
         let source = """
         tell application "iTerm2"
@@ -359,13 +293,8 @@ public enum ItermBridge {
         return parseTabs(text)
     }
 
-    /// (guid, 現在地) の並びを読む。読めない形なら nil。
-    ///
-    /// **形が違うものを空配列にしない。** 空配列は「タブが1つも無い」という答えで、
-    /// 絞り込む側はそれを信じて全部を隠す。答えが壊れていたのなら、
-    /// 聞けなかったとき (nil) と同じ扱いにして絞り込みを見送らせる。
-    ///
-    /// パスは削らない。末尾の空白も名前の一部なので、整形すると別の場所を指す。
+    /// (guid, 現在地) の応答文字列をパースする。パースに失敗した場合は nil を返す。
+    /// パース異常を空配列として扱うと全タブが閉じられたと誤認するため、nil を返してフィルタリングを見送らせる。
     private static func parseTabs(_ text: String) -> [(session: String, directory: String)]? {
         // 窓が1つも無ければ空文字。これは「タブが無い」という確かな答え
         if text.isEmpty { return [] }
@@ -381,8 +310,7 @@ public enum ItermBridge {
             let session = fields[index]
             guard !session.isEmpty else { continue }
             let directory = fields[index + 1]
-            // 表記違い (/tmp と /private/tmp) を吸収してから配る。
-            // 受け取る側が毎回解決し直さずに済む。読めなかったタブは空のまま通す
+            // パス表記の差異（/tmp と /private/tmp など）を解決して正規化する
             tabs.append((session: session,
                          directory: directory.isEmpty ? "" :
                             URL(fileURLWithPath: directory).resolvingSymlinksInPath().path))
@@ -390,12 +318,10 @@ public enum ItermBridge {
         return tabs
     }
 
-    /// 新しいタブを開いて、その場所へ移動する。
+    /// 新しいタブを開いて指定ディレクトリへ移動する。
     ///
-    /// `command` でプログラムを渡さないのは、素のシェルが欲しいから。
-    /// あれは指定したものをセッションの本体として起こすので、終われば
-    /// タブごと消える。ここで開きたいのは「これから何か始める場所」なので、
-    /// 普段どおりのシェルを立ち上げてから cd を打ち込む。
+    /// コマンド引数として指定するとプロセス終了時にタブが閉じてしまうため、
+    /// デフォルトプロファイルでシェルを起動した上で cd コマンドを送信する。
     @discardableResult
     public static func openTab(inDirectory path: String) -> Bool {
         let command = "cd \(shellQuoted(path))"
@@ -455,10 +381,8 @@ public enum ItermBridge {
 
     // MARK: -
 
-    /// シェルに1語として渡せる形にする。
-    ///
-    /// **手で引用符を足さない。** worktree の名前に `'` が入っていても壊れないよう、
-    /// 単引用符の中では閉じて・エスケープして・開き直す作法に従う
+    /// シェルの引数として安全に解釈されるようシングルクォートでエスケープする。
+    /// 文字列自体にシングルクォートが含まれる場合も壊れないよう標準のエスケープ処理を行う。
     private static func shellQuoted(_ text: String) -> String {
         "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
@@ -470,34 +394,22 @@ public enum ItermBridge {
             .replacingOccurrences(of: "\"", with: "\\\"")
     }
 
-    /// 組み立て済みの AppleScript。**文面が変わらないものだけ覚える。**
+    /// コンパイル済み AppleScript のキャッシュ。
     ///
-    /// 見張りは1秒ごとに同じスクリプトを流すので、毎回作り直すとそのたびに
-    /// 構文解析とコンパイルが走る。
-    ///
-    /// **窓の位置やセッションIDを埋め込むものは覚えない。** 呼ぶたびに文面が
-    /// 変わるので、鍵にすると際限なく溜まる
+    /// ポーリング時の構文解析・コンパイル負荷を避けるため、文面が不変のスクリプトのみキャッシュする。
+    /// 座標やセッションIDなど呼び出しごとに変化するパラメータを含むスクリプトはキャッシュしない。
     private static var compiled: [String: NSAppleScript] = [:]
 
-    /// - Parameter interactive: 人が押した操作かどうか。
-    ///   背景色の取得や生存確認のような裏方の呼び出しでは、許可が無くても
-    ///   黙って諦める。何もしていないのにダイアログが出てくるのは邪魔なだけで、
-    ///   許可が要ることは「押したのに動かない」ときに伝えれば足りる
-    /// - Parameter reusable: 文面が呼び出しによらず一定か。
-    ///   一定なものだけコンパイル結果を使い回す
+    /// - Parameter interactive: ユーザー操作起因の呼び出しフラグ。
+    ///   定期ポーリング等のバックグラウンド処理では、権限未取得でも警告ダイアログを表示せず中断する。
+    /// - Parameter reusable: 文面が不変でコンパイル結果をキャッシュ可能かどうか。
     private static func execute(_ source: String, interactive: Bool = true,
                                 reusable: Bool = false) -> String? {
-        // iTerm2 が起きていないときに叩くと AppleScript が起動させてしまう。
-        // サイドバーは iTerm2 に付き従うものなので、いないときは何もしない
+        // iTerm2 未起動時に AppleScript を実行すると意図せず起動してしまうためガードする
         guard isItermRunning else { return nil }
 
-        // **答えが出るまでは投げない** (理由は permissionSettled)。
-        // 尋ねるのは裏に回して、ここは「聞けなかった」ことにして引き返す。
-        // 呼ぶ側はどれも nil を受けたら前の値を保つ作りなので、
-        // 答えが出たあとの周回で追いつく
+        // 権限確定前はメインスレッド停止を避けるため実行せず、非同期で権限要求を開始する
         guard permissionSettled else {
-            // 待つ役は1つで足りる。ここは1秒ごとにも通るので、毎回起こすと
-            // 答えを待つだけの Task が溜まり続ける
             if settling == nil { Task { await settlePermission() } }
             return nil
         }

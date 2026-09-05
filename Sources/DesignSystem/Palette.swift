@@ -8,7 +8,7 @@ public enum Palette {
     public static let fg = Color.primary
     public static let dim = Color.secondary
     public static let hover = Color.gray.opacity(0.18)
-    /// いま開いているタブの下地。帯 (spinner の色) と合わせて居場所を示す
+    /// 現在選択されているタブ項目の背景色
     public static let current = Color.gray.opacity(0.13)
     public static let waiting = Color(red: 1.0, green: 0.655, blue: 0.149)     // #ffa726
     /// 終わったのにまだ見ていないもの。印 (✅) と揃えて緑にする
@@ -30,17 +30,13 @@ public enum Palette {
 
     /// PR の状態。同じ行に並ぶ diff バッジと同じ濃さで持つ。
     ///
-    /// **タイトルの状態色 (`TaskRow.titleColor`) とは役目が違う。** あちらは
-    /// 「まだ手を付けていないか」を示すもので、こちらは PR そのものの状態。
-    /// 同じ行の diff が既に色を持っているので、ここに色を置いても浮かない
+    /// TaskRow.titleColor とは異なり、PR自体の状態（open/merged/closed）を表現する。
     public static let prOpen = Color(red: 0.298, green: 0.686, blue: 0.314)   // #4caf50
     public static let prMerged = Color(red: 0.671, green: 0.533, blue: 0.941) // #ab88f0
     public static let prClosed = Color(red: 0.937, green: 0.325, blue: 0.314) // #ef5350
 
     /// PR1件を何色で出すか。
-    ///
-    /// **下書きは状態より先に見る。** 開いてはいてもレビューには出ていないので、
-    /// 開いている PR と同じ色で並べると、見てもらえる状態だと読み違える
+    /// ドラフトPRは未レビュー状態であることを明確にするため、通常の色ではなく dim を適用する。
     public static func pullRequest(_ ref: PullRequestRef) -> Color {
         if ref.isDraft { return dim }
         switch ref.state {
@@ -51,18 +47,13 @@ public enum Palette {
         }
     }
 
-    /// 状態そのものを表す色。畳んだ見出しの内訳のように、
-    /// 印と数だけで状態を見せる場所で使う。
-    ///
-    /// 行のタイトル (TaskRow.titleColor) とは別に持つ。あちらは読ませるのが仕事なので
-    /// 実行中まで色を付けず、待たせているものだけを目立たせている
+    /// 状態そのものを表す色。折りたたんだ見出しの内訳などで使用する。
+    /// TaskRow.titleColor と異なり、待機中だけでなく各状態固有の色を返す。
     public static func status(_ status: String) -> Color {
         switch status {
         case TaskStatus.waiting: return waiting
         case TaskStatus.running: return spinner
         case TaskStatus.done: return done
-        // 失敗は見たあとも失敗のまま残る = まだ片付いていない。
-        // 畳んで数だけになったときこそ、脇役の色にしてはいけない
         case TaskStatus.failed: return removed
         default: return dim
         }

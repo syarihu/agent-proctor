@@ -14,10 +14,8 @@ import Combine
 /// 行の高さごと変わる。元の iTerm2 パネルが CSS の `--size` 1行で
 /// 決めていたのと同じ考え方。
 ///
-/// **didSet の中で自分のプロパティを inout 引数に渡さないこと。**
-/// 呼ばれた関数から戻るときに inout の書き戻しが走って didSet が再入し、
-/// 際限なく繰り返してスタックを食い潰す。範囲に収める処理は値を返す形にして、
-/// 代入はここで1回だけ行う。
+/// didSet 内で自身のプロパティを inout 引数に渡すと、関数復帰時の書き戻しで didSet が再入し
+/// スタックオーバーフローを引き起こす。そのため範囲クランプは値を返す純粋関数で行い代入する。
 @MainActor
 public final class Appearance: ObservableObject {
     // MARK: - 文字の大きさ
@@ -71,9 +69,7 @@ public final class Appearance: ObservableObject {
 
     /// 行に iTerm2 のタブ番号 (⌘1〜⌘9) を出すか。
     ///
-    /// **切ってあるときは端末に番号を聞きに行かない。** 出さない番号のために
-    /// 1秒ごとに Apple Event を1件投げ続けることになる (ItermBridge.focusedTab)。
-    /// 見た目だけ消しても、止まるのは描画だけで問い合わせは残ってしまう
+    /// 無効時は不要な Apple Event 送信（ItermBridge.focusedTab）を避けるため問い合わせを行わない。
     @Published public var showTabNumbers: Bool {
         didSet { UserDefaults.standard.set(showTabNumbers, forKey: Self.showTabNumbersKey) }
     }
@@ -82,53 +78,34 @@ public final class Appearance: ObservableObject {
 
     /// セッションと worktree の未コミットの変更を数えるか。
     ///
-    /// **切ってあるときは git に聞きに行かない。** 数字を消すだけでは、
-    /// `git diff --numstat` と `git ls-files --others` は数え直しのたびに
-    /// worktree の数だけ起き続ける。上のタブ番号と同じ形
-    /// (出さないものを問い合わせ続けない)。
-    ///
-    /// **NoticeSettings ではなくここに置いたのは、これが見た目の設定だから。**
-    /// 消えるのは行に添える数字と、worktree を片付けてよいかの言い切りで、
-    /// どちらもサイドバーの見せ方の話に収まる
+    /// 無効時は不要な git プロセス起動（git diff / ls-files）を避けるため問い合わせを行わない。
     @Published public var countChanges: Bool {
         didSet { UserDefaults.standard.set(countChanges, forKey: Self.countChangesKey) }
     }
 
     // MARK: - 一覧のまとめ方
 
-    /// 何も選んでいないときのまとめ方。
-    ///
-    /// **Organization を既定にできるのは、gh が無い環境が勝手に
-    /// リポジトリごとへ落ちるから** (`resolvedGrouping`)。落ちる先が
-    /// これまでの見せ方なので、既定を寄せても誰の一覧も壊れない
+    /// 何も選んでいないときのまとめ方の既定値。
+    /// gh コマンドが利用できない環境では自動的に repository にフォールバックするため、
+    /// デフォルトを organization にしても既存環境の表示を壊さない。
     public static let defaultGrouping: GroupingMode = .organization
 
-    /// リポジトリごとか、Organization ごとか。**選んだものをそのまま持つ。**
-    ///
-    /// gh が使えるかどうかで書き換えないのは、一時的に使えないだけ
-    /// (ログインが切れた・ネットワークが無い) のときに、選んだ覚えのない
-    /// 設定に戻ってしまうため。使えるかどうかは出すときに見る (`resolvedGrouping`)
+    /// リポジトリ単位か、Organization 単位か。
+    /// 一時的な gh コマンドの利用不可（認証切れやネットワーク不通）でユーザー設定が書き換わらないよう、
+    /// 選択値自体はそのまま保持し、実際の表示モードは resolvedGrouping で動的に判定する。
     @Published public var groupingMode: GroupingMode {
         didSet { UserDefaults.standard.set(groupingMode.rawValue, forKey: Self.groupingKey) }
     }
 
-    /// Organization でまとめられる状態か。gh に聞くので、
-    /// 描くたびには確かめない (答えは Kit 側が覚えている)。
-    ///
-    /// **前回の答えを覚えておいて、そこから始める。** gh に聞くのはプロセスを
-    /// 起こす仕事なので答えが返るまで一拍あり、その間だけリポジトリごとに
-    /// 描いてしまう。既定が Organization だと、起動のたびに一覧が組み変わって
-    /// 見える。gh を入れたり消したりは滅多に無いので、前回の答えで描き始めて
-    /// 違っていたときだけ直すほうが落ち着く
+    /// Organization まとめが利用可能か。
+    /// gh の実行はプロセス起動を伴い非同期のため、起動直後の表示崩れを防ぐ目的で前回の判定結果をキャッシュから復元して開始する。
     @Published public var canGroupByOrganization: Bool {
         didSet {
             UserDefaults.standard.set(canGroupByOrganization, forKey: Self.canGroupByOrgKey)
         }
     }
 
-    /// 実際に使うまとめ方。**gh が使えないならリポジトリごとに戻す。**
-    /// 持ち主の名前だけの見出しになると、なぜアイコンが出ないのかが画面から
-    /// 分からないので、そうなるくらいなら元の見せ方のままにしておく
+    /// 実際に使用するまとめ方。gh が利用できない場合は repository にフォールバックする。
     public var resolvedGrouping: GroupingMode {
         groupingMode == .organization && canGroupByOrganization ? .organization : .repository
     }

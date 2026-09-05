@@ -18,12 +18,10 @@ public enum StatusGlyph {
 
     /// 状態に対応する SF Symbol 名と色。
     ///
-    /// 色は必ず決める。テンプレート画像にして OS に任せる手もあるが、
-    /// **NSTextAttachment に入れた画像はテンプレートとして扱われない**ため、
-    /// 地の色に関わらずラスタライズした色 (既定では黒) がそのまま出てしまう。
+    /// NSTextAttachment に入れた画像はテンプレートとして扱われないため、
+    /// 地の色に関わらずラスタライズされた色がそのまま描画される。そのため明示的に色を指定する。
     ///
-    /// - Parameter defaultTint: 状態そのものが色を持たないときに使う色。
-    ///   メニューバーの地色に合わせたものを呼び出し側が解決して渡す
+    /// - Parameter defaultTint: 状態固有の色を持たない場合に適用するデフォルト色。
     public static func symbol(for status: String,
                               defaultTint: NSColor) -> (name: String, tint: NSColor) {
         switch status {
@@ -101,17 +99,11 @@ public enum StatusGlyph {
         return sized.tinted(with: tint)
     }
 
-    /// 知らせることが何も無いときの印。アプリのマーク (`AppMark`) を出す。
+    /// 待機中や実行中のタスクがない場合に表示するアプリアイコン。
     ///
-    /// 数字は出さない。出すべきものが無いことを、印1つで静かに示す。
-    /// **項目ごと消してしまわないのは、メニューが設定とサイドバー切替と終了の
-    /// 唯一の入口だから。** 見張っているのに姿が無いと、生きているのかも分からない。
-    /// ここをアイコンにしているのは、そのときだけメニューバーに出ている物が
-    /// 何なのか分からなくなるため。動きがあるときは状態の記号に譲る。
-    ///
-    /// 色は数字と同じ地色 (メニューバーの文字色) をそのまま使う。薄くすると
-    /// 壁紙が透ける場所で沈んで見えなくなる。白と決め打ちにしないのは、
-    /// メニューバーが明るいときに見えなくなるため
+    /// メニューバー項目が設定やサイドバー切替の唯一のエントリポイントであるため、
+    /// 非アクティブ時も非表示にせずシンボルを表示する。
+    /// 色は明暗どちらのメニューバー背景でも視認できるよう、文字色（defaultTint）を使用する。
     public static func idleLine(fontSize: CGFloat = 13,
                                 defaultTint: NSColor) -> NSAttributedString {
         let image = AppMark.image(height: fontSize * markScale, tint: defaultTint)
@@ -119,28 +111,18 @@ public enum StatusGlyph {
 
         let attachment = NSTextAttachment()
         attachment.image = image
-        // 画像の下端を書体の下がり (descender) にそろえる。
-        //
-        // **こうしないと印が上に寄る。** ボタンは行をまるごと中央に置くが、
-        // 行の高さは書体の上がり下がりからも決まる。画像をベースラインの近くに
-        // 置くと行の下端だけが書体のぶん下に伸び、その差が下の余白になる。
-        // そろえれば行の高さ = 画像の高さになり、行の中央 = 画像の中央になる
+        // 行の高さと画像の高さを一致させ上下中央に配置するため、画像下端を書体の descender に揃える
         attachment.bounds = CGRect(x: 0, y: font.descender,
                                    width: image.size.width, height: image.size.height)
 
         let line = NSMutableAttributedString(attachment: attachment)
-        // 書体を明示する。決めないと既定の書体の上がり下がりで行の高さが決まり、
-        // 文字の大きさを変えても印の位置がついてこない
+        // 書体を明示しないと既定フォントのメトリクスで行高が決まり位置がずれるため明示的に設定する
         line.addAttribute(.font, value: font,
                           range: NSRange(location: 0, length: line.length))
         return line
     }
 
-    /// 印の高さ。文字より少し大きくする。
-    ///
-    /// 角帽・頭・肩が縦に積み重なる絵なので、文字と同じ高さでは
-    /// それぞれの隙間が潰れて1つの塊に見える。
-    /// これ以上大きくするとメニューバー (22pt ほど) の上下が詰まる
+    /// アイコン描画スケール（文字サイズ比）
     private static let markScale: CGFloat = 1.3
 
     /// 要約をまるごと1行にする。組と組の間は文字の間より広く空ける
