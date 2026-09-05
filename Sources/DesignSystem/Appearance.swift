@@ -139,9 +139,10 @@ public final class Appearance: ObservableObject {
     /// gh が使えるかを見に行く。設定画面を開いたときとアプリの起動時に呼ぶ。
     /// プロセスを起こすので、メインスレッドは待たせない
     public func refreshOrganizationAvailability() {
+        let check = Self.checkOrganizationAvailability
         Task {
             let available = await Task.detached(priority: .utility) {
-                await Self.checkOrganizationAvailability?() ?? false
+                await check?() ?? false
             }.value
             if canGroupByOrganization != available { canGroupByOrganization = available }
         }
