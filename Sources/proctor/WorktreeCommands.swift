@@ -22,7 +22,7 @@ func cmdWorktree(_ args: Args) throws -> Int32 {
     if !all && repo == nil && !args.has("--json") {
         Terminal.note(Localized.text("cli.outside_repo.worktrees"))
     }
-    let repos = CollectWorktrees.run(repo: repo, allRepos: all || repo == nil)
+    let repos = CollectWorktrees.collect(repo: repo, allRepos: all || repo == nil)
 
     if args.has("--json") {
         print(try prettyJSON(repos))

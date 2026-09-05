@@ -26,7 +26,7 @@ public enum CollectRecentRepos {
     ///   - now: 今の時刻。試すときに差し替えられるように受ける
     /// - Returns: 一覧に残しておくリポジトリ本体のパス
     ///
-    /// **実体がまだあるかはここでは見ない。** `CollectWorktrees.runDetailed` が
+    /// **実体がまだあるかはここでは見ない。** `CollectWorktrees.collect` が
     /// 消えたパスを既に落としているので、この集合を通っても群が無ければ
     /// 一覧には出ない。同じことを2か所で見ると、片方だけ直したときに食い違う。
     ///

@@ -37,8 +37,8 @@ final class NoticeWatcher {
     }
 
     private func handle(_ records: [TaskRecord]) {
-        let changes = CollectNotices.run(previous: previous, current: records,
-                                         wanted: settings.wanted, watching: watching)
+        let changes = CollectNotices.collect(previous: previous, current: records,
+                                             wanted: settings.wanted, watching: watching)
         previous = records
         notifier.apply(changes)
     }

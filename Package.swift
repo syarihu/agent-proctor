@@ -122,7 +122,7 @@ let package = Package(
             dependencies: [
                 "Model", "Utility", "Resources",
                 "DesignSystem", "AppState",
-                "UseCaseTask", "UseCaseWorktree", "UseCaseNotice",
+                "UseCaseTask",
                 "ItermBridge"
             ],
             path: "Sources/Feature/Sidebar",

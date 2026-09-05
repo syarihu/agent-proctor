@@ -30,16 +30,16 @@ public enum CollectWorktrees {
     ///   - also: 台帳が覚えていなくても見に行くリポジトリ。
     ///     いま人が見ている場所を混ぜるために使う。台帳には書かないので、
     ///     ちょっと覗いただけのリポジトリが記憶の枠を食うことはない
-    public static func run(repo: String? = nil, allRepos: Bool = false,
-                           withOrigin: Bool = false,
-                           countDiff: Bool = true,
-                           tasks: [CollectedTask]? = nil,
-                           also: [String] = [],
-                           now: Int = Int(Date().timeIntervalSince1970))
+    public static func collect(repo: String? = nil, allRepos: Bool = false,
+                               withOrigin: Bool = false,
+                               countDiff: Bool = true,
+                               tasks: [CollectedTask]? = nil,
+                               also: [String] = [],
+                               now: Int = Int(Date().timeIntervalSince1970))
         -> [CollectedRepoWorktrees] {
-        runDetailed(repo: repo, allRepos: allRepos, withOrigin: withOrigin,
-                    countDiff: countDiff,
-                    tasks: tasks, also: also, now: now).groups
+        collect(repo: repo, allRepos: allRepos, withOrigin: withOrigin,
+                countDiff: countDiff,
+                tasks: tasks, repos: nil, also: also, now: now).groups
     }
 
     /// 数え上げた結果と、**読み切れたかどうか**。
@@ -48,18 +48,18 @@ public enum CollectWorktrees {
     ///   一覧を丸ごと置き換える側 (アプリ) は、これが立っていたら**前の値を残す**。
     ///   読めなかったことを「worktree が無い」として映すと、
     ///   何も起きていないのに行が消えたように見える
-    /// - Parameter repos: 台帳が覚えているリポジトリ。渡さなければここで読む。
+    /// - Parameter repos: 台帳が覚えているリポジトリ。nil を渡せばここで読む。
     ///   `tasks` と同じ分担で、既に読んであるなら渡す (アプリは同じ台帳を
     ///   「一覧に残すか」の判断とも分け合うので、読むのは1回で済む)。
-    ///   **`run` のほうには足していない** —— 使うのはここを呼ぶアプリだけで、
+    ///   **単純版 `collect` のほうには足していない** —— 使うのはここを呼ぶアプリだけで、
     ///   対称性のためだけの引数は「これは誰が使うのか」を探させることになる
-    public static func runDetailed(repo: String? = nil, allRepos: Bool = false,
-                                   withOrigin: Bool = false,
-                                   countDiff: Bool = true,
-                                   tasks: [CollectedTask]? = nil,
-                                   repos: [String: Int]? = nil,
-                                   also: [String] = [],
-                                   now: Int = Int(Date().timeIntervalSince1970))
+    public static func collect(repo: String? = nil, allRepos: Bool = false,
+                               withOrigin: Bool = false,
+                               countDiff: Bool = true,
+                               tasks: [CollectedTask]? = nil,
+                               repos: [String: Int]?,
+                               also: [String] = [],
+                               now: Int = Int(Date().timeIntervalSince1970))
         -> (groups: [CollectedRepoWorktrees], incomplete: Bool) {
         // 自分で集める回にも同じ答えを渡す。ここで数えてしまうと、
         // 「数えない」と言われた回に git がセッションのぶんだけ起きる

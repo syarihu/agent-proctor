@@ -596,10 +596,10 @@ public final class TaskStore: ObservableObject {
                 // (measure の外に置いてあるのはそのため)
                 let kept = CollectRecentRepos.collect(repos: ledgerRepos)
                 let start = ContinuousClock.now
-                let counted = CollectWorktrees.runDetailed(allRepos: true, withOrigin: true,
-                                                           countDiff: countDiff,
-                                                           tasks: everything,
-                                                           repos: ledgerRepos, also: here)
+                let counted = CollectWorktrees.collect(allRepos: true, withOrigin: true,
+                                                       countDiff: countDiff,
+                                                       tasks: everything,
+                                                       repos: ledgerRepos, also: here)
                 // 読み切れなかった回も、git を待った時間は同じだけかかっている
                 let seconds = TaskStore.seconds(since: start)
                 // worktree のほうが読めなくても、残す顔ぶれは分かっている。
