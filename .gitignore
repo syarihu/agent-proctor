@@ -8,3 +8,5 @@ build/
 .knowledge/search.log
 .knowledge/command.log
 .claude/
+.knowledge/knowledge.db-wal
+.knowledge/knowledge.db-shm
