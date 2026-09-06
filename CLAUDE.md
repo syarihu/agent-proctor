@@ -99,5 +99,3 @@ diff -u /tmp/proctor-baseline/{before,after}.txt
 hooks が呼ぶ `~/bin/proctor` は張り替わるが、手で打つときに引かれる PATH 上の
 `proctor` は Homebrew 版のまま残るので、どちらの版の挙動を見ているのか分からなくなる。
 `switch-cli.sh` はその2つをまとめて動かす。今どちらを向いているかは `status` で見る。
-
-# Local Knowledge Base
