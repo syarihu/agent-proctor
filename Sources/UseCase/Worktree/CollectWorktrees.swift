@@ -90,10 +90,12 @@ public enum CollectWorktrees {
         let baseName = base.map { $0.contains("/") ? String($0.split(separator: "/").last!) : $0 }
         let merged = base.map { GitClient.mergedBranches(repo, into: $0) } ?? []
 
+        let living = occupants(of: entries, sessions: sessions)
+
         let collected = entries.enumerated().map { index, entry in
             let isMain = index == 0  // git worktree list は本体リポジトリを先頭に出力する
             let exists = FileManager.default.fileExists(atPath: entry.path)
-            let here = sessions.filter { $0.worktree == entry.path }.map(\.id)
+            let here = living[entry.path] ?? []
             let countable = exists && !entry.isBare
             // countDiff が無効な場合は nil を設定する。0 を渡すと変更なしとみなされて削除候補に誤分類されるのを防ぐ。
             let counted = (countable && countDiff) ? diff(at: entry.path) : nil
@@ -132,6 +134,32 @@ public enum CollectWorktrees {
             repoName: URL(fileURLWithPath: repo).lastPathComponent,
             origin: withOrigin ? ResolveRepoOrigin.resolve(repo: repo) : nil,
             worktrees: sorted)
+    }
+
+    /// セッションを、それが置かれている worktree ごとに束ねる。
+    ///
+    /// submodule を cwd にして開いたセッションのルートは worktree そのものではなく
+    /// その配下 (`<worktree>/<submodule>`) になるため、パスの完全一致では拾えない。
+    /// 取り違えると、エージェントが動いている場所が「誰もいない」ものとして
+    /// 片付けの候補に挙がり、控えの無い仕事を捨てることになる。
+    static func occupants(of entries: [GitClient.WorktreeEntry],
+                          sessions: [CollectedTask]) -> [String: [String]] {
+        var box: [String: [String]] = [:]
+        for session in sessions {
+            // worktree が入れ子になっている置き方でも二重に数えないよう、
+            // 抱えているもののうちいちばん深いものだけに乗せる
+            guard let holder = entries
+                .filter({ holds(worktree: $0.path, session.worktree) })
+                .max(by: { $0.path.count < $1.path.count }) else { continue }
+            box[holder.path, default: []].append(session.id)
+        }
+        return box
+    }
+
+    /// その worktree がその場所を抱えているか。worktree 自身も含む。
+    /// 名前の頭が同じだけの隣 (`spike` と `spike-2`) を拾わないよう、区切りまで見る。
+    static func holds(worktree: String, _ path: String) -> Bool {
+        path == worktree || path.hasPrefix(worktree + "/")
     }
 
     /// 対象ブランチがデフォルトブランチにマージ済みかどうかを判定する。
