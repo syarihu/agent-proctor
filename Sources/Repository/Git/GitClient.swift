@@ -51,8 +51,17 @@ public enum GitClient {
 
     /// メイン worktree のパス。worktree の中から聞かれても本体を指す。
     ///
-    /// --git-common-dir はどの worktree から見ても共通の .git を指すので、
-    /// その親がメインリポジトリになる。一覧をプロジェクトごとにまとめるのに使う。
+    /// --git-common-dir はどの worktree から見ても共通の .git を指す。
+    /// ただし submodule の gitdir は親リポジトリの .git の下に潜るので
+    /// (`<本体>/.git/modules/<名前>`、worktree の中からなら
+    /// `<本体>/.git/worktrees/<worktree>/modules/<名前>`)、
+    /// 親を1つ取るだけでは .git の内側をリポジトリ本体だと答えてしまう。
+    /// git は上へ辿って共通の .git を見つけるので一覧そのものは引けるが、
+    /// まとまりの鍵になるパスと見出しの名前が本体とずれるため、
+    /// 同じリポジトリが `modules` という別のまとまりとして並ぶ。
+    /// パスの中で最初に現れる .git より上を本体とみなせば、入れ子の submodule も同じ規則で収まる。
+    ///
+    /// 一覧をプロジェクトごとにまとめるのに使う。
     public static func mainWorktree(from start: String) -> String? {
         let (ok, output) = capture(start, "rev-parse", "--git-common-dir")
         guard ok, !output.isEmpty else { return nil }
@@ -64,6 +73,12 @@ public enum GitClient {
         // 親ディレクトリを返すと作業ツリー外の配置先ディレクトリを指してしまい、worktree 一覧等が取得できなくなるため。
         let (asked, bare) = capture(resolved.path, "rev-parse", "--is-bare-repository")
         if asked, bare == "true" { return resolved.path }
+        // ベアリポジトリの置き場は "<名前>.git" であって ".git" ではないので、ここには落ちてこない。
+        // --separate-git-dir のように .git を経由しない置き方では、これまでどおり親を返す
+        let parts = resolved.pathComponents
+        if let inside = parts.firstIndex(of: ".git"), inside > 0 {
+            return NSString.path(withComponents: Array(parts[..<inside]))
+        }
         return resolved.deletingLastPathComponent().path
     }
 
