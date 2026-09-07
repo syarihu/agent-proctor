@@ -73,10 +73,14 @@ public enum GitClient {
         // 親ディレクトリを返すと作業ツリー外の配置先ディレクトリを指してしまい、worktree 一覧等が取得できなくなるため。
         let (asked, bare) = capture(resolved.path, "rev-parse", "--is-bare-repository")
         if asked, bare == "true" { return resolved.path }
+        // 最初ではなく最後の .git で切る。リポジトリ自体が ".git" という名前の
+        // ディレクトリの下に置かれている配置 (`/x/.git/repos/foo/.git`) があり、
+        // 最初のものを取るとその親側で切って無関係な場所を本体だと答えてしまう。
+        // submodule の gitdir が挟む .git は1つだけなので、入れ子でもこの規則で収まる。
         // ベアリポジトリの置き場は "<名前>.git" であって ".git" ではないので、ここには落ちてこない。
         // --separate-git-dir のように .git を経由しない置き方では、これまでどおり親を返す
         let parts = resolved.pathComponents
-        if let inside = parts.firstIndex(of: ".git"), inside > 0 {
+        if let inside = parts.lastIndex(of: ".git"), inside > 0 {
             return NSString.path(withComponents: Array(parts[..<inside]))
         }
         return resolved.deletingLastPathComponent().path
