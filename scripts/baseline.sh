@@ -364,6 +364,44 @@ PY
     say "worktree ls (知らないサブコマンド)"
     "$BIN" worktree nope; echo "exit=$?"
 
+    # --- submodule を持つリポジトリ。上の使い捨てリポジトリとは別に建てる。
+    # $LAB/work に submodule を足すと差分の数え方が変わり、
+    # 後ろの節が何を見ているのか分からなくなる
+    git init -q "$LAB/upstream"
+    git -C "$LAB/upstream" config user.email t@e.st
+    git -C "$LAB/upstream" config user.name test
+    echo lib > "$LAB/upstream/lib.txt"
+    git -C "$LAB/upstream" add lib.txt
+    git -C "$LAB/upstream" commit -qm init
+    git init -q "$LAB/host"
+    git -C "$LAB/host" config user.email t@e.st
+    git -C "$LAB/host" config user.name test
+    echo host > "$LAB/host/README.md"
+    git -C "$LAB/host" add README.md
+    git -C "$LAB/host" commit -qm init
+    # ローカルパスからの submodule は、新しめの git では明示しないと拒まれる
+    git -C "$LAB/host" -c protocol.file.allow=always \
+        submodule add -q "$LAB/upstream" mod
+    git -C "$LAB/host" commit -qm "add submodule"
+    git -C "$LAB/host" worktree add -q -b host-wt "$LAB/hostwts/host-wt"
+    git -C "$LAB/hostwts/host-wt" -c protocol.file.allow=always \
+        submodule update --init -q
+
+    # submodule の gitdir は親リポジトリの .git の下に潜るので、
+    # 共通の .git の親を本体と見ると .git の内側の場所に行き着く。
+    # 一覧は引けてしまうが、鍵と名前が本体とずれるので、
+    # 同じリポジトリが modules という別の名前で並ぶ
+    say "submodule を cwd にしたセッションは、親リポジトリのものとして数える"
+    payload s10 "$LAB/hostwts/host-wt/mod" | "$BIN" _touch running
+    "$BIN" ls --all --json | grep -E '"(id|repo|worktree)" :'
+
+    # ここを取り違えると、動いているエージェントの居る worktree が
+    # 「片付け候補」に見える。控えの無い仕事を捨てることになる
+    say "submodule のセッションは、それを含む worktree に乗る"
+    "$BIN" worktree ls --all
+    "$BIN" worktree ls --all --json | grep -E '"(path|sessions|isRemovable)"'
+    payload s10 "$LAB/hostwts/host-wt/mod" | "$BIN" _touch clear
+
     # 権限確認をキャンセル (Esc) すると Claude Code はフックを1つも飛ばさない。
     # 唯一届くアイドル通知で降ろせることを見ておく (でないと確認待ちが居座る)
     say "確認待ちは、キャンセルされたあとアイドル通知で待機へ降りる"
