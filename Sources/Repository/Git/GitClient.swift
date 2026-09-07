@@ -59,7 +59,7 @@ public enum GitClient {
     /// git は上へ辿って共通の .git を見つけるので一覧そのものは引けるが、
     /// まとまりの鍵になるパスと見出しの名前が本体とずれるため、
     /// 同じリポジトリが `modules` という別のまとまりとして並ぶ。
-    /// パスの中で最初に現れる .git より上を本体とみなせば、入れ子の submodule も同じ規則で収まる。
+    /// パスの中で最後に現れる .git より上を本体とみなせば、入れ子の submodule も同じ規則で収まる。
     ///
     /// 一覧をプロジェクトごとにまとめるのに使う。
     public static func mainWorktree(from start: String) -> String? {
