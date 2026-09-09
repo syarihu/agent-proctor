@@ -45,7 +45,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func render(_ summary: [(status: String, count: Int)]) {
         item.isVisible = true
-        // 通知対象のタスクがない場合でも、設定・終了操作へのエントリポイントを維持するため常駐シンボルを表示する
+        // 数えるものがない場合でも、設定・終了操作へのエントリポイントを維持するため常駐シンボルを表示する
         guard !summary.isEmpty else {
             item.button?.attributedTitle = StatusGlyph.idleLine(
                 defaultTint: menuBarTextColor())
