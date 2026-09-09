@@ -82,10 +82,17 @@ public enum TaskStatus {
         return Localized.text(key)
     }
 
-    /// ユーザーの対応を要する状態の件数集計。メニューバーの要約などで使用する。
+    /// メニューバーの要約に出す件数集計。
+    ///
+    /// 出すのは「まだ人の手が要るもの」(needsPerson) と、いま動いているもの (running)。
+    /// running を `needsPerson` の側に足さないのは、あれが要確認ストリップの絞り込みでもあり
+    /// (CollectTasks.awaitingReview)、動いているセッションが全部そこに並ぶことになるため。
+    /// 実行中は数として見えていてほしいだけで、対応を待っているわけではないので、ここで足す。
     public static func counts(_ tasks: [TaskRecord]) -> [(status: String, count: Int)] {
-        let actionable = tasks.filter { needsPerson(status: $0.status, seenAt: $0.seenAt) }
-        return counts(displayStatuses: actionable.map(\.attentionStatus))
+        let shown = tasks.filter {
+            needsPerson(status: $0.status, seenAt: $0.seenAt) || $0.status == running
+        }
+        return counts(displayStatuses: shown.map(\.attentionStatus))
     }
 
     /// 指定された状態一覧から件数を集計する。
