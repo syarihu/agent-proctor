@@ -85,6 +85,12 @@ final class DeskScene: SKScene {
     private let columnOffset: CGFloat = 56
     /// 見出しを折り返す幅。カラムの間隔より 12pt 狭くして、隣と触れないようにする
     private let captionWidth: CGFloat = 100
+    /// 見出しの行数。これ以上増やすと下の段のモニタに乗る
+    private let captionLines = 3
+    /// 見出しの文字の大きさ。長い名前はここから縮めて3行に収める
+    private let captionSize: CGFloat = 8
+    /// 縮める下限。これ以下にすると読めないので、そこから先は諦めて切る
+    private let captionMinSize: CGFloat = 6
     /// 段と段の縦の間隔。
     /// 机の縦の専有 (前面 14.5 + 3行の見出し 30) と、下の段のモニタの天 (18.5) が
     /// 余裕をもって離れる高さを取る。ここを詰めると、名前の長い机の3行目が
@@ -356,9 +362,9 @@ final class DeskScene: SKScene {
         let caption = SKLabelNode(text: label)
         caption.name = "caption"
         caption.fontName = "SFMono-Regular"
-        caption.fontSize = 8
+        caption.fontSize = captionFontSize(for: label)
         caption.fontColor = .secondaryLabelColor.withAlphaComponent(isHub ? 0.85 : 0.7)
-        caption.numberOfLines = 3
+        caption.numberOfLines = captionLines
         caption.lineBreakMode = .byCharWrapping
         caption.preferredMaxLayoutWidth = captionWidth
         caption.verticalAlignmentMode = .top
@@ -366,6 +372,23 @@ final class DeskScene: SKScene {
         node.addChild(caption)
 
         return node
+    }
+
+    /// 見出しの文字の大きさを決める。
+    ///
+    /// `SKLabelNode` は入りきらない分を「…」で切る。行数を増やせば入るが、
+    /// 増やすと下の段のモニタに乗るので、**行数は据え置きで文字のほうを縮める**。
+    ///
+    /// 幅の見積もりは、等幅の欧文がおよそ文字送り 0.6 文字ぶん、
+    /// 和文が 1 文字ぶんであることから出している。
+    /// 実測しないのは、机ごとに `NSAttributedString` を測ると
+    /// 台帳が流れてくるたびに全部の机で測り直すことになるため
+    private func captionFontSize(for label: String) -> CGFloat {
+        let units = label.reduce(CGFloat(0)) { $0 + ($1.isASCII ? 0.6 : 1.0) }
+        guard units > 0 else { return captionSize }
+        // 1行に入るのは (幅 ÷ 文字送り) 文字。それが captionLines 行ぶんあればよい
+        let fits = captionWidth * CGFloat(captionLines) / units
+        return max(captionMinSize, min(captionSize, (fits * 2).rounded(.down) / 2))
     }
 
     /// 挙げた手。
