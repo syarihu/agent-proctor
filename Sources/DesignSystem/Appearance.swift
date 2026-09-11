@@ -83,6 +83,14 @@ public final class Appearance: ObservableObject {
         didSet { UserDefaults.standard.set(countChanges, forKey: Self.countChangesKey) }
     }
 
+    // MARK: - 見せ方
+
+    /// 一覧で見るか、作業場の俯瞰で見るか。
+    /// まとめ方 (`groupingMode`) とは別の軸なので、別に持って別に覚える
+    @Published public var sidebarMode: SidebarMode {
+        didSet { UserDefaults.standard.set(sidebarMode.rawValue, forKey: Self.modeKey) }
+    }
+
     // MARK: - 一覧のまとめ方
 
     /// 何も選んでいないときのまとめ方の既定値。
@@ -219,6 +227,7 @@ public final class Appearance: ObservableObject {
     private static let useCustomColorKey = "proctor_use_custom_color"
     private static let customColorKey = "proctor_custom_color_hex"
     private static let makeRoomKey = "proctor_make_room"
+    private static let modeKey = "proctor_sidebar_mode"
     private static let groupingKey = "proctor_grouping"
     private static let canGroupByOrgKey = "proctor_can_group_by_org"
     private static let showTabNumbersKey = "proctor_show_tab_numbers"
@@ -244,6 +253,10 @@ public final class Appearance: ObservableObject {
         // 何も選んでいない人の見え方は変えない
         countChanges = UserDefaults.standard
             .object(forKey: Self.countChangesKey) as? Bool ?? true
+
+        // 既定は一覧。俯瞰は眺めるためのもので、探して開くのは一覧のほうが速い
+        sidebarMode = SidebarMode(
+            rawValue: UserDefaults.standard.string(forKey: Self.modeKey) ?? "") ?? .list
 
         // まだ選んでいないときと、知らない値が入っていたときは既定に落とす
         groupingMode = GroupingMode(

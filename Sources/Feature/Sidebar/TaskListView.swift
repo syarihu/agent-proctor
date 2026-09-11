@@ -70,6 +70,15 @@ public struct TaskListView: View {
 
             VStack(spacing: 0) {
                 listHeader
+
+                if appearance.sidebarMode == .desk {
+                    // 俯瞰では要確認ストリップを出さない。
+                    // 手を挙げている机はカメラが優先して映し、画面外のぶんは縁の印が知らせる
+                    DeskView(islands: deskIslands, running: store.collecting, onOpen: { id in
+                        guard let task = store.tasks.first(where: { $0.id == id }) else { return }
+                        onOpen(task)
+                    })
+                } else {
                 // 状態で切っているときは要確認の箱が同じものを出すので、
                 // ストリップは畳む。拾う対象 (needsPerson) が同じで中身が丸ごと重なる
                 if !pending.isEmpty && !byStatus {
@@ -136,13 +145,12 @@ public struct TaskListView: View {
                 }
                 .padding(base * 0.3)
 
+                }
+
+                // 使用量はどちらの見せ方でも要るので、俯瞰でも残す
                 if !limits.isEmpty {
                     RateLimitFooter(summaries: limits, base: base)
                 }
-
-                // 作業場の帯 (素振り)。高さも表示切り替えもまだ固定で、
-                // 「280pt の帯で俯瞰の事務所が読めるか」だけを確かめるために置いている
-                DeskStrip(height: 170)
             }
             .animation(.spring(response: 0.32, dampingFraction: 0.82),
                        value: pending.isEmpty)
@@ -168,12 +176,48 @@ public struct TaskListView: View {
     /// (状態で切るときは要確認の箱が兼ねるのでストリップは出ない)。
     /// ストリップ自身は該当が無いと丸ごと消えるので、切り替え口を相乗りさせられない
     private var listHeader: some View {
-        GroupingTabs(base: base, appearance: appearance)
+        HStack(spacing: base * 0.4) {
+            // 俯瞰では島がリポジトリのまとまりそのものなので、まとめ方を選ぶ意味が無い。
+            // 状態で束ねるに至っては、机は場所なので並べ替えようがない
+            if appearance.sidebarMode == .list {
+                GroupingTabs(base: base, appearance: appearance)
+            } else {
+                Spacer(minLength: 0)
+            }
+            ModeToggle(base: base, appearance: appearance)
+        }
         // 左右は下の行の文字の始まりに合わせる (ScrollView の 0.3 + 行の 0.4)。
         // 上はパネルの角丸から離す分
         .padding(.horizontal, base * 0.7)
         .padding(.top, base * 0.7)
         .padding(.bottom, base * 0.2)
+    }
+
+    /// 俯瞰に出す島。リポジトリごとに1島、その中に台帳のセッションを並べる。
+    ///
+    /// 並び順は一覧と揃える (`store.tasks` の順)。同じ台帳を見ているのに
+    /// 見せ方を変えた途端に順番が変わると、切り替えた先で目的のものを探し直すことになる
+    private var deskIslands: [DeskIsland] {
+        var order: [String] = []
+        var byRepo: [String: [DeskSeat]] = [:]
+        for task in store.tasks {
+            if byRepo[task.repo] == nil {
+                byRepo[task.repo] = []
+                order.append(task.repo)
+            }
+            byRepo[task.repo]?.append(
+                DeskSeat(id: task.id,
+                         name: task.displayName,
+                         status: task.displayStatus,
+                         needsPerson: TaskStatus.needsPerson(status: task.status,
+                                                             seenAt: task.seenAt),
+                         contextPercent: task.contextPercent,
+                         subagents: task.subagents))
+        }
+        return order.map { repo in
+            DeskIsland(repo: store.tasks.first { $0.repo == repo }?.repoName ?? repo,
+                       seats: byRepo[repo] ?? [])
+        }
     }
 
     private var rateLimitSummaries: [AgentQuotaSummary] {

@@ -95,8 +95,9 @@ public final class TaskStore: ObservableObject {
     }
     /// 実行中に蓄積された次回の再集計要求（urgent を優先保持）
     private var pendingRecount: RecountReason?
-    /// サイドバーが表示されているかどうか（非表示時は git 処理を停止して負荷を抑制）
-    private var collecting = false
+    /// サイドバーが表示されているかどうか（非表示時は git 処理を停止して負荷を抑制）。
+    /// 描画を止めたい View（作業場の俯瞰）も読むため公開する
+    @Published public private(set) var collecting = false
     /// 変更差分を集計するかどうかの判定プロバイダ
     public var wantsDiff: () -> Bool = { true }
 

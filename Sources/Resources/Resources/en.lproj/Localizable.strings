@@ -112,6 +112,10 @@
 "app.settings.reset" = "Reset";
 "app.filter.grouping" = "Group rows by";
 "app.filter.grouping.status" = "Status";
+
+/* 見せ方の切り替え。押した先を名乗る */
+"app.mode.show_desk" = "Show the office floor";
+"app.mode.show_list" = "Show the list";
 "app.filter.grouping.organization.short" = "Org";
 "app.filter.grouping.repository" = "Repository";
 "app.filter.grouping.organization" = "Organization";

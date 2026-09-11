@@ -112,6 +112,10 @@
 "app.settings.reset" = "もとに戻す";
 "app.filter.grouping" = "行のまとめ方";
 "app.filter.grouping.status" = "状態";
+
+/* 見せ方の切り替え。押した先を名乗る */
+"app.mode.show_desk" = "作業場を見る";
+"app.mode.show_list" = "一覧を見る";
 "app.filter.grouping.organization.short" = "組織";
 "app.filter.grouping.repository" = "リポジトリ";
 "app.filter.grouping.organization" = "Organization";
