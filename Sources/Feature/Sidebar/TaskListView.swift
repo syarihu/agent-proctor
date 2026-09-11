@@ -213,6 +213,9 @@ public struct TaskListView: View {
                                                              seenAt: task.seenAt),
                          contextPercent: task.contextPercent,
                          subagents: task.subagents,
+                         helpers: task.currentSubagents.map {
+                             DeskHelper(id: $0.id, name: $0.name, activity: $0.activity)
+                         },
                          activity: task.currentActivity))
         }
         return order.map { repo in

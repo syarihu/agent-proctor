@@ -67,9 +67,22 @@ struct DeskSeat: Equatable {
     /// 人の手が要るか (`TaskStatus.needsPerson`)。カメラがここを最優先で映す
     let needsPerson: Bool
     let contextPercent: Int?
+    /// 走っているサブエージェントの数。
+    /// `agent_id` を送ってこないエージェントでは中身が空でも数だけ入る
     let subagents: Int
+    /// 中身が分かるサブエージェント。分かるなら1体ずつ仕草を付けられる
+    let helpers: [DeskHelper]
     /// いま触っているツール ("Edit: TaskStore.swift" など)。動いている間だけ入る。
     /// 何をしているかで仕草を変えるために使う
+    let activity: String?
+}
+
+/// 机まわりの手伝い1人。台帳のサブエージェント1体に対応する
+struct DeskHelper: Equatable {
+    let id: String
+    /// エージェント種別 ("Explore" など)
+    let name: String
+    /// いま触っているツール。親と同じ形式なので、同じ判定で仕草を決められる
     let activity: String?
 }
 
@@ -609,37 +622,43 @@ final class DeskScene: SKScene {
     ///
     /// 一覧では机の下に小さく畳むしかないが、俯瞰なら人を増やすだけで
     /// 「この机は何人がかりで動いている」が一目で分かる。ここは俯瞰の独壇場
-    private func setHelpers(_ desk: SKNode, count: Int, tint: NSColor) {
+    private func setHelpers(_ desk: SKNode, helpers: [DeskHelper], count: Int, tint: NSColor) {
         // 4人まで。机の左右に振り分けて、足りなければ後ろの段へ回す。
-        // それ以上出しても、机の間隔 (列の間隔は最小 120pt) に収まらない
-        let shown = min(4, max(0, count))
+        // それ以上出しても、机の間隔 (列の間隔は最小 120pt) に収まらない。
+        //
+        // 数と中身の両方を見るのは、`agent_id` を送ってこないエージェントがいるため。
+        // そちらでは中身が空のまま数だけ入るので、数を捨てると手伝いが消える
+        let shown = min(4, max(count, helpers.count))
+        let scale: CGFloat = 0.62
+
         for index in 0..<4 {
             let name = "helper\(index)"
-            let existing = desk.childNode(withName: name)
             guard index < shown else {
-                existing?.removeFromParent()
+                desk.childNode(withName: name)?.removeFromParent()
                 continue
             }
-            guard existing == nil else { continue }
 
-            let helper = person(tint: tint)
-            helper.name = name
-            helper.setScale(0.62)
-            let side: CGFloat = index % 2 == 0 ? -1 : 1
-            helper.position = CGPoint(x: side * (deskWidth / 2 + 12),
-                                      y: index < 2 ? 4 : 26)
-            helper.zPosition = 10
-            helper.alpha = 0.8
-            desk.addChild(helper)
+            let helper: SKNode
+            if let existing = desk.childNode(withName: name) {
+                helper = existing
+            } else {
+                helper = person(tint: tint)
+                helper.name = name
+                let side: CGFloat = index % 2 == 0 ? -1 : 1
+                helper.position = CGPoint(x: side * (deskWidth / 2 + 12),
+                                          y: index < 2 ? 4 : 26)
+                helper.zPosition = 10
+                helper.alpha = 0.8
+                desk.addChild(helper)
+            }
 
-            // 少しずつ揺らす。止まっていると置物に見える
-            helper.run(.sequence([
-                .wait(forDuration: Double(index) * 0.2),
-                .repeatForever(.sequence([
-                    .moveBy(x: 0, y: 1.5, duration: 0.38),
-                    .moveBy(x: 0, y: -1.5, duration: 0.38),
-                ])),
-            ]), withKey: "fidget")
+            // 中身が分かるぶんは、その子が触っているツールで仕草を決める。
+            // 分からないぶん (数だけのもの) は待っていることにする——
+            // 何をしているか言えないのに手を動かして見せると、嘘をつくことになる
+            let move = index < helpers.count
+                ? gesture(for: helpers[index].activity)
+                : DeskGesture.thinking
+            act(helper, gesture: move, scale: scale)
         }
     }
 
@@ -648,10 +667,10 @@ final class DeskScene: SKScene {
     /// 動きの向きと速さで、何をしているかを言う。
     /// 打鍵は細かい上下、読むのは左右に目を走らせる動き、
     /// 端末は待ちが混じるので時々うなずく、返事待ちは呼吸だけ
-    private func act(_ occupant: SKNode, gesture: DeskGesture) {
+    private func act(_ occupant: SKNode, gesture: DeskGesture, scale: CGFloat = 1) {
         occupant.removeAction(forKey: "gesture")
-        occupant.xScale = 1
-        occupant.yScale = 1
+        // 手伝いは縮めて立っているので、素の 1 に戻さず元の縮尺へ戻す
+        occupant.setScale(scale)
 
         let motion: SKAction
         switch gesture {
@@ -677,8 +696,8 @@ final class DeskScene: SKScene {
         case .thinking:
             // 自分では手を動かしていない。呼吸だけ
             motion = .sequence([
-                .scaleY(to: 1.035, duration: 1.1),
-                .scaleY(to: 1.0, duration: 1.1),
+                .scaleY(to: scale * 1.035, duration: 1.1),
+                .scaleY(to: scale, duration: 1.1),
             ])
         }
         occupant.run(.repeatForever(motion), withKey: "gesture")
@@ -756,12 +775,22 @@ final class DeskScene: SKScene {
     /// 打鍵の上下も 0.5 秒ごとに位置を戻されてしまう
     private func dress(_ desk: SKNode, as seat: DeskSeat) {
         let move = gesture(for: seat.activity)
+        let crew = seat.helpers.map { "\($0.id):\($0.activity ?? "-")" }.joined(separator: ",")
         let signature = """
-            \(seat.status)/\(seat.needsPerson)/\(seat.contextPercent ?? -1)\
-            /\(seat.subagents)/\(move)
+            \(seat.status)/\(seat.needsPerson)/\(seat.subagents)/\(move)/\(crew)
             """
-        if desk.userData?["dressed"] as? String == signature { return }
         if desk.userData == nil { desk.userData = NSMutableDictionary() }
+        let unchanged = desk.userData?["dressed"] as? String == signature
+
+        // 書類の山だけは別に見る。積み直すたびに1枚ずつのばらつきを振り直すので、
+        // 使用量が動いていないのに積み直すと紙がチラつく。
+        // 逆に手伝いのツールは頻繁に変わるので、山と同じ条件にはできない
+        let stacked = desk.userData?["stacked"] as? Int
+        if stacked != seat.contextPercent {
+            desk.userData?["stacked"] = seat.contextPercent ?? 0
+            restack(desk, percent: seat.contextPercent ?? 0)
+        }
+        if unchanged { return }
         desk.userData?["dressed"] = signature
 
         let screen = desk.childNode(withName: "screen") as? SKShapeNode
@@ -799,8 +828,10 @@ final class DeskScene: SKScene {
         if let screen, seat.status != TaskStatus.running { stopScreenLines(on: screen) }
         // 手伝いが出るのは動いている間だけ。止まった机に人だけ残ると、
         // まだ動いているように見える
+        let working = seat.status == TaskStatus.running
         setHelpers(desk,
-                   count: seat.status == TaskStatus.running ? seat.subagents : 0,
+                   helpers: working ? seat.helpers : [],
+                   count: working ? seat.subagents : 0,
                    tint: .labelColor)
         // 座っているときは机の奥。立っているときは机の手前なので、重なりも入れ替える
         occupant?.position = CGPoint(x: 0, y: 28)
@@ -827,7 +858,6 @@ final class DeskScene: SKScene {
         }
 
         desk.alpha = seat.status == TaskStatus.missing ? 0.45 : 1
-        restack(desk, percent: seat.contextPercent ?? 0)
     }
 
     /// 机の上の書類の山を積み直す。**コンテキストの使用量を山の高さで出す。**
