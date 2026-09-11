@@ -111,6 +111,7 @@
 "app.settings.background.custom" = "Custom";
 "app.settings.reset" = "Reset";
 "app.filter.grouping" = "Group rows by";
+"app.filter.grouping.status" = "Status";
 "app.filter.grouping.organization.short" = "Org";
 "app.filter.grouping.repository" = "Repository";
 "app.filter.grouping.organization" = "Organization";
@@ -139,6 +140,9 @@
 "app.settings.notify_footer" = "Nothing is sent for the tab you are looking at — while iTerm2 is in front and that tab is open, what happens there is already on screen.\nClicking a notification takes you to its tab, and the notification goes away once you have dealt with it. How they appear and whether they make a sound is up to System Settings → Notifications.";
 
 /* 一覧の見出し。Organization でまとめたとき、持ち主を読めなかったリポジトリの行き先 */
+"app.group.status.waiting" = "Waiting";
+"app.group.status.running" = "In progress";
+"app.group.status.done" = "Done";
 "app.group.no_organization" = "No organization";
 
 /* サイドバー最上部の新着。見出しの言葉は status.waiting (確認待ち) と

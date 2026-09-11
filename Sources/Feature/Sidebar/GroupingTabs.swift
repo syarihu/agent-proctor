@@ -51,8 +51,8 @@ struct GroupingTabs: View {
     /// Picker はセグメント1つだけを無効にできないため、選べないものを出さないことで表す
     private var modes: [GroupingMode] {
         appearance.canGroupByOrganization
-            ? [.organization, .repository]
-            : [.repository]
+            ? [.organization, .repository, .status]
+            : [.repository, .status]
     }
 
     /// 選択は resolvedGrouping を読む。
@@ -66,6 +66,7 @@ struct GroupingTabs: View {
 
     private func glyph(_ mode: GroupingMode) -> String {
         switch mode {
+        case .status: return "checklist"
         case .repository: return "folder"
         case .organization: return "person.2"
         }
@@ -84,6 +85,7 @@ struct GroupingTabs: View {
 
     private func label(_ mode: GroupingMode) -> String {
         switch mode {
+        case .status: return Localized.text("app.filter.grouping.status")
         case .repository: return Localized.text("app.filter.grouping.repository")
         case .organization: return Localized.text("app.filter.grouping.organization")
         }

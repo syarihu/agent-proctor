@@ -7,4 +7,6 @@ public enum GroupingMode: String, CaseIterable, Sendable {
     case repository
     /// Organization 単位（配下にリポジトリをネスト表示）
     case organization
+    /// 状態単位（要確認・実行中・それ以外。配下にリポジトリの小見出しを置く）
+    case status
 }

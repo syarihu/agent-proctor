@@ -53,13 +53,17 @@ public struct TaskListView: View {
 
     public var body: some View {
         // body 内でグルーピング計算を1度だけ行い、ForEach と animation での重複計算を防ぐ
-        let byOrg = appearance.resolvedGrouping == .organization
+        let grouping = appearance.resolvedGrouping
+        let byOrg = grouping == .organization
+        let byStatus = grouping == .status
+
         let orgs = byOrg ? orgGroups : []
-        let repos = byOrg ? [] : repoGroups
+        let statuses = byStatus ? statusGroups : []
+        let repos = byOrg || byStatus ? [] : repoGroups
         let limits = rateLimitSummaries
         // 要確認タスクはグルーピングモードに関わらず最上部に表示する
         let pending = CollectTasks.awaitingReview(store.tasks)
-        let ordering = orderKey(orgs: orgs, repos: repos)
+        let ordering = orderKey(orgs: orgs, repos: repos, statuses: statuses)
         return ZStack {
             // 背景のアンビエントグロー（確認待ちや実行中の状態に応じた環境光）
             ambientGlow
@@ -69,14 +73,16 @@ public struct TaskListView: View {
                 if !pending.isEmpty {
                     AttentionInbox(
                         tasks: pending, base: base, avatars: avatars,
-                        mode: byOrg ? .organization : .repository,
+                        mode: grouping,
                         unknownTitle: Localized.text("app.group.no_organization"),
                         onOpen: onOpen, onClear: onClearAttention)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 ScrollView {
                     // タスクが空でも残存 worktree がある場合は空表示にしない
-                    if store.tasks.isEmpty && (byOrg ? orgs.isEmpty : repos.isEmpty) {
+                    // 状態で切るときは worktree を出さないので、セッションが無ければ空
+                    if byStatus ? statuses.isEmpty
+                        : store.tasks.isEmpty && (byOrg ? orgs.isEmpty : repos.isEmpty) {
                         Text(Localized.text("common.no_agents"))
                             .font(.system(size: base * 0.9))
                             .foregroundStyle(Palette.dim)
@@ -97,13 +103,26 @@ public struct TaskListView: View {
                                         onToggle: { toggle(org.id) })
                                     if !folding.isCollapsed(org.id) {
                                         ForEach(org.repos) { repo in
-                                            repoSection(repo, indent: base * 0.7)
+                                            repoSection(repo, indent: base * 0.7,
+                                                        name: repo.name)
+                                        }
+                                    }
+                                }
+                            } else if byStatus {
+                                ForEach(statuses) { bucket in
+                                    StatusHeader(
+                                        group: bucket, base: base,
+                                        collapsed: folding.isCollapsed(bucket.id),
+                                        onToggle: { toggle(bucket.id) })
+                                    if !folding.isCollapsed(bucket.id) {
+                                        ForEach(bucket.repos) { repo in
+                                            statusRepoSection(repo, in: bucket)
                                         }
                                     }
                                 }
                             } else {
                                 ForEach(repos) { repo in
-                                    repoSection(repo, indent: 0)
+                                    repoSection(repo, indent: 0, name: repo.name)
                                 }
                             }
                         }
@@ -137,15 +156,16 @@ public struct TaskListView: View {
 
     /// 一番上に置く行。表示の切り替え口はここに集める。
     ///
-    /// 要確認ストリップは該当が無いと丸ごと消えるので、切り替え口を相乗りさせられない。
-    /// 常に出ている行が要る
+    /// 要確認ストリップより上なのは、まとめ方がストリップを出すかどうかまで決めるから
+    /// (状態で切るときは要確認の箱が兼ねるのでストリップは出ない)。
+    /// ストリップ自身は該当が無いと丸ごと消えるので、切り替え口を相乗りさせられない
     private var listHeader: some View {
         GroupingTabs(base: base, appearance: appearance)
-            // 左右は下の行の文字の始まりに合わせる (ScrollView の 0.3 + 行の 0.4)。
-            // 上はパネルの角丸から離す分
-            .padding(.horizontal, base * 0.7)
-            .padding(.top, base * 0.7)
-            .padding(.bottom, base * 0.2)
+        // 左右は下の行の文字の始まりに合わせる (ScrollView の 0.3 + 行の 0.4)。
+        // 上はパネルの角丸から離す分
+        .padding(.horizontal, base * 0.7)
+        .padding(.top, base * 0.7)
+        .padding(.bottom, base * 0.2)
     }
 
     private var rateLimitSummaries: [AgentQuotaSummary] {
@@ -154,22 +174,50 @@ public struct TaskListView: View {
 
     /// リポジトリの見出しとタスク行（1段まとめ・2段まとめ共通コンポーネント）
     @ViewBuilder
-    private func repoSection(_ group: RepoGroup, indent: CGFloat) -> some View {
-        let folded = isFolded(group)
+    private func repoSection(_ group: RepoGroup, indent: CGFloat,
+                             name: String) -> some View {
         let empty = group.tasks.isEmpty && group.worktrees.isEmpty
         RepoHeader(
-            name: group.name,
+            name: name,
             repo: group.id,
             base: base,
             topSpacing: indent > 0 ? base * 0.15 : base * 0.3,
-            collapsed: folded,
+            collapsed: isFolded(group),
             foldable: !empty,
             tally: TaskStatus.counts(displayStatuses: group.tasks.map(\.displayStatus)),
             worktrees: group.worktrees.count,
             onToggle: { toggleRepo(group) },
             onNewTab: { onNewTab(group.id, group.name) })
             .padding(.leading, indent)
+        repoRows(group, indent: indent)
+    }
+
+    /// 状態の箱の中のリポジトリ1つ分。小見出しと行だけで、worktree は出さない
+    @ViewBuilder
+    private func statusRepoSection(_ group: RepoGroup, in bucket: StatusGroup) -> some View {
+        // 同じリポジトリが複数の箱に出るので、鍵は箱ごとに分ける。
+        // リポジトリのパスだけを鍵にすると、実行中を畳んだつもりで完了まで畳まれる
+        let key = bucket.id + ":" + group.id
+        let folded = folding.isCollapsed(key)
+        RepoCaption(title: group.qualifiedName, owner: group.avatarOwner,
+                    host: group.host, base: base, avatars: avatars,
+                    collapsed: folded, onToggle: { toggle(key) })
         if !folded {
+            ForEach(group.tasks) { task in
+                TaskRow(task: task, base: base,
+                        isCurrent: isCurrent(task),
+                        tabNumber: tabNumber(task),
+                        pullRequests: pullRequests,
+                        onOpen: onOpen, onClose: onClose)
+                    .padding(.leading, base)
+            }
+        }
+    }
+
+    /// 見出しの下に続く行。畳んでいるときは何も出さない
+    @ViewBuilder
+    private func repoRows(_ group: RepoGroup, indent: CGFloat) -> some View {
+        if !isFolded(group) {
             ForEach(group.tasks) { task in
                 TaskRow(task: task, base: base,
                         isCurrent: isCurrent(task),
@@ -237,20 +285,32 @@ public struct TaskListView: View {
     }
 
     /// 並び順の変化をアニメーションに伝える識別キーを生成する
-    private func orderKey(orgs: [OrgGroup], repos: [RepoGroup]) -> String {
+    private func orderKey(orgs: [OrgGroup], repos: [RepoGroup],
+                          statuses: [StatusGroup]) -> String {
         func key(_ repos: [RepoGroup]) -> String {
             repos.map { "\($0.id):" + $0.tasks.map(\.id).joined(separator: ",") }
                 .joined(separator: "|")
         }
-        if appearance.resolvedGrouping == .organization {
+        // 接頭辞がまとめ方の切り替えそのものを拾う。足し忘れると、
+        // 段の作りが変わっても鍵が同じままになり並び替えのアニメーションが飛ぶ
+        switch appearance.resolvedGrouping {
+        case .organization:
             return "org|" + orgs.map { "\($0.id)>" + key($0.repos) }.joined(separator: "//")
+        case .repository:
+            return "repo|" + key(repos)
+        case .status:
+            return "status|" + statuses.map { "\($0.id)>" + key($0.repos) }
+                .joined(separator: "//")
         }
-        return "repo|" + key(repos)
     }
 
     private var repoGroups: [RepoGroup] {
         TaskGrouping.byRepository(store.tasks, worktrees: store.worktrees,
                                   keeping: store.keptRepos)
+    }
+
+    private var statusGroups: [StatusGroup] {
+        TaskGrouping.byStatus(store.tasks)
     }
 
     private var orgGroups: [OrgGroup] {
@@ -1118,7 +1178,8 @@ private struct AttentionInbox: View {
             VStack(alignment: .leading, spacing: base * 0.1) {
                 header
                 ForEach(groups) { group in
-                    InboxGroupCaption(group: group, base: base, avatars: avatars)
+                    RepoCaption(title: group.title, owner: group.owner,
+                                host: group.host, base: base, avatars: avatars)
                     ForEach(group.tasks) { task in
                         // Organization 別表示時のみ、識別のためリポジトリ名を行内にも表示する
                         InboxRow(task: task, base: base,
@@ -1198,20 +1259,90 @@ private struct ClearButton: View {
     }
 }
 
-/// 新着インボックスのグループ見出し。タスク行の視認性を邪魔しない控えめなスタイルにする。
-private struct InboxGroupCaption: View {
-    let group: PendingGroup
+/// 状態の箱の見出し。件数バッジの色でその箱が何の集まりかを示す。
+private struct StatusHeader: View {
+    let group: StatusGroup
+    let base: CGFloat
+    let collapsed: Bool
+    var onToggle: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: base * 0.3) {
+            // 開閉時の記号切り替えによる視覚的なブレを防ぐため回転で向きを変える
+            Image(systemName: "chevron.right")
+                .font(.system(size: base * 0.7, weight: .semibold))
+                .foregroundStyle(Palette.dim)
+                .rotationEffect(.degrees(collapsed ? 0 : 90))
+                .frame(width: base * 0.8)
+
+            Text(group.title)
+                .font(.system(size: base * 0.9, weight: .semibold))
+                .foregroundStyle(Palette.dim)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            // 要確認ストリップの件数バッジと同じ形。同じ「何件あるか」を出すものなので揃える
+            Text("\(group.tasks.count)")
+                .font(.system(size: base * 0.65, weight: .bold).monospacedDigit())
+                .foregroundStyle(Palette.fg)
+                .padding(.horizontal, base * 0.3)
+                .padding(.vertical, base * 0.05)
+                .background(Capsule().fill(Palette.status(group.status).opacity(0.35)))
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, base * 0.4)
+        .padding(.vertical, base * 0.3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: base * 0.3)
+                .fill(hovering ? Palette.hover : Color.clear))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture(perform: onToggle)
+        // Button ではなく onTapGesture で畳んでいるので、押せることは自分で伝える。
+        // children: .combine にすると見出しと件数がひと続きで読まれる
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onToggle() }
+        // ホバー背景やタップ判定の領域が不要に広がるのを防ぐため、余白はタップ範囲の外側に設ける
+        .padding(.top, base * 0.3)
+    }
+}
+
+/// グループの小見出し。要確認ストリップと、状態で切ったときの箱の中で共用する。
+///
+/// 上下で別々に書くと、同じリポジトリ名が場所によって違う大きさで出る
+private struct RepoCaption: View {
+    let title: String
+    let owner: String?
+    let host: String?
     let base: CGFloat
     @ObservedObject var avatars: OrgAvatarStore
+    /// 畳めない場所 (要確認ストリップ) では nil。シェブロンもタップも出さない
+    var collapsed: Bool?
+    var onToggle: (() -> Void)?
+
+    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: base * 0.25) {
+            if let collapsed {
+                // 開閉時の記号切り替えによる視覚的なブレを防ぐため回転で向きを変える
+                Image(systemName: "chevron.right")
+                    .font(.system(size: base * 0.55, weight: .semibold))
+                    .foregroundStyle(Palette.dim)
+                    .rotationEffect(.degrees(collapsed ? 0 : 90))
+                    .frame(width: base * 0.6)
+            }
             // リポジトリ単位のまとめ表示時に空の枠が並ぶのを防ぐため、所有者/ホストが判明している場合のみアバターを表示する
-            if group.owner != nil || group.host != nil {
-                OrgAvatar(owner: group.owner, host: group.host, title: group.title,
+            if owner != nil || host != nil {
+                OrgAvatar(owner: owner, host: host, title: title,
                           size: base * 0.8, avatars: avatars)
             }
-            Text(group.title)
+            Text(title)
                 .font(.system(size: base * 0.65, weight: .semibold))
                 .foregroundStyle(Palette.dim)
                 .lineLimit(1)
@@ -1219,7 +1350,20 @@ private struct InboxGroupCaption: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, base * 0.4)
-        .padding(.top, base * 0.3)
+        .padding(.vertical, base * 0.1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: base * 0.3)
+                .fill(hovering && onToggle != nil ? Palette.hover : Color.clear))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture { onToggle?() }
+        .accessibilityElement(children: .combine)
+        // 畳めない場所 (要確認ストリップ) では押せないので、ボタンだとは言わない
+        .accessibilityAddTraits(onToggle == nil ? [] : .isButton)
+        .accessibilityAction { onToggle?() }
+        // ホバー背景やタップ判定の領域が不要に広がるのを防ぐため、余白はタップ範囲の外側に設ける
+        .padding(.top, base * 0.2)
     }
 }
 

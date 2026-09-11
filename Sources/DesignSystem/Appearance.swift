@@ -106,8 +106,18 @@ public final class Appearance: ObservableObject {
     }
 
     /// 実際に使用するまとめ方。gh が利用できない場合は repository にフォールバックする。
+    ///
+    /// 落とすのは organization だけ。持ち主そのものは git の remote から引けるので
+    /// 段は作れるが、gh が無いと持ち主のアイコンが出ず、段が増えるだけになるため。
+    /// 三項演算子で「organization でなければ repository」と書くと、
+    /// 増えたまとめ方が黙って repository に潰れる
     public var resolvedGrouping: GroupingMode {
-        groupingMode == .organization && canGroupByOrganization ? .organization : .repository
+        switch groupingMode {
+        case .organization:
+            return canGroupByOrganization ? .organization : .repository
+        case .repository, .status:
+            return groupingMode
+        }
     }
 
     /// Organization まとめが利用可能かを確かめるプロバイダ。UseCaseTask への直接依存を避けるために注入する
