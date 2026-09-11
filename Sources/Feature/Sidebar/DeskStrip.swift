@@ -49,18 +49,26 @@ final class DeskScene: SKScene {
     private var backRowY: CGFloat { size.height * 0.63 }
     private var frontRowY: CGFloat { size.height * 0.26 }
 
-    /// 机の立ち位置。左端が hub、残りが worker という想定。
+    /// 部屋の中心。hub の机を置き、カメラの落ち着き先にもする
+    private let centerX: CGFloat = 400
+
+    /// 机の立ち位置。**hub を中心に worker が取り囲む**という想定。
     ///
-    /// 奥と手前を交互に置いて 120pt 間隔で詰める。机の幅が 58pt なので隣とは 62pt 空く。
+    /// hub は奥の列の真ん中（部屋の上座）。worker は手前の列に4つ並べ、
+    /// 残りを奥の列の両端に置いて、hub から見て左右対称になるようにしている。
+    /// 中心から配ることで、カメラが片側へ寄りっぱなしにならず左右に振れる。
+    ///
+    /// 間隔は 120pt。机の幅が 58pt なので隣とは 62pt 空く。
     /// これ以上離すと 280pt のビューポートに机が1つ半しか入らず、事務所に見えない
     private var desks: [(x: CGFloat, y: CGFloat, name: String, isHub: Bool)] {
         [
-            (100, backRowY, "hub", true),
-            (220, frontRowY, "worker-1", false),
-            (340, backRowY, "worker-2", false),
-            (460, frontRowY, "worker-3", false),
-            (580, backRowY, "worker-4", false),
-            (700, frontRowY, "worker-5", false),
+            (centerX, backRowY, "hub", true),
+            (centerX - 60, frontRowY, "worker-1", false),
+            (centerX + 60, frontRowY, "worker-2", false),
+            (centerX - 180, frontRowY, "worker-3", false),
+            (centerX + 180, frontRowY, "worker-4", false),
+            (centerX - 240, backRowY, "worker-5", false),
+            (centerX + 240, backRowY, "worker-6", false),
         ]
     }
 
@@ -123,11 +131,14 @@ final class DeskScene: SKScene {
                               label: desk.name, isHub: desk.isHub))
         }
 
-        // 席に着いたままの人を1人。無人の事務所だと俯瞰しているのか分かりにくい
-        let seated = person(tint: .secondaryLabelColor)
-        seated.position = CGPoint(x: desks[2].x, y: desks[2].y + 20)
-        seated.zPosition = -seated.position.y
-        addChild(seated)
+        // 席に着いたままの人。無人の事務所だと俯瞰しているのか分かりにくい。
+        // 机の奥に置くので、重なり順 (-y) では机より後ろに回る
+        for index in [3, 6] {
+            let seated = person(tint: .secondaryLabelColor)
+            seated.position = CGPoint(x: desks[index].x, y: desks[index].y + 20)
+            seated.zPosition = -seated.position.y
+            addChild(seated)
+        }
     }
 
     private func hairline(from: CGPoint, to: CGPoint) -> SKShapeNode {
@@ -239,7 +250,7 @@ final class DeskScene: SKScene {
         }
 
         var steps: [SKAction] = []
-        for target in [1, 3, 5, 2, 4] {
+        for target in [1, 4, 5, 2, 3, 6] {
             steps.append(.wait(forDuration: 0.5))
             steps.append(.run { [weak self] in self?.givePaper(to: walker) })
             steps.append(walk(walker, to: spot(target)))
