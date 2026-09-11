@@ -558,11 +558,12 @@ final class DeskScene: SKScene {
         let tool = activity?.split(separator: ":").first
             .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
         switch tool {
-        case "Read", "Grep", "Glob", "LS", "NotebookRead", "Explore":
+        case "Read", "Grep", "Glob", "LS", "NotebookRead", "Explore",
+             "view_file", "grep_search", "find_by_name", "list_dir", "search_web", "read_url_content", "WebSearch":
             return .reading
-        case "Bash", "BashOutput", "KillShell", "KillBash":
+        case "Bash", "BashOutput", "KillShell", "KillBash", "run_command":
             return .terminal
-        case "Task", "Agent", "WebFetch", "WebSearch", "SendMessage":
+        case "Task", "Agent", "WebFetch", "SendMessage", "invoke_subagent":
             return .thinking
         default:
             return .typing
@@ -635,7 +636,7 @@ final class DeskScene: SKScene {
         // 数と中身の両方を見るのは、`agent_id` を送ってこないエージェントがいるため。
         // そちらでは中身が空のまま数だけ入るので、数を捨てると手伝いが消える
         let shown = min(4, max(count, helpers.count))
-        let scale: CGFloat = 0.62
+        let scale: CGFloat = 0.78
 
         for index in 0..<4 {
             let name = "helper\(index)"
@@ -645,14 +646,16 @@ final class DeskScene: SKScene {
             }
 
             let helper: SKNode
+            let side: CGFloat = index % 2 == 0 ? -1 : 1
+            let home = CGPoint(x: side * (deskWidth / 2 + 12),
+                               y: index < 2 ? 4 : 26)
             if let existing = desk.childNode(withName: name) {
                 helper = existing
+                helper.position = home
             } else {
                 helper = person(tint: tint)
                 helper.name = name
-                let side: CGFloat = index % 2 == 0 ? -1 : 1
-                helper.position = CGPoint(x: side * (deskWidth / 2 + 12),
-                                          y: index < 2 ? 4 : 26)
+                helper.position = home
                 helper.zPosition = 10
                 helper.alpha = 0.8
                 desk.addChild(helper)
@@ -671,10 +674,11 @@ final class DeskScene: SKScene {
     /// 席の人に仕草をさせる。
     ///
     /// 動きの向きと速さで、何をしているかを言う。
-    /// 打鍵は細かい上下、読むのは左右に目を走らせる動き、
+    /// 打鍵は細かい上下、調べる・探すのは覗き込みながらキョロキョロ見比べる動き、
     /// 端末は待ちが混じるので時々うなずく、返事待ちは呼吸だけ
     private func act(_ occupant: SKNode, gesture: DeskGesture, scale: CGFloat = 1) {
         occupant.removeAction(forKey: "gesture")
+        occupant.zRotation = 0
         // 手伝いは縮めて立っているので、素の 1 に戻さず元の縮尺へ戻す
         occupant.setScale(scale)
 
@@ -686,11 +690,21 @@ final class DeskScene: SKScene {
                 .moveBy(x: 0, y: -1.2, duration: 0.28),
             ])
         case .reading:
-            // 左右に振る。読む・探すは目が横に動く
+            // 覗き込みながらキョロキョロ見比べる。
+            // 身を乗り出して左右に首を傾げることで、画面や書類を熱心に探している姿にする
             motion = .sequence([
-                .moveBy(x: 2.5, y: 0, duration: 0.55),
-                .moveBy(x: -5.0, y: 0, duration: 1.1),
-                .moveBy(x: 2.5, y: 0, duration: 0.55),
+                .group([
+                    .moveBy(x: 0, y: -1.6, duration: 0.35),
+                    .rotate(toAngle: 0.12, duration: 0.35),
+                ]),
+                .wait(forDuration: 0.20),
+                .rotate(toAngle: -0.12, duration: 0.45),
+                .wait(forDuration: 0.20),
+                .group([
+                    .moveBy(x: 0, y: 1.6, duration: 0.35),
+                    .rotate(toAngle: 0, duration: 0.35),
+                ]),
+                .wait(forDuration: 0.15),
             ])
         case .terminal:
             // 流れるのを見ている。時々うなずくだけ
@@ -708,27 +722,64 @@ final class DeskScene: SKScene {
         }
         occupant.run(.repeatForever(motion), withKey: "gesture")
 
-        // 読んでいるときだけ手元に紙を持たせる。
-        // 動きだけでは「読む」と「打つ」が見分けづらい
-        let sheet = occupant.childNode(withName: "sheet")
+        // 調べる・探すときは手元に虫眼鏡（ルーペ）を持たせる。
+        // 覗き込む動きと道具の両方で「探している」ことを一目で伝える
+        let loupe = occupant.childNode(withName: "loupe") ?? occupant.childNode(withName: "sheet")
         if gesture == .reading {
-            guard sheet == nil else { return }
-            let paper = SKShapeNode(rect: CGRect(x: -6, y: 0, width: 12, height: 14),
-                                    cornerRadius: 1)
-            paper.name = "sheet"
-            paper.fillColor = NSColor(white: 0.93, alpha: 0.9)
-            paper.strokeColor = .black.withAlphaComponent(0.18)
-            paper.lineWidth = 0.5
-            paper.position = CGPoint(x: 0, y: 2)
-            paper.zPosition = 2
-            occupant.addChild(paper)
-            paper.run(.repeatForever(.sequence([
-                .rotate(toAngle: 0.10, duration: 0.55),
-                .rotate(toAngle: -0.10, duration: 0.55),
-            ])))
+            guard loupe == nil else { return }
+            let tool = magnifyingGlass()
+            tool.name = "loupe"
+            tool.position = CGPoint(x: 6, y: 6)
+            tool.zPosition = 25
+            occupant.addChild(tool)
+            tool.run(.repeatForever(.sequence([
+                .group([
+                    .moveBy(x: -4.0, y: 1.5, duration: 0.45),
+                    .rotate(toAngle: -0.28, duration: 0.45),
+                ]),
+                .wait(forDuration: 0.15),
+                .group([
+                    .moveBy(x: 4.0, y: -1.5, duration: 0.45),
+                    .rotate(toAngle: 0.22, duration: 0.45),
+                ]),
+                .wait(forDuration: 0.15),
+            ])), withKey: "scan")
         } else {
-            sheet?.removeFromParent()
+            loupe?.removeFromParent()
         }
+    }
+
+    /// 調べる・探すときに手に持つ虫眼鏡（ルーペ）。
+    /// 文字は読めなくても、ルーペを持って覗き込む姿で「調べている」ことが一目で分かる
+    private func magnifyingGlass() -> SKNode {
+        let loupe = SKNode()
+
+        // 持ち手（柄）。(0, 0) を握り手（ピボット）にして、右上に向かってレンズを伸ばす
+        let handlePath = CGMutablePath()
+        handlePath.move(to: CGPoint(x: 0, y: 0))
+        handlePath.addLine(to: CGPoint(x: -3.8, y: 3.8))
+        let handle = SKShapeNode(path: handlePath)
+        handle.strokeColor = .labelColor.withAlphaComponent(0.9)
+        handle.lineWidth = 1.8
+        handle.lineCap = .round
+        loupe.addChild(handle)
+
+        // レンズ枠
+        let rim = SKShapeNode(circleOfRadius: 4.5)
+        rim.position = CGPoint(x: -6.8, y: 6.8)
+        rim.strokeColor = .labelColor.withAlphaComponent(0.85)
+        rim.lineWidth = 1.3
+        rim.fillColor = NSColor(red: 0.55, green: 0.85, blue: 1.0, alpha: 0.40)
+        loupe.addChild(rim)
+
+        // レンズのガラス反射（光の反射ハイライト）
+        let glint = SKShapeNode(circleOfRadius: 0.9)
+        glint.position = CGPoint(x: -8.2, y: 8.2)
+        glint.fillColor = .white.withAlphaComponent(0.85)
+        glint.strokeColor = .clear
+        loupe.addChild(glint)
+
+        return loupe
     }
 
     /// 人1人。俯瞰なので背丈は詰めて、頭を大きめに取る
@@ -831,12 +882,15 @@ final class DeskScene: SKScene {
         }
 
         occupant?.removeAction(forKey: "gesture")
+        occupant?.zRotation = 0
         occupant?.childNode(withName: "sheet")?.removeFromParent()
+        occupant?.childNode(withName: "loupe")?.removeFromParent()
         occupant?.alpha = 1
         if let screen, seat.status != TaskStatus.running { stopScreenLines(on: screen) }
-        // 手伝いが出るのは動いている間だけ。止まった机に人だけ残ると、
-        // まだ動いているように見える
-        let working = seat.status == TaskStatus.running
+        // 手伝いが出るのは動いている間と確認待ちの間だけ。完了や失敗の机に
+        // 人だけ残ると、まだ動いているように見える。
+        // 承認待ちの間も子エージェントは稼働中なので表示を維持する
+        let working = seat.status == TaskStatus.running || seat.status == TaskStatus.waiting
         setHelpers(desk,
                    helpers: working ? seat.helpers : [],
                    count: working ? seat.subagents : 0,
