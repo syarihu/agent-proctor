@@ -77,27 +77,27 @@ final class DeskScene: SKScene {
     //
     // 机1つの見た目の大きさから逆算した値。ここを触ると部屋全体が組み直される
 
-    private let deskWidth: CGFloat = 58
-    private let deskDepth: CGFloat = 17
+    private let deskWidth: CGFloat = 72
+    private let deskDepth: CGFloat = 21
     /// 机は2カラム。中心からの振り分け幅。
-    /// 左右の間隔 (112pt) が見出しの折り返し幅 (100pt) より広くないと、
+    /// 左右の間隔 (136pt) が見出しの折り返し幅 (120pt) より広くないと、
     /// 隣の机の見出しと文字がぶつかる
-    private let columnOffset: CGFloat = 56
-    /// 見出しを折り返す幅。カラムの間隔より 12pt 狭くして、隣と触れないようにする
-    private let captionWidth: CGFloat = 100
+    private let columnOffset: CGFloat = 68
+    /// 見出しを折り返す幅。カラムの間隔より 16pt 狭くして、隣と触れないようにする
+    private let captionWidth: CGFloat = 120
     /// 見出しの行数。これ以上増やすと下の段のモニタに乗る
     private let captionLines = 3
     /// 見出しの文字の大きさ。長い名前はここから縮めて3行に収める
-    private let captionSize: CGFloat = 8
+    private let captionSize: CGFloat = 10
     /// 縮める下限。これ以下にすると読めないので、そこから先は諦めて切る
-    private let captionMinSize: CGFloat = 6
+    private let captionMinSize: CGFloat = 7
     /// 段と段の縦の間隔。
-    /// 机の縦の専有 (前面 14.5 + 3行の見出し 30) と、下の段のモニタの天 (18.5) が
+    /// 机の縦の専有 (前面 16.5 + 3行の見出し 36) と、下の段のモニタの天 (23.5) が
     /// 余裕をもって離れる高さを取る。ここを詰めると、名前の長い机の3行目が
     /// 下の段のモニタに乗る
-    private let rowSpacing: CGFloat = 88
-    /// 島と島の横の間隔。島の幅 (58 + 112) に通路を足したもの
-    private let islandSpacing: CGFloat = 250
+    private let rowSpacing: CGFloat = 100
+    /// 島と島の横の間隔。島の幅 (72 + 136) に通路を足したもの
+    private let islandSpacing: CGFloat = 290
     /// 部屋の上の余白。hub の見出し (机から 32pt 上) が奥の壁に食い込まない高さに、
     /// 天井側の間を足したもの。ここが詰まっていると机が上端に貼り付いて窮屈に見える
     private let topMargin: CGFloat = 84
@@ -106,8 +106,8 @@ final class DeskScene: SKScene {
     /// 片側に積む書類の枚数の上限。左右で倍の 12 段まで出せる。
     /// これ以上高くすると見出しに届く
     private let maxSheetsPerSide = 6
-    private let sheetWidth: CGFloat = 13
-    private let sheetHeight: CGFloat = 4
+    private let sheetWidth: CGFloat = 15
+    private let sheetHeight: CGFloat = 4.5
 
     // MARK: 状態
 
@@ -124,8 +124,9 @@ final class DeskScene: SKScene {
     /// 部屋のものを全部ぶら下げる。組み直しはこれを捨てるだけで済む
     private var room = SKNode()
 
-    /// 島ごとの使い。動いている机のあいだを歩く
-    private var couriers: [Int: SKNode] = [:]
+    /// hub へ質問しに来ている人。席の id で引く。
+    /// 机の occupant とは別のノードで、部屋の座標で歩かせる
+    private var visitors: [String: SKNode] = [:]
     /// 島ごとの稼働の量。いま動いているセッションの数を秒単位でならしたもの
     private var activity: [Double] = []
     /// いまカメラが張り付いている先
@@ -226,7 +227,7 @@ final class DeskScene: SKScene {
 
     /// 人が机の前に立つ位置。天板に重ならないよう少し手前に下げる
     private func standing(at desk: CGPoint) -> CGPoint {
-        CGPoint(x: desk.x, y: desk.y - 24)
+        CGPoint(x: desk.x, y: desk.y - 30)
     }
 
     // MARK: - 組み立て
@@ -236,7 +237,7 @@ final class DeskScene: SKScene {
         room.removeFromParent()
         room = SKNode()
         addChild(room)
-        couriers.removeAll()
+        visitors.removeAll()
         activity = Array(repeating: 0, count: islands.count)
         builtSkeleton = skeleton(of: islands)
         builtColumns = columns
@@ -249,7 +250,6 @@ final class DeskScene: SKScene {
                 room.addChild(deskNode(at: seatPoint(island: index, index: slot),
                                        label: seat.name, isHub: false, seat: seat))
             }
-            addCourier(island: index)
         }
         refreshSeats()
 
@@ -308,9 +308,9 @@ final class DeskScene: SKScene {
 
         let width = isHub ? deskWidth + 12 : deskWidth
 
-        let front = SKShapeNode(rect: CGRect(x: -width / 2, y: -deskDepth / 2 - 6,
-                                             width: width, height: 7),
-                                cornerRadius: 1.5)
+        let front = SKShapeNode(rect: CGRect(x: -width / 2, y: -deskDepth / 2 - 7,
+                                             width: width, height: 8),
+                                cornerRadius: 2)
         front.fillColor = .secondaryLabelColor.withAlphaComponent(0.32)
         front.strokeColor = .clear
         node.addChild(front)
@@ -322,8 +322,9 @@ final class DeskScene: SKScene {
         top.strokeColor = .clear
         node.addChild(top)
 
-        let screen = SKShapeNode(rect: CGRect(x: -11, y: deskDepth / 2 - 4, width: 22, height: 14),
-                                 cornerRadius: 2)
+        let screen = SKShapeNode(rect: CGRect(x: -13.5, y: deskDepth / 2 - 4,
+                                              width: 27, height: 17),
+                                 cornerRadius: 2.5)
         screen.name = "screen"
         screen.strokeColor = .clear
         screen.fillColor = .secondaryLabelColor.withAlphaComponent(0.4)
@@ -335,24 +336,28 @@ final class DeskScene: SKScene {
         for (name, side) in [("stackL", -1.0), ("stackR", 1.0)] as [(String, CGFloat)] {
             let stack = SKNode()
             stack.name = name
-            stack.position = CGPoint(x: side * (width / 2 - 9), y: -4)
+            stack.position = CGPoint(x: side * (width / 2 - 11), y: -5)
             node.addChild(stack)
         }
 
-        if seat != nil {
-            // 席の人。状態によって座ったり立ったりするので、器ごと持たせる
-            let occupant = person(tint: .labelColor)
-            occupant.name = "occupant"
-            occupant.position = CGPoint(x: 0, y: 20)
-            occupant.zPosition = -20
-            node.addChild(occupant)
+        // 席の人。hub にも座らせる。質問を受ける相手がいない事務所だと、
+        // 並びに来た人が誰に用があるのか分からない
+        let occupant = person(tint: isHub ? .labelColor : .labelColor)
+        occupant.name = "occupant"
+        occupant.position = CGPoint(x: 0, y: 24)
+        occupant.zPosition = -20
+        node.addChild(occupant)
 
-            // 挙げた手。人の子にしているので、座っていても立っていても頭の上に付いてくる
+        if seat != nil {
+            // 挙げた手。**机の上に置いたままにする。**
+            // 本人は hub へ質問しに行ってしまうので、手が付いていってしまうと
+            // どの机が呼んでいるのか分からなくなる
             let hand = DeskScene.handMark()
             hand.name = "hand"
-            hand.position = CGPoint(x: 7, y: 24)
+            hand.position = CGPoint(x: 0, y: -4)
+            hand.zPosition = 5
             hand.isHidden = true
-            occupant.addChild(hand)
+            node.addChild(hand)
         }
 
         // 見出しは机の下、最大3行。上に置くと書類の山 (片側6枚 24pt) と場所を
@@ -368,7 +373,7 @@ final class DeskScene: SKScene {
         // 折り返しは自分で入れた改行でやる。行数は数えてあるので上限は要らない
         caption.numberOfLines = 0
         caption.verticalAlignmentMode = .top
-        caption.position = CGPoint(x: 0, y: -deskDepth / 2 - 9)
+        caption.position = CGPoint(x: 0, y: -deskDepth / 2 - 11)
         node.addChild(caption)
 
         return node
@@ -439,7 +444,7 @@ final class DeskScene: SKScene {
     /// 同じ状態を別の絵で言うと、どちらかが別の意味に見える。
     /// SpriteKit は記号をそのまま置けないので、色を焼いた画像にしてから貼る
     private static let handTexture: SKTexture? = {
-        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+        let config = NSImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
         guard let symbol = NSImage(systemSymbolName: "hand.raised.fill",
                                    accessibilityDescription: nil)?
             .withSymbolConfiguration(config) else { return nil }
@@ -455,7 +460,7 @@ final class DeskScene: SKScene {
     private static func handMark() -> SKNode {
         guard let handTexture else { return SKNode() }
         let node = SKSpriteNode(texture: handTexture)
-        node.size = CGSize(width: 11, height: 13)
+        node.size = CGSize(width: 17, height: 20)
         return node
     }
 
@@ -463,20 +468,20 @@ final class DeskScene: SKScene {
     private func person(tint: NSColor) -> SKNode {
         let node = SKNode()
 
-        let body = SKShapeNode(rect: CGRect(x: -5, y: 0, width: 10, height: 12),
-                               cornerRadius: 4)
+        let body = SKShapeNode(rect: CGRect(x: -6, y: 0, width: 12, height: 15),
+                               cornerRadius: 5)
         body.fillColor = tint.withAlphaComponent(0.75)
         body.strokeColor = .clear
         node.addChild(body)
 
-        let head = SKShapeNode(circleOfRadius: 5)
+        let head = SKShapeNode(circleOfRadius: 6)
         head.fillColor = tint.withAlphaComponent(0.85)
         head.strokeColor = .clear
-        head.position = CGPoint(x: 0, y: 15)
+        head.position = CGPoint(x: 0, y: 18)
         node.addChild(head)
 
         // 足元の影。地面に立っていることを示す
-        let shadow = SKShapeNode(ellipseOf: CGSize(width: 13, height: 5))
+        let shadow = SKShapeNode(ellipseOf: CGSize(width: 16, height: 6))
         shadow.fillColor = .black.withAlphaComponent(0.14)
         shadow.strokeColor = .clear
         shadow.zPosition = -1
@@ -494,7 +499,7 @@ final class DeskScene: SKScene {
                 guard let desk = room.childNode(withName: "seat:\(seat.id)") else { continue }
                 dress(desk, as: seat)
             }
-            _ = index
+            updateQueue(island: index)
         }
     }
 
@@ -511,7 +516,7 @@ final class DeskScene: SKScene {
 
         let screen = desk.childNode(withName: "screen") as? SKShapeNode
         let occupant = desk.childNode(withName: "occupant")
-        let hand = occupant?.childNode(withName: "hand")
+        let hand = desk.childNode(withName: "hand")
 
         // 席に人がいるかどうか。
         //
@@ -519,7 +524,10 @@ final class DeskScene: SKScene {
         // 消えたもの (missing) だけ席を空ける。それ以外は、終わったあとも
         // 確認を待っているあいだは人がいる。誰もいない机は「ここには誰もいない」
         // という意味に読めてほしいので、その意味を持たない状態には使わない
-        let seated = seat.status != TaskStatus.idle && seat.status != TaskStatus.missing
+        // 待機中は本人が hub へ質問しに行っているので、席にはいない
+        let seated = seat.status != TaskStatus.idle
+            && seat.status != TaskStatus.missing
+            && seat.status != TaskStatus.waiting
         occupant?.isHidden = !seated
 
         // 人の手が要るものだけ手を挙げる。動いているだけのものに出すと、
@@ -538,7 +546,7 @@ final class DeskScene: SKScene {
         occupant?.removeAction(forKey: "type")
         occupant?.alpha = 1
         // 座っているときは机の奥。立っているときは机の手前なので、重なりも入れ替える
-        occupant?.position = CGPoint(x: 0, y: 20)
+        occupant?.position = CGPoint(x: 0, y: 24)
         occupant?.zPosition = -20
 
         switch seat.status {
@@ -551,9 +559,6 @@ final class DeskScene: SKScene {
             ])), withKey: "type")
         case TaskStatus.waiting:
             screen?.fillColor = NSColor(red: 1.0, green: 0.655, blue: 0.149, alpha: 0.9)
-            // 席を立って机の脇へ。真下は見出しが使うので空けておく
-            occupant?.position = CGPoint(x: -(deskWidth / 2 + 9), y: -4)
-            occupant?.zPosition = 20
         case TaskStatus.done:
             screen?.fillColor = NSColor(red: 0.400, green: 0.733, blue: 0.416, alpha: 0.8)
         case TaskStatus.failed:
@@ -613,45 +618,95 @@ final class DeskScene: SKScene {
         }
     }
 
-    // MARK: - 使い
+    // MARK: - 質問の行列
 
-    /// 島の使い。動いている机のあいだを歩き回る。
+    /// hub の机の前の並び位置。
     ///
-    /// **いまは受け渡しを表していない。** adjutant を繋ぐまでは「その島が動いている」
-    /// ことの目印でしかないので、動いている机が無い島では歩かせない
-    private func addCourier(island index: Int) {
-        guard islands[index].seats.count > 1 else { return }
-        let courier = person(tint: .secondaryLabelColor)
-        courier.position = standing(at: hubPoint(island: index))
-        courier.alpha = 0.7
-        room.addChild(courier)
-        couriers[index] = courier
-        sendCourier(island: index)
+    /// 左へ1人ずつ伸ばす。真下は見出しが使っていて、真上は席の人がいる。
+    /// 島の幅は 290pt あるので、5人までは隣の島に食い込まない
+    private func queuePoint(island: Int, slot: Int) -> CGPoint {
+        let hub = hubPoint(island: island)
+        return CGPoint(x: hub.x - (deskWidth + 22) / 2 - 18 - CGFloat(slot) * 21,
+                       y: hub.y - 12)
     }
 
-    private func sendCourier(island index: Int) {
-        guard index < islands.count, let courier = couriers[index] else { return }
-        let running = islands[index].seats.enumerated()
-            .filter { $0.element.status == TaskStatus.running }
-            .map { standing(at: seatPoint(island: index, index: $0.offset)) }
+    /// 待っている人を hub の前に並ばせる。
+    ///
+    /// 手は机に置いたまま本人だけが来る。並ぶ順は席の並び順なので、
+    /// 誰かの番が済んでも残りの並びが入れ替わらない
+    private func updateQueue(island index: Int) {
+        let island = islands[index]
+        var slot = 0
+        var standing = Set<String>()
 
-        // 動いている机が無ければ、hub の前で待つ
-        let target = running.randomElement() ?? standing(at: hubPoint(island: index))
-        let distance = hypot(courier.position.x - target.x, courier.position.y - target.y)
-        let duration = max(0.25, TimeInterval(distance / 65))
+        for (seatIndex, seat) in island.seats.enumerated()
+        where seat.status == TaskStatus.waiting {
+            standing.insert(seat.id)
+            let target = queuePoint(island: index, slot: slot)
+            slot += 1
 
-        courier.run(.sequence([
-            .move(to: target, duration: duration),
-            .wait(forDuration: 1.2, withRange: 2.0),
-            .run { [weak self] in self?.sendCourier(island: index) },
-        ]), withKey: "round")
+            let visitor: SKNode
+            if let existing = visitors[seat.id] {
+                visitor = existing
+            } else {
+                // 席から立ち上がったところから歩き出す
+                visitor = person(tint: .labelColor)
+                visitor.position = standingSpot(island: index, seat: seatIndex)
+                room.addChild(visitor)
+                visitors[seat.id] = visitor
+            }
+            send(visitor, to: target)
+        }
+
+        // 番が済んだ人は席へ帰す
+        for (id, visitor) in visitors where !standing.contains(id) {
+            guard let home = homeSpot(of: id) else {
+                visitor.removeFromParent()
+                visitors.removeValue(forKey: id)
+                continue
+            }
+            visitors.removeValue(forKey: id)
+            let distance = hypot(visitor.position.x - home.x, visitor.position.y - home.y)
+            visitor.run(.sequence([
+                .move(to: home, duration: max(0.3, TimeInterval(distance / 70))),
+                .removeFromParent(),
+            ]))
+        }
+    }
+
+    private func standingSpot(island: Int, seat: Int) -> CGPoint {
+        standing(at: seatPoint(island: island, index: seat))
+    }
+
+    /// 席へ帰る先。机がもう無ければ nil
+    private func homeSpot(of id: String) -> CGPoint? {
+        for (index, island) in islands.enumerated() {
+            if let seat = island.seats.firstIndex(where: { $0.id == id }) {
+                return standingSpot(island: index, seat: seat)
+            }
+        }
+        return nil
+    }
+
+    /// 行き先が変わったときだけ歩かせる。
+    /// 台帳は 0.5 秒ごとに来るので、毎回指示を出し直すと歩き出せない
+    private func send(_ visitor: SKNode, to target: CGPoint) {
+        if let current = visitor.userData?["target"] as? NSValue,
+           current.pointValue == target { return }
+        if visitor.userData == nil { visitor.userData = NSMutableDictionary() }
+        visitor.userData?["target"] = NSValue(point: target)
+
+        let distance = hypot(visitor.position.x - target.x, visitor.position.y - target.y)
+        visitor.removeAction(forKey: "walk")
+        visitor.run(.move(to: target, duration: max(0.3, TimeInterval(distance / 70))),
+                    withKey: "walk")
     }
 
     // MARK: - カメラ
 
     override func update(_ currentTime: TimeInterval) {
         // 手前のものほど後に描く。歩くたびに奥行きが変わるので毎フレーム引き直す
-        for courier in couriers.values { courier.zPosition = -courier.position.y }
+        for visitor in visitors.values { visitor.zPosition = -visitor.position.y }
 
         guard lastUpdate > 0 else {
             lastUpdate = currentTime
