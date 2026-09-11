@@ -194,6 +194,11 @@ final class DeskScene: SKScene {
     /// hub へ質問しに来ている人。席の id で引く。
     /// 机の occupant とは別のノードで、部屋の座標で歩かせる
     private var visitors: [String: SKNode] = [:]
+    /// 席へ帰る途中の人。席の id で引く。
+    /// 席に着くまで机の occupant を隠しておき、重なって2人に見えるのを防ぐ
+    private var returning: [String: SKNode] = [:]
+    /// 歩く速さ (pt/秒)。机を迂回して少し道程が伸びるので、直進していた頃 (70) より少し早足にしてテンポを保つ
+    private let walkSpeed: CGFloat = 80
     /// 島ごとの稼働の量。いま動いているセッションの数を秒単位でならしたもの
     private var activity: [Double] = []
     /// いまカメラが張り付いている先
@@ -316,6 +321,7 @@ final class DeskScene: SKScene {
         room = SKNode()
         addChild(room)
         visitors.removeAll()
+        returning.removeAll()
         activity = Array(repeating: 0, count: islands.count)
         builtSkeleton = skeleton(of: islands)
         builtColumns = columns
@@ -776,8 +782,9 @@ final class DeskScene: SKScene {
     private func dress(_ desk: SKNode, as seat: DeskSeat) {
         let move = gesture(for: seat.activity)
         let crew = seat.helpers.map { "\($0.id):\($0.activity ?? "-")" }.joined(separator: ",")
+        let isAway = visitors[seat.id] != nil || returning[seat.id] != nil
         let signature = """
-            \(seat.status)/\(seat.needsPerson)/\(seat.subagents)/\(move)/\(crew)
+            \(seat.status)/\(seat.needsPerson)/\(seat.subagents)/\(move)/\(crew)/\(isAway)
             """
         if desk.userData == nil { desk.userData = NSMutableDictionary() }
         let unchanged = desk.userData?["dressed"] as? String == signature
@@ -802,11 +809,12 @@ final class DeskScene: SKScene {
         // 立ち上げただけで何も指示していないもの (idle) と、動いていた場所が
         // 消えたもの (missing) だけ席を空ける。それ以外は、終わったあとも
         // 確認を待っているあいだは人がいる。誰もいない机は「ここには誰もいない」
-        // という意味に読めてほしいので、その意味を持たない状態には使わない
-        // 待機中は本人が hub へ質問しに行っているので、席にはいない
+        // という意味に読めてほしいので、その意味を持たない状態には使わない。
+        // 待機中は本人が hub へ質問しに行っているか席へ帰る途中なので、席にはいない
         let seated = seat.status != TaskStatus.idle
             && seat.status != TaskStatus.missing
             && seat.status != TaskStatus.waiting
+            && !isAway
         occupant?.isHidden = !seated
 
         // 人の手が要るものだけ手を挙げる。動いているだけのものに出すと、
@@ -933,6 +941,10 @@ final class DeskScene: SKScene {
             let visitor: SKNode
             if let existing = visitors[seat.id] {
                 visitor = existing
+            } else if let returningVisitor = returning.removeValue(forKey: seat.id) {
+                // 席へ帰る途中で再び待ち状態になった。帰り道を打ち切って列へ向かわせる
+                visitor = returningVisitor
+                visitors[seat.id] = visitor
             } else {
                 // 席から立ち上がったところから歩き出す
                 visitor = person(tint: .labelColor)
@@ -940,7 +952,7 @@ final class DeskScene: SKScene {
                 room.addChild(visitor)
                 visitors[seat.id] = visitor
             }
-            send(visitor, to: target)
+            send(visitor, to: target, island: index, seatIndex: seatIndex)
         }
         return standing
     }
@@ -953,11 +965,41 @@ final class DeskScene: SKScene {
                 visitor.removeFromParent()
                 continue
             }
-            let distance = hypot(visitor.position.x - home.x, visitor.position.y - home.y)
-            visitor.run(.sequence([
-                .move(to: home, duration: max(0.3, TimeInterval(distance / 70))),
-                .removeFromParent(),
-            ]))
+            returning[id] = visitor
+            visitor.userData?.removeObject(forKey: "target")
+            visitor.removeAction(forKey: "walk")
+
+            let points = waypoints(from: visitor.position, to: home.spot, island: home.island, seatIndex: home.seat)
+            var actions: [SKAction] = []
+            var from = visitor.position
+            for pt in points {
+                let distance = hypot(pt.x - from.x, pt.y - from.y)
+                guard distance > 1 else { continue }
+                actions.append(.move(to: pt, duration: max(0.05, TimeInterval(distance / walkSpeed))))
+                from = pt
+            }
+            actions.append(.run { [weak self, weak visitor] in
+                visitor?.removeFromParent()
+                self?.returning.removeValue(forKey: id)
+                self?.refreshSeatOccupant(id: id)
+            })
+            visitor.run(.sequence(actions), withKey: "walk")
+        }
+    }
+
+    /// 席に戻ったタイミングで座っている人を出し直す。
+    /// 戻り着く前に出してしまうと席に2人いるように見えるため、到着を待って戻す
+    private func refreshSeatOccupant(id: String) {
+        guard let desk = room.childNode(withName: "seat:\(id)") else { return }
+        for island in islands {
+            if let seat = island.seats.first(where: { $0.id == id }) {
+                let seated = seat.status != TaskStatus.idle
+                    && seat.status != TaskStatus.missing
+                    && seat.status != TaskStatus.waiting
+                    && returning[id] == nil
+                desk.childNode(withName: "occupant")?.isHidden = !seated
+                return
+            }
         }
     }
 
@@ -966,27 +1008,136 @@ final class DeskScene: SKScene {
     }
 
     /// 席へ帰る先。机がもう無ければ nil
-    private func homeSpot(of id: String) -> CGPoint? {
+    private func homeSpot(of id: String) -> (island: Int, seat: Int, spot: CGPoint)? {
         for (index, island) in islands.enumerated() {
             if let seat = island.seats.firstIndex(where: { $0.id == id }) {
-                return standingSpot(island: index, seat: seat)
+                return (index, seat, standingSpot(island: index, seat: seat))
             }
         }
         return nil
     }
 
+    /// 机や人を避けて歩くための経由地を求める。
+    ///
+    /// 部屋の外縁を大回りするのではなく、机と机の間の縦通路を通って
+    /// hub の前へ抜け、hub の左脇から列の最後尾へ入る。
+    /// 直進で机を突き抜けるのを防ぎつつ、最短で自然な動線を通す
+    private func waypoints(from start: CGPoint, to target: CGPoint, island: Int, seatIndex: Int) -> [CGPoint] {
+        guard hypot(start.x - target.x, start.y - target.y) >= 2 else { return [] }
+
+        // すでに同じ高さにいるなら直線で歩ける (待ち行列内の前進、または同じ段の通路)
+        if abs(start.y - target.y) < 4 {
+            return [target]
+        }
+
+        let hub = hubPoint(island: island)
+        let spread = columnPitch * CGFloat(seatColumns - 1)
+        let col0X = hub.x - spread / 2
+        let hubFrontY = hub.y - 38
+        let isGoingToQueue = target.y > hubFrontY
+        let column = seatIndex % seatColumns
+
+        // この机が通るべき縦通路の X 座標。
+        // 机が2列以上あるときは、一番左 (列0) も右側の通路 (列0と列1の間) を通る。
+        // 左側の何もない外枠空間を避けて、机と机の間の縦通路を通る自然な動線にする
+        let aisleX: CGFloat
+        if seatColumns > 1 {
+            let gapIndex = max(0, min(seatColumns - 2, column == 0 ? 0 : column - 1))
+            let leftColX = col0X + columnPitch * CGFloat(gapIndex)
+            let rightColX = leftColX + columnPitch
+            aisleX = (leftColX + rightColX) / 2
+        } else {
+            // 1列しかないときは机の隙間が無いため、机 (幅88/2=44) のすぐ外側を通す
+            aisleX = max(12, min(col0X - 54, target.x - 16))
+        }
+
+        // hub 机の左脇を抜ける通路の X 座標 (hub 机の幅は 100 なので左端は hub.x - 50)
+        let hubCornerX = max(12, min(hub.x - 62, target.x))
+
+        var points: [CGPoint] = []
+
+        if isGoingToQueue {
+            // --- 行き: 席から待機列へ ---
+            // 1. 机の前から縦通路へ横に出る (列0は右へ、列1以降は左へ出る)
+            if abs(start.x - aisleX) >= 4 {
+                points.append(CGPoint(x: aisleX, y: start.y))
+            }
+
+            if seatColumns > 1 {
+                // 机と机の間を縦に通り抜けて、hub 机の手前の横通路まで進む
+                points.append(CGPoint(x: aisleX, y: hubFrontY))
+                // hub 机の手前を横に歩いて、hub の左脇の通路へ向かう
+                if abs(aisleX - hubCornerX) >= 4 {
+                    points.append(CGPoint(x: hubCornerX, y: hubFrontY))
+                }
+                // hub の左脇を抜けて待機列の高さへ上がる
+                points.append(CGPoint(x: hubCornerX, y: target.y))
+                // 待機列の最後尾へ入る
+                if abs(hubCornerX - target.x) >= 4 {
+                    points.append(target)
+                }
+            } else {
+                // 1列のみ: 左通路からそのまま待機列の高さまで上がって合流する
+                points.append(CGPoint(x: aisleX, y: target.y))
+                if abs(aisleX - target.x) >= 4 {
+                    points.append(target)
+                }
+            }
+        } else {
+            // --- 帰り: 待機列から席へ ---
+            if seatColumns > 1 {
+                // hub の左脇の高さまで横に出て、hub の手前まで下りる
+                if abs(start.x - hubCornerX) >= 4 {
+                    points.append(CGPoint(x: hubCornerX, y: start.y))
+                }
+                points.append(CGPoint(x: hubCornerX, y: hubFrontY))
+                // hub の手前を横に歩いて、机と机の間の縦通路へ入る
+                if abs(hubCornerX - aisleX) >= 4 {
+                    points.append(CGPoint(x: aisleX, y: hubFrontY))
+                }
+                // 机と机の間を縦に下りて、自分の段の通路まで進む
+                points.append(CGPoint(x: aisleX, y: target.y))
+                // 自分の席の前へ入る
+                if abs(aisleX - target.x) >= 4 {
+                    points.append(target)
+                }
+            } else {
+                // 1列のみ: 左通路まで横に出て、自分の段まで下りて席へ入る
+                if abs(start.x - aisleX) >= 4 {
+                    points.append(CGPoint(x: aisleX, y: start.y))
+                }
+                points.append(CGPoint(x: aisleX, y: target.y))
+                if abs(aisleX - target.x) >= 4 {
+                    points.append(target)
+                }
+            }
+        }
+
+        return points
+    }
+
     /// 行き先が変わったときだけ歩かせる。
     /// 台帳は 0.5 秒ごとに来るので、毎回指示を出し直すと歩き出せない
-    private func send(_ visitor: SKNode, to target: CGPoint) {
+    private func send(_ visitor: SKNode, to target: CGPoint, island: Int, seatIndex: Int) {
         if let current = visitor.userData?["target"] as? NSValue,
            current.pointValue == target { return }
         if visitor.userData == nil { visitor.userData = NSMutableDictionary() }
         visitor.userData?["target"] = NSValue(point: target)
 
-        let distance = hypot(visitor.position.x - target.x, visitor.position.y - target.y)
         visitor.removeAction(forKey: "walk")
-        visitor.run(.move(to: target, duration: max(0.3, TimeInterval(distance / 70))),
-                    withKey: "walk")
+        let points = waypoints(from: visitor.position, to: target, island: island, seatIndex: seatIndex)
+        guard !points.isEmpty else { return }
+
+        var actions: [SKAction] = []
+        var from = visitor.position
+        for pt in points {
+            let distance = hypot(pt.x - from.x, pt.y - from.y)
+            guard distance > 1 else { continue }
+            actions.append(.move(to: pt, duration: max(0.05, TimeInterval(distance / walkSpeed))))
+            from = pt
+        }
+        guard !actions.isEmpty else { return }
+        visitor.run(.sequence(actions), withKey: "walk")
     }
 
     // MARK: - カメラ
@@ -994,6 +1145,7 @@ final class DeskScene: SKScene {
     override func update(_ currentTime: TimeInterval) {
         // 手前のものほど後に描く。歩くたびに奥行きが変わるので毎フレーム引き直す
         for visitor in visitors.values { visitor.zPosition = -visitor.position.y }
+        for visitor in returning.values { visitor.zPosition = -visitor.position.y }
 
         guard lastUpdate > 0 else {
             lastUpdate = currentTime
