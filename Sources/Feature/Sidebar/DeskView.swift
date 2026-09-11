@@ -507,13 +507,17 @@ final class DeskScene: SKScene {
 
     /// 机の見た目を台帳に合わせる。骨格が変わっていないときはここだけ走る
     private func refreshSeats() {
+        var queued: Set<String> = []
         for (index, island) in islands.enumerated() {
             for seat in island.seats {
                 guard let desk = room.childNode(withName: "seat:\(seat.id)") else { continue }
                 dress(desk, as: seat)
             }
-            updateQueue(island: index)
+            queued.formUnion(updateQueue(island: index))
         }
+        // 片付けは全島ぶんを集めてから1度だけ。島ごとにやると、その島で待っていない人
+        // ——つまり他の島で並んでいる人——を片端から席へ帰してしまう
+        dismissVisitors(keeping: queued)
     }
 
     /// 状態を絵にする。記号 (⏳▶✅) の代わりに、机の様子で言う。
@@ -647,7 +651,8 @@ final class DeskScene: SKScene {
     ///
     /// 手は机に置いたまま本人だけが来る。並ぶ順は席の並び順なので、
     /// 誰かの番が済んでも残りの並びが入れ替わらない
-    private func updateQueue(island index: Int) {
+    @discardableResult
+    private func updateQueue(island index: Int) -> Set<String> {
         let island = islands[index]
         var slot = 0
         var standing = Set<String>()
@@ -670,15 +675,17 @@ final class DeskScene: SKScene {
             }
             send(visitor, to: target)
         }
+        return standing
+    }
 
-        // 番が済んだ人は席へ帰す
-        for (id, visitor) in visitors where !standing.contains(id) {
+    /// 並ぶ用の無くなった人を席へ帰す
+    private func dismissVisitors(keeping queued: Set<String>) {
+        for (id, visitor) in visitors where !queued.contains(id) {
+            visitors.removeValue(forKey: id)
             guard let home = homeSpot(of: id) else {
                 visitor.removeFromParent()
-                visitors.removeValue(forKey: id)
                 continue
             }
-            visitors.removeValue(forKey: id)
             let distance = hypot(visitor.position.x - home.x, visitor.position.y - home.y)
             visitor.run(.sequence([
                 .move(to: home, duration: max(0.3, TimeInterval(distance / 70))),
