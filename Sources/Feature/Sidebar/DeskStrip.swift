@@ -3,13 +3,14 @@ import SwiftUI
 
 /// サイドバー下部に置く作業場の帯。**素振り (spike) であって完成品ではない。**
 ///
-/// 確かめたいのは1つだけ——280pt 幅の帯で、横視点の事務所が「読める」かどうか。
+/// 確かめたいのは1つだけ——280pt の帯で、斜め上から見た事務所が「読める」かどうか。
 /// 台帳とは繋がっておらず、動いているのは作り物のタイマーである。
 ///
-/// 見下ろし視点ではなく横視点にしているのは、帯の形が横長だから。
-/// 見下ろしだと机を並べた時点で人の歩く床が無くなるが、横視点なら床は1本で済む。
-/// 部屋をビューポートより広く作り、カメラで出来事のある所へ寄せることで、
-/// サイドバーを広げたときに「絵が拡大する」のではなく「部屋が広く見える」ようにする。
+/// 視点は 2D ゲームでよくある俯瞰 (見下ろしを少し斜めに倒したもの)。
+/// 机に天板と前面の2枚を描くこと、手前のものほど後に描くこと、
+/// 人が上下にも歩くこと、の3つで奥行きを出している。
+/// 部屋は帯より横に広く、カメラで出来事のある所へ寄せる。
+/// そのため、サイドバーを広げると絵が拡大するのではなく部屋が広く見える。
 struct DeskStrip: View {
     let height: CGFloat
 
@@ -38,177 +39,242 @@ private final class SceneBox: ObservableObject {
     }()
 }
 
-/// 横視点の事務所。
+/// 斜め上から見た事務所。
 final class DeskScene: SKScene {
     /// 部屋の幅。ビューポート (サイドバー幅) より広く取り、カメラで見る所を選ぶ
-    private let roomWidth: CGFloat = 760
-    /// 床の高さ。机も人もここを基準に積む
-    private let floorY: CGFloat = 26
+    private let roomWidth: CGFloat = 900
 
-    /// 机の立ち位置。左端が hub、右が worker という想定
-    private let deskX: [CGFloat] = [110, 380, 650]
+    /// 奥行きは帯の高さに収める。上下にもスクロールさせると目が休まらないので、
+    /// 縦は「奥の列と手前の列」を置ける分だけあればよい
+    private var backRowY: CGFloat { size.height * 0.63 }
+    private var frontRowY: CGFloat { size.height * 0.26 }
+
+    /// 机の立ち位置。左端が hub、残りが worker という想定
+    private var desks: [(x: CGFloat, y: CGFloat, name: String, isHub: Bool)] {
+        [
+            (140, backRowY, "hub", true),
+            (330, frontRowY, "worker-1", false),
+            (520, backRowY, "worker-2", false),
+            (710, frontRowY, "worker-3", false),
+        ]
+    }
 
     /// SKScene の `camera` に差すノード。出来事のある所へ寄せるために動かす
     private let eye = SKCameraNode()
-    private var actor: SKNode?
-    /// `didMove` は再入する場合があるので、組み立ては一度だけにする
+    private var walker: SKNode?
+    /// 実寸が決まってから組み立てる。奥行きの位置を帯の高さから決めているため
     private var built = false
 
     override func didMove(to view: SKView) {
-        guard !built else { return }
-        built = true
-
         addChild(eye)
         camera = eye
-        buildRoom()
-        buildActor()
-        startRound()
+        buildIfPossible()
     }
 
-    /// 帯の高さが変わってもカメラの上下位置と横の可動範囲を追従させる
     override func didChangeSize(_ oldSize: CGSize) {
         eye.position.y = size.height / 2
         eye.position.x = clampCameraX(eye.position.x)
+        buildIfPossible()
+    }
+
+    private func buildIfPossible() {
+        guard !built, size.height > 40 else { return }
+        built = true
+        eye.position = CGPoint(x: clampCameraX(desks[0].x), y: size.height / 2)
+        buildRoom()
+        buildWalker()
+        startRound()
     }
 
     // MARK: - 組み立て
 
     private func buildRoom() {
-        let line = SKShapeNode(rectOf: CGSize(width: roomWidth, height: 1))
-        line.fillColor = .secondaryLabelColor.withAlphaComponent(0.35)
-        line.strokeColor = .clear
-        line.position = CGPoint(x: roomWidth / 2, y: floorY)
-        addChild(line)
+        let floor = SKShapeNode(rect: CGRect(x: 0, y: 0, width: roomWidth, height: size.height))
+        floor.fillColor = .secondaryLabelColor.withAlphaComponent(0.06)
+        floor.strokeColor = .clear
+        floor.zPosition = -10000
+        addChild(floor)
 
-        let names = ["hub", "worker-1", "worker-2"]
-        for (index, x) in deskX.enumerated() {
-            addChild(desk(at: x, label: names[index], isHub: index == 0))
+        // 床のタイル目。地面がどこにあるかを示すためだけのものなので、うんと薄くする
+        let tile: CGFloat = 44
+        for x in stride(from: 0, through: roomWidth, by: tile) {
+            addChild(hairline(from: CGPoint(x: x, y: 0), to: CGPoint(x: x, y: size.height)))
         }
+        for y in stride(from: 0, through: size.height, by: tile) {
+            addChild(hairline(from: CGPoint(x: 0, y: y), to: CGPoint(x: roomWidth, y: y)))
+        }
+
+        // 奥の壁。上端に帯を置くと「奥がある」ことが一目で分かる
+        let wallHeight = size.height * 0.12
+        let wall = SKShapeNode(rect: CGRect(x: 0, y: size.height - wallHeight,
+                                            width: roomWidth, height: wallHeight))
+        wall.fillColor = .secondaryLabelColor.withAlphaComponent(0.12)
+        wall.strokeColor = .clear
+        wall.zPosition = -9990
+        addChild(wall)
+
+        for desk in desks {
+            addChild(deskNode(at: CGPoint(x: desk.x, y: desk.y),
+                              label: desk.name, isHub: desk.isHub))
+        }
+
+        // 席に着いたままの人を1人。無人の事務所だと俯瞰しているのか分かりにくい
+        let seated = person(tint: .secondaryLabelColor)
+        seated.position = CGPoint(x: desks[2].x, y: desks[2].y + 20)
+        seated.zPosition = -seated.position.y
+        addChild(seated)
     }
 
-    /// 机1つ。天板と脚、その上の画面。
-    /// hub だけ画面の色を変えて、渡す側と渡される側を見分けられるようにする
-    private func desk(at x: CGFloat, label: String, isHub: Bool) -> SKNode {
+    private func hairline(from: CGPoint, to: CGPoint) -> SKShapeNode {
+        let path = CGMutablePath()
+        path.move(to: from)
+        path.addLine(to: to)
+        let line = SKShapeNode(path: path)
+        line.strokeColor = .secondaryLabelColor.withAlphaComponent(0.07)
+        line.lineWidth = 1
+        line.zPosition = -9999
+        return line
+    }
+
+    /// 机1つ。天板 (明るい) と前面 (暗い) の2枚で厚みを出し、奥にモニタを置く。
+    /// hub だけモニタの色を変えて、渡す側と渡される側を見分けられるようにする
+    private func deskNode(at point: CGPoint, label: String, isHub: Bool) -> SKNode {
         let node = SKNode()
-        node.position = CGPoint(x: x, y: floorY)
+        node.position = point
+        // 手前のものほど後に描く。人が机の前に立ったときに正しく重なる
+        node.zPosition = -point.y
 
-        let topWidth: CGFloat = 64
-        let topY: CGFloat = 34
+        let width: CGFloat = 58
+        let depth: CGFloat = 17
 
-        let slab = SKShapeNode(rectOf: CGSize(width: topWidth, height: 5), cornerRadius: 2)
-        slab.fillColor = .secondaryLabelColor.withAlphaComponent(0.5)
-        slab.strokeColor = .clear
-        slab.position = CGPoint(x: 0, y: topY)
-        node.addChild(slab)
+        let front = SKShapeNode(rect: CGRect(x: -width / 2, y: -depth / 2 - 6,
+                                             width: width, height: 7),
+                                cornerRadius: 1.5)
+        front.fillColor = .secondaryLabelColor.withAlphaComponent(0.32)
+        front.strokeColor = .clear
+        node.addChild(front)
 
-        for side in [-1.0, 1.0] as [CGFloat] {
-            let leg = SKShapeNode(rectOf: CGSize(width: 3, height: topY))
-            leg.fillColor = .secondaryLabelColor.withAlphaComponent(0.3)
-            leg.strokeColor = .clear
-            leg.position = CGPoint(x: side * (topWidth / 2 - 5), y: topY / 2)
-            node.addChild(leg)
-        }
+        let top = SKShapeNode(rect: CGRect(x: -width / 2, y: -depth / 2,
+                                           width: width, height: depth),
+                              cornerRadius: 2.5)
+        top.fillColor = .secondaryLabelColor.withAlphaComponent(0.5)
+        top.strokeColor = .clear
+        node.addChild(top)
 
-        let screen = SKShapeNode(rectOf: CGSize(width: 26, height: 19), cornerRadius: 2)
+        let screen = SKShapeNode(rect: CGRect(x: -11, y: depth / 2 - 4, width: 22, height: 14),
+                                 cornerRadius: 2)
         // 色は Palette と同じ値。素振りの間だけここに直書きしている
         screen.fillColor = isHub
-            ? NSColor(red: 0.671, green: 0.533, blue: 0.941, alpha: 0.75)   // #ab88f0
-            : NSColor(red: 0.310, green: 0.765, blue: 0.969, alpha: 0.75)   // #4fc3f7
+            ? NSColor(red: 0.671, green: 0.533, blue: 0.941, alpha: 0.8)   // #ab88f0
+            : NSColor(red: 0.310, green: 0.765, blue: 0.969, alpha: 0.8)   // #4fc3f7
         screen.strokeColor = .clear
-        screen.position = CGPoint(x: 0, y: topY + 12)
         node.addChild(screen)
 
         let caption = SKLabelNode(text: label)
         caption.fontName = "SFMono-Regular"
-        caption.fontSize = 9
-        caption.fontColor = .secondaryLabelColor.withAlphaComponent(0.65)
+        caption.fontSize = 8
+        caption.fontColor = .secondaryLabelColor.withAlphaComponent(0.7)
         caption.verticalAlignmentMode = .bottom
-        caption.position = CGPoint(x: 0, y: topY + 26)
+        caption.position = CGPoint(x: 0, y: depth / 2 + 12)
         node.addChild(caption)
 
         return node
     }
 
-    /// 歩く人。頭・胴・脚だけの棒人間で、持ち物 (書類) を右手側に足せるようにしておく
-    private func buildActor() {
+    /// 人1人。俯瞰なので背丈は詰めて、頭を大きめに取る
+    private func person(tint: NSColor) -> SKNode {
         let node = SKNode()
-        node.position = CGPoint(x: deskX[0], y: floorY)
 
-        let body = SKShapeNode(rectOf: CGSize(width: 9, height: 16), cornerRadius: 4)
-        body.fillColor = .labelColor.withAlphaComponent(0.75)
+        let body = SKShapeNode(rect: CGRect(x: -5, y: 0, width: 10, height: 12),
+                               cornerRadius: 4)
+        body.fillColor = tint.withAlphaComponent(0.75)
         body.strokeColor = .clear
-        body.position = CGPoint(x: 0, y: 16)
         node.addChild(body)
 
-        let head = SKShapeNode(circleOfRadius: 5.5)
-        head.fillColor = .labelColor.withAlphaComponent(0.8)
+        let head = SKShapeNode(circleOfRadius: 5)
+        head.fillColor = tint.withAlphaComponent(0.85)
         head.strokeColor = .clear
-        head.position = CGPoint(x: 0, y: 29)
+        head.position = CGPoint(x: 0, y: 15)
         node.addChild(head)
 
-        for side in [-1.0, 1.0] as [CGFloat] {
-            let leg = SKShapeNode(rectOf: CGSize(width: 3, height: 9), cornerRadius: 1.5)
-            leg.fillColor = .labelColor.withAlphaComponent(0.6)
-            leg.strokeColor = .clear
-            leg.position = CGPoint(x: side * 2.5, y: 4.5)
-            node.addChild(leg)
-        }
+        // 足元の影。地面に立っていることを示す
+        let shadow = SKShapeNode(ellipseOf: CGSize(width: 13, height: 5))
+        shadow.fillColor = .black.withAlphaComponent(0.14)
+        shadow.strokeColor = .clear
+        shadow.position = CGPoint(x: 0, y: 0)
+        shadow.zPosition = -1
+        node.addChild(shadow)
 
+        return node
+    }
+
+    private func buildWalker() {
+        let node = person(tint: .labelColor)
+        node.position = CGPoint(x: desks[0].x, y: desks[0].y - 24)
         addChild(node)
-        actor = node
+        walker = node
+    }
+
+    /// 手前のものほど後に描く。歩くたびに奥行きが変わるので毎フレーム引き直す
+    override func update(_ currentTime: TimeInterval) {
+        guard let walker else { return }
+        walker.zPosition = -walker.position.y
     }
 
     // MARK: - 動き
 
-    /// 書類を持って隣の机まで歩き、渡して戻る、を延々と繰り返す。
+    /// 書類を持って別の机まで歩き、渡して次へ、を延々と繰り返す。
     /// 本番ではここが台帳やadjutantの受け渡しイベントに置き換わる
     private func startRound() {
-        guard let actor else { return }
+        guard let walker else { return }
 
-        let hub = deskX[0]
-        let worker = deskX[1]
+        // 机の手前に立つ位置。天板に重ならないよう少し下げる
+        func spot(_ index: Int) -> CGPoint {
+            CGPoint(x: desks[index].x, y: desks[index].y - 24)
+        }
 
-        let carry = SKAction.run { [weak self] in self?.givePaper(to: actor) }
-        let drop = SKAction.run { [weak self] in self?.takePaper(from: actor) }
-
-        let round = SKAction.sequence([
-            .wait(forDuration: 0.8),
-            carry,
-            walk(actor, to: worker),
-            .wait(forDuration: 0.6),
-            drop,
-            walk(actor, to: hub),
-            .wait(forDuration: 1.2),
-        ])
-        actor.run(.repeatForever(round))
+        var steps: [SKAction] = []
+        for target in [1, 0, 3, 0, 2, 0] {
+            steps.append(.wait(forDuration: 0.5))
+            steps.append(.run { [weak self] in self?.givePaper(to: walker) })
+            steps.append(walk(walker, to: spot(target)))
+            steps.append(.wait(forDuration: 0.5))
+            steps.append(.run { [weak self] in self?.takePaper(from: walker) })
+            steps.append(walk(walker, to: spot(0)))
+        }
+        walker.run(.repeatForever(.sequence(steps)))
     }
 
     /// 歩行。距離に比例した時間をかけ、上下に小さく跳ねさせて歩いているように見せる。
-    /// 同時にカメラを同じ時間で追従させる (出来事のある所を映す、の素振り)
-    private func walk(_ node: SKNode, to x: CGFloat) -> SKAction {
+    /// 同時にカメラを同じ時間で横に追従させる (出来事のある所を映す、の素振り)
+    private func walk(_ node: SKNode, to point: CGPoint) -> SKAction {
         SKAction.run { [weak self] in
             guard let self else { return }
-            let distance = abs(node.position.x - x)
-            let duration = TimeInterval(distance / 60)
+            let distance = hypot(node.position.x - point.x, node.position.y - point.y)
+            let duration = TimeInterval(distance / 65)
 
-            let bob = SKAction.repeat(
+            node.run(.move(to: point, duration: duration))
+            // 跳ねは見た目だけのもの。位置そのものを動かすと移動先がずれるので、
+            // 頭と胴だけを持つ子ノードではなくスケールで代用する
+            node.run(.repeat(
                 .sequence([
-                    .moveBy(x: 0, y: 1.5, duration: 0.12),
-                    .moveBy(x: 0, y: -1.5, duration: 0.12),
+                    .scaleY(to: 1.04, duration: 0.13),
+                    .scaleY(to: 1.0, duration: 0.13),
                 ]),
-                count: max(1, Int(duration / 0.24)))
-            node.run(.group([.moveTo(x: x, duration: duration), bob]))
+                count: max(1, Int(duration / 0.26))))
 
-            self.eye.run(
-                .moveTo(x: self.clampCameraX(x), duration: duration))
+            self.eye.run(.moveTo(x: self.clampCameraX(point.x), duration: duration))
         }
     }
 
     private func givePaper(to node: SKNode) {
-        let paper = SKShapeNode(rectOf: CGSize(width: 7, height: 9), cornerRadius: 1)
-        paper.fillColor = NSColor(red: 1.0, green: 0.655, blue: 0.149, alpha: 0.9)  // #ffa726
+        guard node.childNode(withName: "paper") == nil else { return }
+        let paper = SKShapeNode(rect: CGRect(x: 0, y: 0, width: 8, height: 10),
+                                cornerRadius: 1)
+        paper.fillColor = NSColor(red: 1.0, green: 0.655, blue: 0.149, alpha: 0.95)  // #ffa726
         paper.strokeColor = .clear
-        paper.position = CGPoint(x: 7, y: 15)
+        paper.position = CGPoint(x: 5, y: 6)
+        paper.zPosition = 1
         paper.name = "paper"
         node.addChild(paper)
     }
@@ -217,7 +283,7 @@ final class DeskScene: SKScene {
         guard let paper = node.childNode(withName: "paper") else { return }
         // 机に置かれて消える、ところまでを1つの所作として見せる
         paper.run(.sequence([
-            .group([.moveBy(x: 12, y: 18, duration: 0.3), .fadeOut(withDuration: 0.3)]),
+            .group([.moveBy(x: 6, y: 20, duration: 0.3), .fadeOut(withDuration: 0.3)]),
             .removeFromParent(),
         ]))
     }
