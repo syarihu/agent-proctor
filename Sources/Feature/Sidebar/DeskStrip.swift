@@ -184,11 +184,15 @@ final class DeskScene: SKScene {
         addChild(wall)
 
         for (index, island) in islands.enumerated() {
-            addChild(deskNode(at: hubPoint(island: index), label: island.hub, isHub: true))
+            let hub = deskNode(at: hubPoint(island: index), label: island.hub, isHub: true)
+            addChild(hub)
+            simulateContext(on: hub, start: Int.random(in: 10...70))
 
             for (slot, worker) in island.workers.enumerated() {
                 let point = workerPoint(island: index, index: slot)
-                addChild(deskNode(at: point, label: worker, isHub: false))
+                let desk = deskNode(at: point, label: worker, isHub: false)
+                addChild(desk)
+                simulateContext(on: desk, start: Int.random(in: 5...85))
 
                 // 席に着いたままの人を何人か。無人の事務所だと俯瞰なのか分かりにくい。
                 // 机の奥に置くので、重なり順 (-y) では机より後ろに回る
@@ -245,6 +249,13 @@ final class DeskScene: SKScene {
         screen.strokeColor = .clear
         node.addChild(screen)
 
+        // 書類の山を載せる器。中身は restack が入れ替える。
+        // 天板の右手前に置くのは、モニタ (奥) と見出し (上) のどちらとも重ならない場所だから
+        let stack = SKNode()
+        stack.name = "stack"
+        stack.position = CGPoint(x: width / 2 - 10, y: -4)
+        node.addChild(stack)
+
         let caption = SKLabelNode(text: label)
         caption.fontName = "SFMono-Regular"
         caption.fontSize = 8
@@ -254,6 +265,61 @@ final class DeskScene: SKScene {
         node.addChild(caption)
 
         return node
+    }
+
+    /// 机の上に積む書類の枚数の上限。
+    /// これ以上積むと見出しに届くうえ、6段もあれば使用量の増減は十分読める
+    private let maxSheets = 6
+
+    /// 机の上の書類の山を積み直す。**コンテキストの使用量を山の高さで出す。**
+    ///
+    /// 本番では `TaskRecord.contextPercent` をそのまま渡す。
+    /// 色の変わり目は `Palette.context` と同じ (50% で橙、80% で赤)。
+    /// 数字を読ませるのではなく、机を一瞥して「そろそろ危ない」が分かることを狙っている
+    private func restack(_ desk: SKNode, percent: Int) {
+        guard let stack = desk.childNode(withName: "stack") else { return }
+        stack.removeAllChildren()
+
+        let sheets = Int((Double(min(100, max(0, percent))) / 100 * Double(maxSheets)).rounded())
+        guard sheets > 0 else { return }
+
+        let tint: NSColor
+        if percent >= 80 {
+            tint = NSColor(red: 0.937, green: 0.325, blue: 0.314, alpha: 1)  // #ef5350
+        } else if percent >= 50 {
+            tint = NSColor(red: 1.0, green: 0.718, blue: 0.302, alpha: 1)    // #ffb74d
+        } else {
+            tint = NSColor(white: 0.93, alpha: 1)
+        }
+
+        for index in 0..<sheets {
+            let sheet = SKShapeNode(rect: CGRect(x: -5.5, y: 0, width: 11, height: 2.6),
+                                    cornerRadius: 0.5)
+            sheet.fillColor = tint.withAlphaComponent(0.9)
+            sheet.strokeColor = .black.withAlphaComponent(0.12)
+            sheet.lineWidth = 0.5
+            // 1枚ずつ横にずらす。きっちり重ねると1枚の板に見えて、枚数が読めない
+            sheet.position = CGPoint(x: CGFloat.random(in: -1.5...1.5),
+                                     y: CGFloat(index) * 2.6)
+            stack.addChild(sheet)
+        }
+    }
+
+    /// 素振り用に、コンテキストがじわじわ増えて畳まれる様子を作る。
+    /// 本番では台帳の更新でそのまま値が変わるので、この仕掛けは要らなくなる
+    private func simulateContext(on desk: SKNode, start: Int) {
+        var percent = start
+        restack(desk, percent: percent)
+        desk.run(.repeatForever(.sequence([
+            .wait(forDuration: 2.0, withRange: 1.5),
+            .run { [weak self, weak desk] in
+                guard let self, let desk else { return }
+                percent += Int.random(in: 4...11)
+                // 使い切ると畳まれて、また少ないところから積み直す
+                if percent >= 100 { percent = Int.random(in: 5...20) }
+                self.restack(desk, percent: percent)
+            },
+        ])))
     }
 
     /// 人1人。俯瞰なので背丈は詰めて、頭を大きめに取る
