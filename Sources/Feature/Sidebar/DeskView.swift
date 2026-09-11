@@ -116,6 +116,13 @@ final class DeskScene: SKScene {
     private var builtSkeleton: String?
     /// 組み上げたときのカラム数。幅を変えて段が変わったら組み直す
     private var builtColumns = 0
+    /// 組み上げたときの部屋の大きさ。
+    ///
+    /// 部屋はビューポートより小さくならない (`max(size, ...)`) ので、帯の大きさが
+    /// 変わると部屋の大きさも変わる。机の座標は組んだときのままなのに、
+    /// カメラの可動範囲だけ新しい部屋で計算されると、**机が部屋の左下に取り残される**。
+    /// SwiftUI が実寸を入れてくるのは最初の組み立てのあとなので、これは必ず起きる
+    private var builtRoom: CGSize = .zero
 
     /// SKScene の `camera` に差すノード。出来事のある所へ寄せるために動かす
     private let eye = SKCameraNode()
@@ -164,11 +171,7 @@ final class DeskScene: SKScene {
     /// 状態が変わるたびに部屋を作り直すと、歩いている人が毎回入口に戻ってしまう
     func apply(islands: [DeskIsland]) {
         self.islands = islands
-        if skeleton(of: islands) != builtSkeleton {
-            rebuild()
-        } else {
-            refreshSeats()
-        }
+        if !rebuildIfNeeded() { refreshSeats() }
     }
 
     /// 部屋の骨格。机の顔ぶれと並び順だけを見て、状態や使用量は含めない
@@ -177,9 +180,18 @@ final class DeskScene: SKScene {
             .joined(separator: "|")
     }
 
-    private func rebuildIfNeeded() {
-        guard size.height > 80, !islands.isEmpty else { return }
-        if skeleton(of: islands) != builtSkeleton || columns != builtColumns { rebuild() }
+    /// 組み直しが要るなら組み直す。組み直したかどうかを返す
+    @discardableResult
+    private func rebuildIfNeeded() -> Bool {
+        guard size.height > 80, !islands.isEmpty else { return false }
+        let wanted = CGSize(width: roomWidth, height: roomHeight)
+        guard skeleton(of: islands) != builtSkeleton
+                || columns != builtColumns
+                || abs(wanted.width - builtRoom.width) > 1
+                || abs(wanted.height - builtRoom.height) > 1
+        else { return false }
+        rebuild()
+        return true
     }
 
     // MARK: - 座席の割り当て
@@ -241,6 +253,7 @@ final class DeskScene: SKScene {
         activity = Array(repeating: 0, count: islands.count)
         builtSkeleton = skeleton(of: islands)
         builtColumns = columns
+        builtRoom = CGSize(width: roomWidth, height: roomHeight)
 
         buildFloor()
         for (index, island) in islands.enumerated() {
