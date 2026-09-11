@@ -637,14 +637,14 @@ final class DeskScene: SKScene {
 
     // MARK: - 質問の行列
 
-    /// hub の机の前の並び位置。
+    /// hub の席の人の横の並び位置。
     ///
-    /// 左へ1人ずつ伸ばす。真下は見出しが使っていて、真上は席の人がいる。
+    /// **席の人と同じ高さ**に、左へ1人ずつ並べる。机の手前 (下) に置くと
+    /// 机を挟んで向かい合う形になり、話しているようには見えない。
     /// 島の幅は 290pt あるので、5人までは隣の島に食い込まない
     private func queuePoint(island: Int, slot: Int) -> CGPoint {
         let hub = hubPoint(island: island)
-        return CGPoint(x: hub.x - (deskWidth + 22) / 2 - 18 - CGFloat(slot) * 21,
-                       y: hub.y - 12)
+        return CGPoint(x: hub.x - 26 - CGFloat(slot) * 21, y: hub.y + 24)
     }
 
     /// 待っている人を hub の前に並ばせる。
