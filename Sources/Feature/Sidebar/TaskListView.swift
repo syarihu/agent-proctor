@@ -948,12 +948,15 @@ private struct TaskRow: View {
         }
     }
 
-    /// タブショートカット（⌘1〜⌘9）。10以降は iTerm2 のショートカットが割り当てられていないため数字のみ表示する。
+    /// タブショートカット（⌘1〜⌘9）。
+    ///
+    /// 10 以降は iTerm2 がショートカットを割り当てないので何も出さない。
+    /// 番号だけを出しても押せる鍵にはならず、⌘ が付いた行と並ぶと押せるように見える。
     /// 桁落ちによる誤読を防ぐため fixedSize を指定する。
     @ViewBuilder
     private var tabShortcut: some View {
-        if let tabNumber {
-            Text(tabNumber <= 9 ? "⌘\(tabNumber)" : "\(tabNumber)")
+        if let tabNumber, tabNumber <= 9 {
+            Text("⌘\(tabNumber)")
                 .font(.system(size: base * 0.62, weight: .medium).monospacedDigit())
                 .foregroundStyle(isCurrent ? Palette.dim.opacity(0.9) : Palette.dim.opacity(0.55))
                 .fixedSize()
