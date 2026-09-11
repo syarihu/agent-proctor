@@ -28,6 +28,12 @@ struct DeskView: View {
             .onChange(of: islands) { islands in
                 box.scene.apply(islands: islands)
             }
+            // 止まっている間は台帳の変化も大きさの変化も取りこぼす。
+            // 動き出す時点でもう一度当て直さないと、止まる前の姿のまま再開する
+            .onChange(of: running) { running in
+                guard running else { return }
+                box.scene.apply(islands: islands)
+            }
     }
 }
 
@@ -753,13 +759,35 @@ final class DeskScene: SKScene {
             switchedAt = currentTime
             return
         }
-        let delta = currentTime - lastUpdate
+        // 止まっていた間の時間はそのまま来る。何十秒ぶんかを一度に流すと
+        // 稼働の平均もカメラの寄りも一瞬で振り切れるので、1フレームぶんに丸める
+        let delta = min(0.25, currentTime - lastUpdate)
         lastUpdate = currentTime
 
+        validateLayout()
         measureActivity(by: delta)
         reconsiderFocus(at: currentTime)
         easeCamera(by: delta)
         placeMarkers()
+    }
+
+    /// 組んだときの大きさと今の大きさがずれていないか、毎フレーム確かめる。
+    ///
+    /// `didChangeSize` だけに任せられない。シーンが止まっている (`isPaused`) 間に
+    /// パネルの大きさが変わると、描き直しも組み直しも走らないまま再開することになり、
+    /// **古い座標のまま新しい大きさの部屋にカメラを合わせる**ことになる。
+    /// アプリを立ち上げた直後や、他のアプリから戻ってきたときに崩れて見えるのはこれ。
+    ///
+    /// 見取り図の突き合わせ (`skeleton`) はここでやらない。文字列を毎フレーム
+    /// 組み立てることになるので、安い比較 (大きさと列数) だけにする
+    private func validateLayout() {
+        guard size.height > 80, !islands.isEmpty else { return }
+        guard builtSkeleton == nil
+                || seatColumns != builtSeatColumns
+                || abs(roomWidth - builtRoom.width) > 1
+                || abs(roomHeight - builtRoom.height) > 1
+        else { return }
+        rebuild()
     }
 
     /// 島ごとの稼働。動いているセッションの数をなまして持つ。
