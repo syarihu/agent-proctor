@@ -77,27 +77,41 @@ final class DeskScene: SKScene {
     //
     // 机1つの見た目の大きさから逆算した値。ここを触ると部屋全体が組み直される
 
-    private let deskWidth: CGFloat = 72
-    private let deskDepth: CGFloat = 21
-    /// 机は2カラム。中心からの振り分け幅。
-    /// 左右の間隔 (136pt) が見出しの折り返し幅 (120pt) より広くないと、
-    /// 隣の机の見出しと文字がぶつかる
-    private let columnOffset: CGFloat = 68
-    /// 見出しを折り返す幅。カラムの間隔より 16pt 狭くして、隣と触れないようにする
-    private let captionWidth: CGFloat = 120
+    private let deskWidth: CGFloat = 88
+    private let deskDepth: CGFloat = 25
+    /// 机を横に何列並べるか。**帯の幅で 1〜3 列に変わる。**
+    ///
+    /// 固定にすると、広げたときは横が余り、狭めたときは見出しが隣とぶつかる。
+    /// 3 列を上限にしているのは、それ以上に細くすると見出しが縦長になって読めないため
+    private var seatColumns: Int {
+        max(1, min(3, Int(size.width / 130)))
+    }
+
+    /// 列と列の間隔。帯の幅を使い切るが、広げすぎると机がまばらになるので上限を置く
+    private var columnPitch: CGFloat {
+        min(200, max(120, (size.width - 30) / CGFloat(seatColumns)))
+    }
+
+    /// 見出しを折り返す幅。列の間隔より 18pt 狭くして、隣と触れないようにする
+    private var captionWidth: CGFloat { columnPitch - 18 }
+
+    /// 島1つの横幅。机の幅に、列を広げたぶんを足したもの
+    private var islandWidth: CGFloat {
+        deskWidth + columnPitch * CGFloat(seatColumns - 1)
+    }
     /// 見出しの行数。これ以上増やすと下の段のモニタに乗る
     private let captionLines = 3
     /// 見出しの文字の大きさ。長い名前はここから縮めて3行に収める
-    private let captionSize: CGFloat = 10
+    private let captionSize: CGFloat = 12
     /// 縮める下限。これ以下にすると読めないので、そこから先は諦めて切る
-    private let captionMinSize: CGFloat = 7
+    private let captionMinSize: CGFloat = 8
     /// 段と段の縦の間隔。
     /// 机の縦の専有 (前面 16.5 + 3行の見出し 36) と、下の段のモニタの天 (23.5) が
     /// 余裕をもって離れる高さを取る。ここを詰めると、名前の長い机の3行目が
     /// 下の段のモニタに乗る
-    private let rowSpacing: CGFloat = 100
-    /// 島と島の横の間隔。島の幅 (72 + 136) に通路を足したもの
-    private let islandSpacing: CGFloat = 290
+    private let rowSpacing: CGFloat = 116
+    /// 島と島の横の間隔。島の幅に通路を足したもの
+    private var islandSpacing: CGFloat { islandWidth + 80 }
     /// 部屋の上の余白。hub の見出し (机から 32pt 上) が奥の壁に食い込まない高さに、
     /// 天井側の間を足したもの。ここが詰まっていると机が上端に貼り付いて窮屈に見える
     private let topMargin: CGFloat = 84
@@ -106,16 +120,18 @@ final class DeskScene: SKScene {
     /// 片側に積む書類の枚数の上限。左右で倍の 12 段まで出せる。
     /// これ以上高くすると見出しに届く
     private let maxSheetsPerSide = 6
-    private let sheetWidth: CGFloat = 15
-    private let sheetHeight: CGFloat = 4.5
+    private let sheetWidth: CGFloat = 18
+    private let sheetHeight: CGFloat = 5
 
     // MARK: 状態
 
     private var islands: [DeskIsland] = []
     /// いま組み上がっている部屋の骨格。これが変わったときだけ組み直す
     private var builtSkeleton: String?
-    /// 組み上げたときのカラム数。幅を変えて段が変わったら組み直す
+    /// 組み上げたときの島のカラム数。幅を変えて段が変わったら組み直す
     private var builtColumns = 0
+    /// 組み上げたときの机の列数
+    private var builtSeatColumns = 0
     /// 組み上げたときの部屋の大きさ。
     ///
     /// 部屋はビューポートより小さくならない (`max(size, ...)`) ので、帯の大きさが
@@ -187,6 +203,7 @@ final class DeskScene: SKScene {
         let wanted = CGSize(width: roomWidth, height: roomHeight)
         guard skeleton(of: islands) != builtSkeleton
                 || columns != builtColumns
+                || seatColumns != builtSeatColumns
                 || abs(wanted.width - builtRoom.width) > 1
                 || abs(wanted.height - builtRoom.height) > 1
         else { return false }
@@ -208,7 +225,9 @@ final class DeskScene: SKScene {
     /// どの島も同じ高さの区画を取る。島ごとに高さを変えると、
     /// 机が増減するたびに下の島がまるごと動いて落ち着かない
     private var islandHeight: CGFloat {
-        let seatRows = islands.map { ($0.seats.count + 1) / 2 }.max() ?? 1
+        let seatRows = islands.map {
+            ($0.seats.count + seatColumns - 1) / seatColumns
+        }.max() ?? 1
         return rowSpacing * CGFloat(max(1, seatRows) + 1)
     }
 
@@ -229,17 +248,17 @@ final class DeskScene: SKScene {
                        y: roomHeight - topMargin - islandHeight * row)
     }
 
-    /// 島の中の机。左右2カラムに、上の段から詰めていく
+    /// 島の中の机。上の段から、左から順に詰めていく
     private func seatPoint(island: Int, index: Int) -> CGPoint {
         let hub = hubPoint(island: island)
-        let column: CGFloat = index % 2 == 0 ? -columnOffset : columnOffset
-        return CGPoint(x: hub.x + column,
-                       y: hub.y - rowSpacing * CGFloat(index / 2 + 1))
+        let spread = columnPitch * CGFloat(seatColumns - 1)
+        return CGPoint(x: hub.x - spread / 2 + columnPitch * CGFloat(index % seatColumns),
+                       y: hub.y - rowSpacing * CGFloat(index / seatColumns + 1))
     }
 
     /// 人が机の前に立つ位置。天板に重ならないよう少し手前に下げる
     private func standing(at desk: CGPoint) -> CGPoint {
-        CGPoint(x: desk.x, y: desk.y - 30)
+        CGPoint(x: desk.x, y: desk.y - 34)
     }
 
     // MARK: - 組み立て
@@ -253,6 +272,7 @@ final class DeskScene: SKScene {
         activity = Array(repeating: 0, count: islands.count)
         builtSkeleton = skeleton(of: islands)
         builtColumns = columns
+        builtSeatColumns = seatColumns
         builtRoom = CGSize(width: roomWidth, height: roomHeight)
 
         buildFloor()
@@ -321,8 +341,8 @@ final class DeskScene: SKScene {
 
         let width = isHub ? deskWidth + 12 : deskWidth
 
-        let front = SKShapeNode(rect: CGRect(x: -width / 2, y: -deskDepth / 2 - 7,
-                                             width: width, height: 8),
+        let front = SKShapeNode(rect: CGRect(x: -width / 2, y: -deskDepth / 2 - 8,
+                                             width: width, height: 9),
                                 cornerRadius: 2)
         front.fillColor = .secondaryLabelColor.withAlphaComponent(0.32)
         front.strokeColor = .clear
@@ -335,9 +355,9 @@ final class DeskScene: SKScene {
         top.strokeColor = .clear
         node.addChild(top)
 
-        let screen = SKShapeNode(rect: CGRect(x: -13.5, y: deskDepth / 2 - 4,
-                                              width: 27, height: 17),
-                                 cornerRadius: 2.5)
+        let screen = SKShapeNode(rect: CGRect(x: -16.5, y: deskDepth / 2 - 4,
+                                              width: 33, height: 20),
+                                 cornerRadius: 3)
         screen.name = "screen"
         screen.strokeColor = .clear
         screen.fillColor = .secondaryLabelColor.withAlphaComponent(0.4)
@@ -349,7 +369,7 @@ final class DeskScene: SKScene {
         for (name, side) in [("stackL", -1.0), ("stackR", 1.0)] as [(String, CGFloat)] {
             let stack = SKNode()
             stack.name = name
-            stack.position = CGPoint(x: side * (width / 2 - 11), y: -5)
+            stack.position = CGPoint(x: side * (width / 2 - 13), y: -6)
             node.addChild(stack)
         }
 
@@ -357,7 +377,7 @@ final class DeskScene: SKScene {
         // 並びに来た人が誰に用があるのか分からない
         let occupant = person(tint: isHub ? .labelColor : .labelColor)
         occupant.name = "occupant"
-        occupant.position = CGPoint(x: 0, y: 24)
+        occupant.position = CGPoint(x: 0, y: 28)
         occupant.zPosition = -20
         node.addChild(occupant)
 
@@ -386,7 +406,7 @@ final class DeskScene: SKScene {
         // 折り返しは自分で入れた改行でやる。行数は数えてあるので上限は要らない
         caption.numberOfLines = 0
         caption.verticalAlignmentMode = .top
-        caption.position = CGPoint(x: 0, y: -deskDepth / 2 - 11)
+        caption.position = CGPoint(x: 0, y: -deskDepth / 2 - 12)
         node.addChild(caption)
 
         return node
@@ -473,7 +493,7 @@ final class DeskScene: SKScene {
     private static func handMark() -> SKNode {
         guard let handTexture else { return SKNode() }
         let node = SKSpriteNode(texture: handTexture)
-        node.size = CGSize(width: 17, height: 20)
+        node.size = CGSize(width: 21, height: 25)
         return node
     }
 
@@ -481,20 +501,20 @@ final class DeskScene: SKScene {
     private func person(tint: NSColor) -> SKNode {
         let node = SKNode()
 
-        let body = SKShapeNode(rect: CGRect(x: -6, y: 0, width: 12, height: 15),
-                               cornerRadius: 5)
+        let body = SKShapeNode(rect: CGRect(x: -7, y: 0, width: 14, height: 18),
+                               cornerRadius: 6)
         body.fillColor = tint.withAlphaComponent(0.75)
         body.strokeColor = .clear
         node.addChild(body)
 
-        let head = SKShapeNode(circleOfRadius: 6)
+        let head = SKShapeNode(circleOfRadius: 7)
         head.fillColor = tint.withAlphaComponent(0.85)
         head.strokeColor = .clear
-        head.position = CGPoint(x: 0, y: 18)
+        head.position = CGPoint(x: 0, y: 21)
         node.addChild(head)
 
         // 足元の影。地面に立っていることを示す
-        let shadow = SKShapeNode(ellipseOf: CGSize(width: 16, height: 6))
+        let shadow = SKShapeNode(ellipseOf: CGSize(width: 19, height: 7))
         shadow.fillColor = .black.withAlphaComponent(0.14)
         shadow.strokeColor = .clear
         shadow.zPosition = -1
@@ -563,7 +583,7 @@ final class DeskScene: SKScene {
         occupant?.removeAction(forKey: "type")
         occupant?.alpha = 1
         // 座っているときは机の奥。立っているときは机の手前なので、重なりも入れ替える
-        occupant?.position = CGPoint(x: 0, y: 24)
+        occupant?.position = CGPoint(x: 0, y: 28)
         occupant?.zPosition = -20
 
         switch seat.status {
@@ -644,7 +664,7 @@ final class DeskScene: SKScene {
     /// 島の幅は 290pt あるので、5人までは隣の島に食い込まない
     private func queuePoint(island: Int, slot: Int) -> CGPoint {
         let hub = hubPoint(island: island)
-        return CGPoint(x: hub.x - 26 - CGFloat(slot) * 21, y: hub.y + 24)
+        return CGPoint(x: hub.x - 30 - CGFloat(slot) * 24, y: hub.y + 28)
     }
 
     /// 待っている人を hub の前に並ばせる。
