@@ -75,6 +75,10 @@ struct DeskSeat: Equatable {
     /// いま触っているツール ("Edit: TaskStore.swift" など)。動いている間だけ入る。
     /// 何をしているかで仕草を変えるために使う
     let activity: String?
+    /// 現在 iTerm2 で人間が見ているタブかどうか
+    let isCurrent: Bool
+    /// 対応するタブ番号（⌘1 など）
+    let tabNumber: Int?
 }
 
 /// 机まわりの手伝い1人。台帳のサブエージェント1体に対応する
@@ -121,49 +125,37 @@ final class DeskScene: SKScene {
     //
     // 机1つの見た目の大きさから逆算した値。ここを触ると部屋全体が組み直される
 
-    private let deskWidth: CGFloat = 88
-    private let deskDepth: CGFloat = 25
-    /// クソデカ・ウルトラワイド湾曲モニターの寸法（机をはみ出す幅と高さ、手前への湾曲落差）
-    private let screenWidth: CGFloat = 108
-    private let screenHeight: CGFloat = 32
-    private let screenCurveDrop: CGFloat = 4.5
-    /// 机を横に何列並べるか。**帯の幅で 1〜3 列に変わる。**
-    ///
-    /// 固定にすると、広げたときは横が余り、狭めたときは見出しが隣とぶつかる。
-    /// 3 列を上限にしているのは、それ以上に細くすると見出しが縦長になって読めないため
+    /// セッション机の横幅。文字サイズと用紙拡大に合わせて調整
+    private let deskWidth: CGFloat = 184
+    /// リポジトリ (hub) の机の横幅。作業領域はいらないのでちょい大きめ
+    private let hubDeskWidth: CGFloat = 104
+    private let deskDepth: CGFloat = 24
+    /// 机を横に何列並べるか。**最大2列にする。**
+    /// 拡大した机 (184pt) と印刷用紙 (226pt) が2列並ぶのに必要な幅を基準にする
     private var seatColumns: Int {
-        max(1, min(3, Int(size.width / 130)))
+        max(1, min(2, Int(size.width / 245)))
     }
 
-    /// 列と列の間隔。帯の幅を使い切るが、広げすぎると机がまばらになるので上限を置く
+    /// 列と列の間隔。帯の幅を使い切る
     private var columnPitch: CGFloat {
-        min(200, max(120, (size.width - 30) / CGFloat(seatColumns)))
+        max(242, (size.width - 24) / CGFloat(seatColumns))
     }
-
-    /// 見出しを折り返す幅。列の間隔より 18pt 狭くして、隣と触れないようにする
-    private var captionWidth: CGFloat { columnPitch - 18 }
 
     /// 島1つの横幅。机の幅に、列を広げたぶんを足したもの
     private var islandWidth: CGFloat {
         deskWidth + columnPitch * CGFloat(seatColumns - 1)
     }
-    /// 見出しの行数。これ以上増やすと下の段のモニタに乗る
-    private let captionLines = 3
-    /// 見出しの文字の大きさ。長い名前はここから縮めて3行に収める
-    private let captionSize: CGFloat = 12
-    /// 縮める下限。これ以下にすると読めないので、そこから先は諦めて切る
-    private let captionMinSize: CGFloat = 8
-    /// 段と段の縦の間隔。
-    /// 机の縦の専有 (前面 16.5 + 3行の見出し 36) と、下の段のモニタの天 (23.5) が
-    /// 余裕をもって離れる高さを取る。ここを詰めると、名前の長い机の3行目が
-    /// 下の段のモニタに乗る
-    private let rowSpacing: CGFloat = 116
+    /// hub (リポジトリ机) から最初のセッション机までの縦の間隔。
+    /// hub は用紙が下に垂れ下がらないため、セッション間の間隔より詰めて自然な隙間にする
+    private let hubRowSpacing: CGFloat = 145
+    /// セッション机の段と段の縦の間隔。
+    /// 上の用紙と下の吹き出しが重ならず、程よく詰まった間隔にする
+    private let rowSpacing: CGFloat = 185
     /// 島と島の横の間隔。島の幅に通路を足したもの
-    private var islandSpacing: CGFloat { islandWidth + 80 }
-    /// 部屋の上の余白。hub の見出し (机から 32pt 上) が奥の壁に食い込まない高さに、
-    /// 天井側の間を足したもの。ここが詰まっていると机が上端に貼り付いて窮屈に見える
-    private let topMargin: CGFloat = 84
-    private let bottomMargin: CGFloat = 34
+    private var islandSpacing: CGFloat { islandWidth + 90 }
+    /// 部屋の上の余白。hub の吹き出しが奥の壁に食い込まない高さ
+    private let topMargin: CGFloat = 125
+    private let bottomMargin: CGFloat = 60
 
     /// 片側に積む書類の枚数の上限。左右で倍の 12 段まで出せる。
     /// これ以上高くすると見出しに届く
@@ -283,7 +275,7 @@ final class DeskScene: SKScene {
         let seatRows = islands.map {
             ($0.seats.count + seatColumns - 1) / seatColumns
         }.max() ?? 1
-        return rowSpacing * CGFloat(max(1, seatRows) + 1)
+        return hubRowSpacing + rowSpacing * CGFloat(max(0, seatRows - 1)) + 190
     }
 
     private var roomWidth: CGFloat {
@@ -307,13 +299,14 @@ final class DeskScene: SKScene {
     private func seatPoint(island: Int, index: Int) -> CGPoint {
         let hub = hubPoint(island: island)
         let spread = columnPitch * CGFloat(seatColumns - 1)
+        let row = index / seatColumns
         return CGPoint(x: hub.x - spread / 2 + columnPitch * CGFloat(index % seatColumns),
-                       y: hub.y - rowSpacing * CGFloat(index / seatColumns + 1))
+                       y: hub.y - hubRowSpacing - rowSpacing * CGFloat(row))
     }
 
-    /// 人が机の前に立つ位置。天板に重ならないよう少し手前に下げる
+    /// 人が机の前に立つ位置。印刷用紙の手前に立つ
     private func standing(at desk: CGPoint) -> CGPoint {
-        CGPoint(x: desk.x, y: desk.y - 34)
+        CGPoint(x: desk.x, y: desk.y - 80)
     }
 
     // MARK: - 組み立て
@@ -385,64 +378,286 @@ final class DeskScene: SKScene {
         return line
     }
 
-    /// 湾曲ディスプレイの外形パス。
-    /// 画面中央を手前、左右の端を奥（座っている人の方向 = +y）へ湾曲させることで、
-    /// 人を包み込むようなコクピット型のウルトラワイド曲面を作る
-    private func curvedMonitorPath(width: CGFloat, height: CGFloat, drop: CGFloat, y: CGFloat, cornerRadius: CGFloat = 3.5) -> CGPath {
+    /// 思い出している風の思考雲の外形パス。
+    /// 喋っている吹き出しではなく、頭の中にタスク内容を思い浮かべている雲の形にする
+    private func thoughtBubblePath(width: CGFloat, height: CGFloat, bulge: CGFloat = 3.2) -> CGPath {
         let path = CGMutablePath()
         let hw = width / 2
-        let r = min(cornerRadius, height / 4)
+        let r = min(height / 2, 14.0)
+        let left = -hw + r
+        let right = hw - r
+        let xLobes = 7
 
-        // 底辺左端から時計回りに一周する
-        path.move(to: CGPoint(x: -hw + r, y: y + drop))
+        path.move(to: CGPoint(x: left, y: 0))
+        // 底辺（左から右へのモコモコ）
+        for i in 0..<xLobes {
+            let x0 = left + CGFloat(i) * (right - left) / CGFloat(xLobes)
+            let x1 = left + CGFloat(i + 1) * (right - left) / CGFloat(xLobes)
+            let midX = (x0 + x1) / 2
+            path.addQuadCurve(to: CGPoint(x: x1, y: 0), control: CGPoint(x: midX, y: -bulge))
+        }
 
-        // 下端の湾曲アーチ（左端から中央 apex (0, y) を経て右端へ）
-        path.addQuadCurve(to: CGPoint(x: hw - r, y: y + drop),
-                          control: CGPoint(x: 0, y: y - drop))
+        // 右端の丸いローブ
+        path.addQuadCurve(to: CGPoint(x: hw + bulge * 0.8, y: height / 2),
+                          control: CGPoint(x: hw + bulge * 0.5, y: -bulge * 0.5))
+        path.addQuadCurve(to: CGPoint(x: right, y: height),
+                          control: CGPoint(x: hw + bulge * 0.5, y: height + bulge * 0.5))
 
-        // 右下角
-        path.addQuadCurve(to: CGPoint(x: hw, y: y + drop + r),
-                          control: CGPoint(x: hw, y: y + drop))
+        // 上辺（右から左へのモコモコ）
+        for i in 0..<xLobes {
+            let x0 = right - CGFloat(i) * (right - left) / CGFloat(xLobes)
+            let x1 = right - CGFloat(i + 1) * (right - left) / CGFloat(xLobes)
+            let midX = (x0 + x1) / 2
+            path.addQuadCurve(to: CGPoint(x: x1, y: height), control: CGPoint(x: midX, y: height + bulge))
+        }
 
-        // 右端（垂直辺）
-        path.addLine(to: CGPoint(x: hw, y: y + height + drop - r))
-
-        // 右上角
-        path.addQuadCurve(to: CGPoint(x: hw - r, y: y + height + drop),
-                          control: CGPoint(x: hw, y: y + height + drop))
-
-        // 上端の湾曲アーチ（右端から中央 apex (0, y + height) を経て左端へ）
-        path.addQuadCurve(to: CGPoint(x: -hw + r, y: y + height + drop),
-                          control: CGPoint(x: 0, y: y + height - drop))
-
-        // 左上角
-        path.addQuadCurve(to: CGPoint(x: -hw, y: y + height + drop - r),
-                          control: CGPoint(x: -hw, y: y + height + drop))
-
-        // 左端（垂直辺）
-        path.addLine(to: CGPoint(x: -hw, y: y + drop + r))
-
-        // 左下角
-        path.addQuadCurve(to: CGPoint(x: -hw + r, y: y + drop),
-                          control: CGPoint(x: -hw, y: y + drop))
+        // 左端の丸いローブ
+        path.addQuadCurve(to: CGPoint(x: -hw - bulge * 0.8, y: height / 2),
+                          control: CGPoint(x: -hw - bulge * 0.5, y: height + bulge * 0.5))
+        path.addQuadCurve(to: CGPoint(x: left, y: 0),
+                          control: CGPoint(x: -hw - bulge * 0.5, y: -bulge * 0.5))
 
         path.closeSubpath()
         return path
     }
 
-    /// 湾曲画面の上部ベゼルに沿った光沢ライン
-    private func curvedGlossPath(width: CGFloat, height: CGFloat, drop: CGFloat, y: CGFloat) -> CGPath {
-        let path = CGMutablePath()
-        let hw = width / 2 - 5.0
-        let glossY = y + height - 1.8
-        path.move(to: CGPoint(x: -hw, y: glossY + drop))
-        path.addQuadCurve(to: CGPoint(x: hw, y: glossY + drop),
-                          control: CGPoint(x: 0, y: glossY - drop))
-        return path
+    /// 頭上に浮かべる思考雲（タスク内容またはリポジトリ名を表示する）
+    private func speechBubbleNode(isHub: Bool, initialText: String) -> SKNode {
+        let node = SKNode()
+        node.name = "speechBubble"
+
+        let width: CGFloat = isHub ? 210 : 222
+        let height: CGFloat = isHub ? 34 : 28
+        let fontSize: CGFloat = isHub ? 13.2 : 11.3
+        let limit = isHub ? 22 : 30
+        let bubbleY: CGFloat = 70
+
+        let shapePath = thoughtBubblePath(width: width, height: height, bulge: isHub ? 3.4 : 3.0)
+        let shape = SKShapeNode(path: shapePath)
+        shape.name = "bubbleShape"
+        shape.position = CGPoint(x: 0, y: bubbleY)
+        shape.fillColor = DeskScene.bubbleFillColor(isHub: isHub, isCurrent: false)
+        shape.strokeColor = isHub
+            ? .secondaryLabelColor.withAlphaComponent(0.55)
+            : .secondaryLabelColor.withAlphaComponent(0.35)
+        shape.lineWidth = isHub ? 1.0 : 0.8
+        node.addChild(shape)
+
+        // 思い出している風のしっぽ（頭の横から右上方向へ連なる小さな思考の泡）
+        let dots: [(CGFloat, CGFloat, CGFloat)] = [
+            (11.0, -11.0, 1.3),
+            (16.5, -6.8, 1.9),
+            (23.0, -2.8, 2.7)
+        ]
+        for (i, (dx, dy, r)) in dots.enumerated() {
+            let dot = SKShapeNode(circleOfRadius: r)
+            dot.name = "trailDot\(i)"
+            dot.position = CGPoint(x: dx, y: bubbleY + dy)
+            dot.fillColor = shape.fillColor
+            dot.strokeColor = shape.strokeColor
+            dot.lineWidth = shape.lineWidth
+            node.addChild(dot)
+        }
+
+        let label = SKLabelNode(fontNamed: "SFMono-Bold")
+        label.name = "bubbleLabel"
+        label.fontSize = fontSize
+        label.fontColor = .labelColor
+        label.horizontalAlignmentMode = .center
+        label.verticalAlignmentMode = .center
+        label.position = CGPoint(x: 0, y: bubbleY + height / 2)
+        label.text = truncateScreenText(initialText, limit: limit)
+        node.addChild(label)
+
+        if !isHub {
+            // タブ番号バッジ（⌘1など）。思考雲の左上角に乗せる
+            let badge = SKNode()
+            badge.name = "tabBadge"
+            badge.position = CGPoint(x: -width / 2 + 18, y: bubbleY + height - 1)
+            badge.zPosition = 10
+            badge.isHidden = true
+
+            let colors = DeskScene.tabBadgeColors(isCurrent: false)
+            let badgeBg = SKShapeNode(rect: CGRect(x: -13, y: -7, width: 26, height: 14),
+                                      cornerRadius: 3.5)
+            badgeBg.name = "tabBadgeBg"
+            badgeBg.fillColor = colors.bg
+            badgeBg.strokeColor = colors.stroke
+            badgeBg.lineWidth = colors.width
+            badge.addChild(badgeBg)
+
+            let badgeLabel = SKLabelNode(fontNamed: "SFMono-Bold")
+            badgeLabel.name = "tabBadgeLabel"
+            badgeLabel.fontSize = 8.5
+            badgeLabel.fontColor = colors.text
+            badgeLabel.horizontalAlignmentMode = .center
+            badgeLabel.verticalAlignmentMode = .center
+            badgeLabel.position = CGPoint(x: 0, y: 0)
+            badge.addChild(badgeLabel)
+
+            node.addChild(badge)
+        }
+
+        node.zPosition = 20
+        return node
     }
 
-    /// 机1つ。天板 (明るい) と前面 (暗い) の2枚で厚みを出し、奥にモニタを置く。
-    /// hub は幅を広げて、島の頭だと分かるようにする
+    /// 思考雲の背景色。
+    /// 人間が見ているタブ（isCurrent）は、ステータス枠線を保ちつつ
+    /// 雲の中身がふわっと明るく点灯したようなハイライト色にする
+    private static func bubbleFillColor(isHub: Bool, isCurrent: Bool) -> NSColor {
+        NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            if isCurrent {
+                return isDark
+                    ? NSColor(red: 0.20, green: 0.28, blue: 0.40, alpha: 0.98)
+                    : NSColor(red: 0.88, green: 0.93, blue: 0.98, alpha: 0.98)
+            } else if isHub {
+                return isDark
+                    ? NSColor(red: 0.18, green: 0.22, blue: 0.30, alpha: 0.96)
+                    : NSColor(red: 0.95, green: 0.96, blue: 0.98, alpha: 0.96)
+            } else {
+                return isDark
+                    ? NSColor(red: 0.14, green: 0.18, blue: 0.25, alpha: 0.96)
+                    : NSColor(red: 0.98, green: 0.98, blue: 0.99, alpha: 0.96)
+            }
+        }
+    }
+
+    /// タブ番号バッジの色。
+    /// アクティブ時は鮮やかな水色で点灯し、非アクティブ時は控えめなグレーで常時表示する
+    private static func tabBadgeColors(isCurrent: Bool) -> (bg: NSColor, stroke: NSColor, text: NSColor, width: CGFloat) {
+        if isCurrent {
+            return (
+                bg: NSColor(name: nil) { appearance in
+                    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                        ? NSColor(red: 0.12, green: 0.20, blue: 0.30, alpha: 0.98)
+                        : NSColor(red: 0.92, green: 0.96, blue: 1.0, alpha: 0.98)
+                },
+                stroke: NSColor(name: nil) { appearance in
+                    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                        ? NSColor(red: 0.310, green: 0.765, blue: 0.969, alpha: 0.90)
+                        : NSColor(red: 0.100, green: 0.500, blue: 0.850, alpha: 0.80)
+                },
+                text: NSColor(name: nil) { appearance in
+                    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                        ? NSColor(red: 0.310, green: 0.765, blue: 0.969, alpha: 1.0)
+                        : NSColor(red: 0.05, green: 0.40, blue: 0.75, alpha: 1.0)
+                },
+                width: 1.0
+            )
+        } else {
+            return (
+                bg: NSColor(name: nil) { appearance in
+                    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                        ? NSColor(red: 0.10, green: 0.13, blue: 0.18, alpha: 0.95)
+                        : NSColor(white: 0.93, alpha: 0.95)
+                },
+                stroke: NSColor(name: nil) { appearance in
+                    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                        ? NSColor(white: 0.45, alpha: 0.40)
+                        : NSColor(white: 0.65, alpha: 0.50)
+                },
+                text: NSColor(name: nil) { appearance in
+                    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                        ? NSColor(white: 0.65, alpha: 0.75)
+                        : NSColor(white: 0.40, alpha: 0.80)
+                },
+                width: 0.7
+            )
+        }
+    }
+
+    /// 机の下に垂れ下がる連続帳票・プリント用紙。作業ログを3行印刷する
+    private func printedPaperNode(width: CGFloat = 226, height: CGFloat = 60) -> SKNode {
+        let paper = SKNode()
+        paper.name = "printedPaper"
+        let hw = width / 2
+        let topY: CGFloat = -deskDepth / 2 - 4
+        let bottomY = topY - height
+
+        // 帳票用紙のベース背景
+        let bg = SKShapeNode(rect: CGRect(x: -hw, y: bottomY, width: width, height: height),
+                             cornerRadius: 2.5)
+        bg.name = "paperBg"
+        bg.fillColor = NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(red: 0.08, green: 0.11, blue: 0.16, alpha: 0.96)
+                : NSColor(red: 0.96, green: 0.96, blue: 0.93, alpha: 0.96)
+        }
+        bg.strokeColor = NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(white: 0.35, alpha: 0.6)
+                : NSColor(white: 0.75, alpha: 0.8)
+        }
+        bg.lineWidth = 0.8
+        paper.addChild(bg)
+
+        // ドットインパクト・連続帳票の送り穴（スプロケットホール）を左右に3つずつ配置
+        let holeRadius: CGFloat = 1.5
+        let leftHoleX = -hw + 5.0
+        let rightHoleX = hw - 5.0
+        for i in 0..<3 {
+            let holeY = topY - 9.0 - CGFloat(i) * 19.0
+            for x in [leftHoleX, rightHoleX] {
+                let hole = SKShapeNode(circleOfRadius: holeRadius)
+                hole.position = CGPoint(x: x, y: holeY)
+                hole.fillColor = NSColor(name: nil) { appearance in
+                    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                        ? NSColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 0.9)
+                        : NSColor(white: 0.80, alpha: 0.9)
+                }
+                hole.strokeColor = .clear
+                paper.addChild(hole)
+            }
+        }
+
+        // 帳票用紙の中央段ゼブラ帯（グリーンバー風の薄い帯）
+        let stripe = SKShapeNode(rect: CGRect(x: -hw + 9.5, y: topY - 37.5, width: width - 19.0, height: 19.0))
+        stripe.fillColor = NSColor(red: 0.2, green: 0.6, blue: 0.35, alpha: 0.06)
+        stripe.strokeColor = .clear
+        paper.addChild(stripe)
+
+        // 下端のミシン目（切り取り破線）
+        let perfPath = CGMutablePath()
+        let perfY = bottomY + 2.5
+        let perfStart = -hw + 9.0
+        let perfEnd = hw - 9.0
+        var px = perfStart
+        while px < perfEnd {
+            perfPath.move(to: CGPoint(x: px, y: perfY))
+            perfPath.addLine(to: CGPoint(x: min(px + 2.8, perfEnd), y: perfY))
+            px += 5.0
+        }
+        let perf = SKShapeNode(path: perfPath)
+        perf.strokeColor = NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(white: 0.45, alpha: 0.45)
+                : NSColor(white: 0.65, alpha: 0.55)
+        }
+        perf.lineWidth = 0.6
+        paper.addChild(perf)
+
+        // 印刷された作業ログ3行
+        let textLeft = -hw + 14.0
+        for lineIndex in 0..<3 {
+            let label = SKLabelNode(fontNamed: "SFMono-Bold")
+            label.name = "paperLine\(lineIndex)"
+            label.fontSize = 9.8
+            label.horizontalAlignmentMode = .left
+            label.verticalAlignmentMode = .center
+            label.position = CGPoint(x: textLeft, y: topY - 9.0 - CGFloat(lineIndex) * 19.0)
+            label.zPosition = 2
+            label.fontColor = .clear
+            paper.addChild(label)
+        }
+
+        paper.zPosition = 10
+        return paper
+    }
+
+    /// 机1つ。天板 (明るい) と前面 (暗い) の2枚で厚みを出し、奥に小型モニタを置く。
+    /// 頭上にはタスク内容の吹き出し、机の下には作業ログが印刷された帳票用紙が垂れ下がる
     private func deskNode(at point: CGPoint, label: String,
                           isHub: Bool, seat: DeskSeat?) -> SKNode {
         let node = SKNode()
@@ -452,10 +667,11 @@ final class DeskScene: SKScene {
         // クリックの当たり判定はこの名前で引く。hub には開く相手がいない
         if let seat { node.name = "seat:\(seat.id)" }
 
-        let width = isHub ? deskWidth + 12 : deskWidth
+        // セッション机は横2倍 (184pt)、hub は作業領域不要でちょい大きめ (104pt)
+        let width = isHub ? hubDeskWidth : deskWidth
 
-        let front = SKShapeNode(rect: CGRect(x: -width / 2, y: -deskDepth / 2 - 8,
-                                             width: width, height: 9),
+        let front = SKShapeNode(rect: CGRect(x: -width / 2, y: -deskDepth / 2 - 9,
+                                             width: width, height: 10),
                                 cornerRadius: 2)
         front.fillColor = .secondaryLabelColor.withAlphaComponent(0.32)
         front.strokeColor = .clear
@@ -468,154 +684,63 @@ final class DeskScene: SKScene {
         top.strokeColor = .clear
         node.addChild(top)
 
-        let sWidth = isHub ? screenWidth + 6 : screenWidth
-        let screenY = deskDepth / 2 - 4
+        // 机の上のモニタ（セッションは横2倍の108pt、hubは52pt、文字表示なし）
+        let mWidth: CGFloat = isHub ? 52 : 108
+        let mHeight: CGFloat = isHub ? 22 : 28
+        let screenY: CGFloat = 9
 
-        // クソデカ湾曲ディスプレイを支えるスタンド台座
-        let stand = SKShapeNode(rect: CGRect(x: -12, y: screenY - 4, width: 24, height: 6),
-                                cornerRadius: 2)
-        stand.fillColor = .secondaryLabelColor.withAlphaComponent(0.40)
+        let stand = SKShapeNode(rect: CGRect(x: -mWidth / 6, y: screenY - 3, width: mWidth / 3, height: 5),
+                                cornerRadius: 1.5)
+        stand.fillColor = .secondaryLabelColor.withAlphaComponent(0.35)
         stand.strokeColor = .clear
         stand.zPosition = -1
         node.addChild(stand)
 
-        // 机をはみ出すクソデカ・ウルトラワイド湾曲モニター本体
-        let screenPath = curvedMonitorPath(width: sWidth, height: screenHeight,
-                                           drop: screenCurveDrop, y: screenY)
-        let screen = SKShapeNode(path: screenPath)
+        let screen = SKShapeNode(rect: CGRect(x: -mWidth / 2, y: screenY,
+                                              width: mWidth, height: mHeight),
+                                 cornerRadius: 2.5)
         screen.name = "screen"
-        screen.strokeColor = .clear
-        screen.fillColor = .secondaryLabelColor.withAlphaComponent(0.4)
+        screen.fillColor = .secondaryLabelColor.withAlphaComponent(0.25)
+        screen.strokeColor = .secondaryLabelColor.withAlphaComponent(0.4)
+        screen.lineWidth = 1.0
         node.addChild(screen)
 
-        // 湾曲ベゼルの上部光沢ライン
-        let gloss = SKShapeNode(path: curvedGlossPath(width: sWidth, height: screenHeight,
-                                                      drop: screenCurveDrop, y: screenY))
-        gloss.strokeColor = .white.withAlphaComponent(0.20)
-        gloss.lineWidth = 0.8
-        gloss.lineCap = .round
-        gloss.zPosition = 2
-        screen.addChild(gloss)
-
-        // モニター内に画面いっぱいに映すターミナル行（3行）
-        for lineIndex in 0..<3 {
-            let label = SKLabelNode(fontNamed: "SFMono-Bold")
-            label.name = "termLine\(lineIndex)"
-            label.fontSize = 5.8
-            label.horizontalAlignmentMode = .left
-            label.verticalAlignmentMode = .center
-            label.position = CGPoint(x: -sWidth / 2 + 7.0,
-                                     y: screenY + screenHeight - 6.0 - CGFloat(lineIndex) * 7.8)
-            label.zPosition = 3
-            label.fontColor = .clear
-            screen.addChild(label)
-        }
-
-        // 書類の山を載せる器。中身は restack が入れ替える。
-        // 天板の両端に置くのは、モニタ (奥) と見出し (上) のどちらとも重ならない場所だから。
-        // 片側に積み上げるより、半分ずつ左右に分けたほうが低い山で同じ量を出せる
+        // 書類の山を載せる器（天板の両端）
         for (name, side) in [("stackL", -1.0), ("stackR", 1.0)] as [(String, CGFloat)] {
             let stack = SKNode()
             stack.name = name
-            stack.position = CGPoint(x: side * (width / 2 - 13), y: -6)
+            stack.position = CGPoint(x: side * (width / 2 - 11), y: -6)
+            stack.zPosition = 3
             node.addChild(stack)
         }
 
-        // 席の人。hub にも座らせる。質問を受ける相手がいない事務所だと、
-        // 並びに来た人が誰に用があるのか分からない
+        // 席の人。1.2倍サイズにする
         let occupant = person(tint: isHub ? .labelColor : .labelColor)
         occupant.name = "occupant"
-        occupant.position = CGPoint(x: 0, y: 34)
+        occupant.setScale(1.2)
+        occupant.position = CGPoint(x: 0, y: 30)
         occupant.zPosition = -20
         node.addChild(occupant)
 
+        // 頭上の吹き出し（hub は大きめ、セッションは横2倍でタスク内容を広く表示）
+        let bubble = speechBubbleNode(isHub: isHub, initialText: label)
+        node.addChild(bubble)
+
         if seat != nil {
-            // 挙げた手。**机の上に置いたままにする。**
-            // 本人は hub へ質問しに行ってしまうので、手が付いていってしまうと
-            // どの机が呼んでいるのか分からなくなる
+            // 机の下に垂れ下がる連続帳票・プリント用紙（横2倍で作業ログ3行）
+            let paper = printedPaperNode(width: 226, height: 60)
+            node.addChild(paper)
+
+            // 挙げた手。ディスプレイの右横（他のコンテンツに被らない位置）に配置
             let hand = DeskScene.handMark()
             hand.name = "hand"
-            hand.position = CGPoint(x: 0, y: -4)
-            hand.zPosition = 5
+            hand.position = CGPoint(x: mWidth / 2 + 13, y: screenY + 4)
+            hand.zPosition = 25
             hand.isHidden = true
             node.addChild(hand)
         }
 
-        // 見出しは机の下、最大3行。上に置くと書類の山 (片側6枚 24pt) と場所を
-        // 取り合ううえ、名前が長いと隣の机の見出しとぶつかる。
-        // 折り返しは文字単位にしている。セッション名はハイフン続きで空白が無いことが多く、
-        // 単語単位だと折り返す場所が見つからずに幅をはみ出す
-        let size = captionFontSize(for: label)
-        let caption = SKLabelNode(text: wrapped(label, size: size))
-        caption.name = "caption"
-        caption.fontName = "SFMono-Regular"
-        caption.fontSize = size
-        caption.fontColor = .secondaryLabelColor.withAlphaComponent(isHub ? 0.85 : 0.7)
-        // 折り返しは自分で入れた改行でやる。行数は数えてあるので上限は要らない
-        caption.numberOfLines = 0
-        caption.verticalAlignmentMode = .top
-        caption.position = CGPoint(x: 0, y: -deskDepth / 2 - 12)
-        node.addChild(caption)
-
         return node
-    }
-
-    /// 見出しの文字の大きさを決める。
-    ///
-    /// `SKLabelNode` は入りきらない分を「…」で切る。行数を増やせば入るが、
-    /// 増やすと下の段のモニタに乗るので、**行数は据え置きで文字のほうを縮める**。
-    ///
-    /// 幅の見積もりは、等幅の欧文がおよそ文字送り 0.6 文字ぶん、
-    /// 和文が 1 文字ぶんであることから出している。
-    /// 実測しないのは、机ごとに `NSAttributedString` を測ると
-    /// 台帳が流れてくるたびに全部の机で測り直すことになるため
-    private func captionFontSize(for label: String) -> CGFloat {
-        let units = label.reduce(CGFloat(0)) { $0 + ($1.isASCII ? 0.6 : 1.0) }
-        guard units > 0 else { return captionSize }
-        // 1行に入るのは (幅 ÷ 文字送り) 文字。それが captionLines 行ぶんあればよい
-        let fits = captionWidth * CGFloat(captionLines) / units
-        return max(captionMinSize, min(captionSize, (fits * 2).rounded(.down) / 2))
-    }
-
-    /// 見出しを自分で折り返す。
-    ///
-    /// `SKLabelNode` の `preferredMaxLayoutWidth` による折り返しは**空白でしか折れない**。
-    /// セッション名はハイフン続きだったり和文だったりで空白が無いことが多く、
-    /// 折る場所が見つからないまま行数を使い切って「…」で切られてしまう
-    /// (`lineBreakMode` を `.byCharWrapping` にしても変わらない)。
-    /// 改行を自分で入れてしまえば、どんな文字列でも同じところで折れる。
-    ///
-    /// 幅の見積もりは `captionFontSize(for:)` と同じ根拠 (欧文 0.6 / 和文 1.0)
-    private func wrapped(_ label: String, size: CGFloat) -> String {
-        let capacity = captionWidth / size
-        var lines: [String] = []
-        var current = ""
-        var used: CGFloat = 0
-        var cut = false
-
-        for character in label {
-            let advance: CGFloat = character.isASCII ? 0.6 : 1.0
-            if used + advance > capacity, !current.isEmpty {
-                // 最後の行まで使い切った。ここから先は入らない
-                if lines.count == captionLines - 1 {
-                    cut = true
-                    break
-                }
-                lines.append(current)
-                current = ""
-                used = 0
-            }
-            current.append(character)
-            used += advance
-        }
-        lines.append(current)
-
-        // 入りきらなかったことを示す。1文字返してから「…」を置く
-        if cut, var last = lines.last, !last.isEmpty {
-            last.removeLast()
-            lines[lines.count - 1] = last + "…"
-        }
-        return lines.joined(separator: "\n")
     }
 
     /// 挙げた手。
@@ -642,6 +767,7 @@ final class DeskScene: SKScene {
         guard let handTexture else { return SKNode() }
         let node = SKSpriteNode(texture: handTexture)
         node.size = CGSize(width: 21, height: 25)
+        node.anchorPoint = CGPoint(x: 0.5, y: 0.1)
         return node
     }
 
@@ -665,20 +791,61 @@ final class DeskScene: SKScene {
         }
     }
 
-    /// 画面幅に収まるよう文字数を切り詰める
-    private func truncateScreenText(_ text: String, limit: Int = 22) -> String {
+    /// 画面幅に収まるよう文字数を切り詰める。
+    /// 収める先が吹き出しと帳票の各行で違い、共通の既定値を置くと
+    /// どちらかが必ずはみ出すので、上限は呼ぶ側に必ず書かせる
+    private func truncateScreenText(_ text: String, limit: Int) -> String {
         if text.count <= limit { return text }
         return String(text.prefix(limit - 1)) + "…"
     }
 
-    /// クソデカ湾曲ディスプレイに画面いっぱいに映すターミナル行（3行）
-    private func screenTerminalLines(seat: DeskSeat) -> [(text: String, color: NSColor)] {
-        let green = NSColor(red: 0.35, green: 0.98, blue: 0.50, alpha: 0.95)
-        let cyan = NSColor(red: 0.40, green: 0.90, blue: 1.0, alpha: 0.95)
-        let yellow = NSColor(red: 1.0, green: 0.85, blue: 0.40, alpha: 0.95)
-        let orange = NSColor(red: 1.0, green: 0.65, blue: 0.20, alpha: 0.95)
-        let red = NSColor(red: 1.0, green: 0.45, blue: 0.45, alpha: 0.95)
-        let dim = NSColor(white: 0.70, alpha: 0.85)
+    // 帳票に刷る文字の色。
+    //
+    // 机1つにつき更新のたび引くので、その場で作らず使い回す。
+    // NSColor(name:) の動的プロバイダは配色の切り替えを自分で追うため、
+    // 1度作れば明暗どちらでも正しい色を返す
+    private static let logGreen = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.35, green: 0.98, blue: 0.50, alpha: 0.95)
+            : NSColor(red: 0.12, green: 0.55, blue: 0.22, alpha: 1.0)
+    }
+    private static let logCyan = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.40, green: 0.90, blue: 1.0, alpha: 0.95)
+            : NSColor(red: 0.05, green: 0.45, blue: 0.75, alpha: 1.0)
+    }
+    private static let logYellow = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 1.0, green: 0.85, blue: 0.40, alpha: 0.95)
+            : NSColor(red: 0.70, green: 0.45, blue: 0.05, alpha: 1.0)
+    }
+    private static let logOrange = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 1.0, green: 0.65, blue: 0.20, alpha: 0.95)
+            : NSColor(red: 0.80, green: 0.35, blue: 0.05, alpha: 1.0)
+    }
+    private static let logRed = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 1.0, green: 0.45, blue: 0.45, alpha: 0.95)
+            : NSColor(red: 0.78, green: 0.15, blue: 0.15, alpha: 1.0)
+    }
+    private static let logDim = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(white: 0.70, alpha: 0.85)
+            : NSColor(white: 0.35, alpha: 0.9)
+    }
+
+    /// 連続帳票用紙に印刷する作業ログ行（3行）。
+    ///
+    /// 出る先はモニタではなく机の下に垂れる用紙なので、行数は用紙の段数 (3) に合わせる。
+    /// ここを増やしても用紙には刷られない
+    private func printedLogLines(seat: DeskSeat) -> [(text: String, color: NSColor)] {
+        let green = DeskScene.logGreen
+        let cyan = DeskScene.logCyan
+        let yellow = DeskScene.logYellow
+        let orange = DeskScene.logOrange
+        let red = DeskScene.logRed
+        let dim = DeskScene.logDim
 
         switch seat.status {
         case TaskStatus.running:
@@ -698,46 +865,46 @@ final class DeskScene: SKScene {
                 switch tool {
                 case "Read", "NotebookRead", "view_file":
                     return [
-                        ("🔍 \(truncateScreenText(file, limit: 20))", cyan),
+                        ("🔍 \(truncateScreenText(file, limit: 28))", cyan),
                         ("import Foundation", dim),
                         ("func execute() { ... }", dim),
                     ]
                 case "Grep", "grep_search", "Glob", "find_by_name":
                     return [
-                        ("🔍 \(tool): \(truncateScreenText(detail, limit: 16))", cyan),
+                        ("🔍 \(tool): \(truncateScreenText(detail, limit: 22))", cyan),
                         ("> scanning files...", yellow),
                         ("matches found: 3", dim),
                     ]
                 case "Edit", "write_to_file", "replace_file_content":
                     return [
-                        ("✏️ \(truncateScreenText(file, limit: 20))", yellow),
+                        ("✏️ \(truncateScreenText(file, limit: 28))", yellow),
                         ("@@ -120,6 +120,8 @@", dim),
                         ("+ updating display", green),
                     ]
                 case "Bash", "BashOutput", "KillShell", "KillBash", "run_command":
                     let subPrefix = isSub ? "sub " : ""
                     return [
-                        ("$ \(truncateScreenText(subPrefix + detail, limit: 22))", green),
+                        ("$ \(truncateScreenText(subPrefix + detail, limit: 28))", green),
                         ("> running process...", dim),
                         ("PID \(seat.id.hashValue & 0x7fff) █", green),
                     ]
                 case "search_web", "WebSearch":
                     return [
-                        ("🌐 \(truncateScreenText(detail, limit: 20))", cyan),
+                        ("🌐 \(truncateScreenText(detail, limit: 28))", cyan),
                         ("> querying web...", dim),
                         ("status: 200 OK █", green),
                     ]
                 default:
                     let subPrefix = isSub ? "sub " : ""
                     return [
-                        ("$ \(truncateScreenText(subPrefix + raw, limit: 22))", green),
+                        ("$ \(truncateScreenText(subPrefix + raw, limit: 28))", green),
                         ("> working on task...", dim),
                         ("status: active █", cyan),
                     ]
                 }
             } else {
                 return [
-                    ("$ \(truncateScreenText(seat.name, limit: 22))", green),
+                    ("$ \(truncateScreenText(seat.name, limit: 28))", green),
                     ("> agent working...", cyan),
                     ("status: running █", green),
                 ]
@@ -749,14 +916,14 @@ final class DeskScene: SKScene {
                 ?? "approval"
             return [
                 ("⚠️ WAITING APPROVAL", orange),
-                ("> \(truncateScreenText(req, limit: 22))", yellow),
+                ("> \(truncateScreenText(req, limit: 28))", yellow),
                 ("[ Confirm / Deny ] █", orange),
             ]
 
         case TaskStatus.done:
             return [
                 ("✓ TASK COMPLETED", green),
-                ("> \(truncateScreenText(seat.name, limit: 22))", dim),
+                ("> \(truncateScreenText(seat.name, limit: 28))", dim),
                 ("all done. 0 errors.", green),
             ]
 
@@ -769,7 +936,7 @@ final class DeskScene: SKScene {
 
         case TaskStatus.seen:
             return [
-                ("✓ \(truncateScreenText(seat.name, limit: 20))", dim),
+                ("✓ \(truncateScreenText(seat.name, limit: 28))", dim),
                 ("reviewed.", dim),
                 ("$ _", dim),
             ]
@@ -783,10 +950,6 @@ final class DeskScene: SKScene {
         }
     }
 
-    private func stopScreenLines(on screen: SKShapeNode) {
-        screen.childNode(withName: "lines")?.removeFromParent()
-    }
-
     /// 机まわりのサブエージェント。
     ///
     /// 一覧では机の下に小さく畳むしかないが、俯瞰なら人を増やすだけで
@@ -798,7 +961,7 @@ final class DeskScene: SKScene {
         // 数と中身の両方を見るのは、`agent_id` を送ってこないエージェントがいるため。
         // そちらでは中身が空のまま数だけ入るので、数を捨てると手伝いが消える
         let shown = min(4, max(count, helpers.count))
-        let scale: CGFloat = 0.78
+        let scale: CGFloat = 0.94
 
         for index in 0..<4 {
             let name = "helper\(index)"
@@ -809,8 +972,8 @@ final class DeskScene: SKScene {
 
             let helper: SKNode
             let side: CGFloat = index % 2 == 0 ? -1 : 1
-            let home = CGPoint(x: side * (deskWidth / 2 + 12),
-                               y: index < 2 ? 4 : 26)
+            let home = CGPoint(x: side * (deskWidth / 2 + 16),
+                               y: index < 2 ? 4 : 28)
             if let existing = desk.childNode(withName: name) {
                 helper = existing
                 helper.position = home
@@ -838,7 +1001,7 @@ final class DeskScene: SKScene {
     /// 動きの向きと速さで、何をしているかを言う。
     /// 打鍵は細かい上下、調べる・探すのは覗き込みながらキョロキョロ見比べる動き、
     /// 端末は待ちが混じるので時々うなずく、返事待ちは呼吸だけ
-    private func act(_ occupant: SKNode, gesture: DeskGesture, scale: CGFloat = 1) {
+    private func act(_ occupant: SKNode, gesture: DeskGesture, scale: CGFloat = 1.2) {
         occupant.removeAction(forKey: "gesture")
         occupant.zRotation = 0
         // 手伝いは縮めて立っているので、素の 1 に戻さず元の縮尺へ戻す
@@ -997,7 +1160,7 @@ final class DeskScene: SKScene {
         let crew = seat.helpers.map { "\($0.id):\($0.activity ?? "-")" }.joined(separator: ",")
         let isAway = visitors[seat.id] != nil || returning[seat.id] != nil
         let signature = """
-            \(seat.status)/\(seat.needsPerson)/\(seat.subagents)/\(move)/\(crew)/\(isAway)/\(seat.activity ?? "-")
+            \(seat.status)/\(seat.needsPerson)/\(seat.subagents)/\(move)/\(crew)/\(isAway)/\(seat.activity ?? "-")/\(seat.isCurrent)/\(seat.tabNumber ?? -1)
             """
         if desk.userData == nil { desk.userData = NSMutableDictionary() }
         let unchanged = desk.userData?["dressed"] as? String == signature
@@ -1016,6 +1179,17 @@ final class DeskScene: SKScene {
         let screen = desk.childNode(withName: "screen") as? SKShapeNode
         let occupant = desk.childNode(withName: "occupant")
         let hand = desk.childNode(withName: "hand")
+        let bubble = desk.childNode(withName: "speechBubble")
+        let bubbleShape = bubble?.childNode(withName: "bubbleShape") as? SKShapeNode
+        let bubbleLabel = bubble?.childNode(withName: "bubbleLabel") as? SKLabelNode
+        let paper = desk.childNode(withName: "printedPaper")
+
+        let isIdle = seat.status == TaskStatus.idle || seat.status == TaskStatus.missing
+        bubble?.isHidden = isIdle
+        paper?.isHidden = isIdle
+        if !isIdle {
+            bubbleLabel?.text = truncateScreenText(seat.name, limit: 30)
+        }
 
         // 席に人がいるかどうか。
         //
@@ -1024,11 +1198,11 @@ final class DeskScene: SKScene {
         // 確認を待っているあいだは人がいる。誰もいない机は「ここには誰もいない」
         // という意味に読めてほしいので、その意味を持たない状態には使わない。
         // 待機中は本人が hub へ質問しに行っているか席へ帰る途中なので、席にはいない
-        let seated = seat.status != TaskStatus.idle
-            && seat.status != TaskStatus.missing
+        let seated = !isIdle
             && seat.status != TaskStatus.waiting
             && !isAway
         occupant?.isHidden = !seated
+        if seated { occupant?.setScale(1.2) }
 
         // 人の手が要るものだけ手を挙げる。動いているだけのものに出すと、
         // 本当に呼ばれているものが埋もれる
@@ -1048,7 +1222,7 @@ final class DeskScene: SKScene {
         occupant?.childNode(withName: "sheet")?.removeFromParent()
         occupant?.childNode(withName: "loupe")?.removeFromParent()
         occupant?.alpha = 1
-        if let screen, seat.status != TaskStatus.running { stopScreenLines(on: screen) }
+
         // 手伝いが出るのは動いている間と確認待ちの間だけ。完了や失敗の机に
         // 人だけ残ると、まだ動いているように見える。
         // 承認待ちの間も子エージェントは稼働中なので表示を維持する
@@ -1058,13 +1232,13 @@ final class DeskScene: SKScene {
                    count: working ? seat.subagents : 0,
                    tint: .labelColor)
         // 座っているときは机の奥。立っているときは机の手前なので、重なりも入れ替える
-        occupant?.position = CGPoint(x: 0, y: 34)
+        occupant?.position = CGPoint(x: 0, y: 30)
         occupant?.zPosition = -20
 
-        // クソデカ湾曲ディスプレイいっぱいにターミナル行を表示する
-        let termLines = screenTerminalLines(seat: seat)
+        // 連続帳票用紙に作業ログ3行を印刷する
+        let termLines = printedLogLines(seat: seat)
         for lineIndex in 0..<3 {
-            let label = screen?.childNode(withName: "termLine\(lineIndex)") as? SKLabelNode
+            let label = paper?.childNode(withName: "paperLine\(lineIndex)") as? SKLabelNode
             if lineIndex < termLines.count {
                 label?.text = termLines[lineIndex].text
                 label?.fontColor = termLines[lineIndex].color
@@ -1074,34 +1248,71 @@ final class DeskScene: SKScene {
             }
         }
 
+        // 思考雲の背景色（人間が見ているタブなら明るいアクティブ色）
+        let bubbleFill = DeskScene.bubbleFillColor(isHub: false, isCurrent: seat.isCurrent)
+        bubbleShape?.fillColor = bubbleFill
+        for i in 0..<3 {
+            let dot = bubble?.childNode(withName: "trailDot\(i)") as? SKShapeNode
+            dot?.fillColor = bubbleFill
+        }
+
+        func setBubbleColor(stroke: NSColor, width: CGFloat) {
+            let activeBonus: CGFloat = seat.isCurrent ? 0.35 : 0.0
+            bubbleShape?.strokeColor = stroke
+            bubbleShape?.lineWidth = width + activeBonus
+            for i in 0..<3 {
+                let dot = bubble?.childNode(withName: "trailDot\(i)") as? SKShapeNode
+                dot?.strokeColor = stroke
+                dot?.lineWidth = width + activeBonus
+            }
+        }
+
         switch seat.status {
         case TaskStatus.running:
             screen?.fillColor = NSColor(red: 0.06, green: 0.10, blue: 0.17, alpha: 0.95)
             screen?.strokeColor = NSColor(red: 0.310, green: 0.765, blue: 0.969, alpha: 0.85)
-            screen?.lineWidth = 1.0
+            setBubbleColor(stroke: NSColor(red: 0.310, green: 0.765, blue: 0.969, alpha: 0.9), width: 1.0)
             if let occupant { act(occupant, gesture: move) }
         case TaskStatus.waiting:
             screen?.fillColor = NSColor(red: 0.18, green: 0.11, blue: 0.04, alpha: 0.95)
             screen?.strokeColor = NSColor(red: 1.0, green: 0.655, blue: 0.149, alpha: 0.9)
-            screen?.lineWidth = 1.0
+            setBubbleColor(stroke: NSColor(red: 1.0, green: 0.655, blue: 0.149, alpha: 0.95), width: 1.2)
         case TaskStatus.done:
             screen?.fillColor = NSColor(red: 0.04, green: 0.14, blue: 0.07, alpha: 0.95)
             screen?.strokeColor = NSColor(red: 0.400, green: 0.733, blue: 0.416, alpha: 0.85)
-            screen?.lineWidth = 1.0
+            setBubbleColor(stroke: NSColor(red: 0.400, green: 0.733, blue: 0.416, alpha: 0.85), width: 1.0)
         case TaskStatus.failed:
             screen?.fillColor = NSColor(red: 0.16, green: 0.04, blue: 0.04, alpha: 0.95)
             screen?.strokeColor = NSColor(red: 0.937, green: 0.325, blue: 0.314, alpha: 0.85)
-            screen?.lineWidth = 1.0
+            setBubbleColor(stroke: NSColor(red: 0.937, green: 0.325, blue: 0.314, alpha: 0.85), width: 1.0)
         case TaskStatus.seen:
-            screen?.fillColor = .secondaryLabelColor.withAlphaComponent(0.25)
-            screen?.strokeColor = .clear
+            screen?.fillColor = .secondaryLabelColor.withAlphaComponent(0.20)
+            screen?.strokeColor = .secondaryLabelColor.withAlphaComponent(0.35)
+            setBubbleColor(stroke: .secondaryLabelColor.withAlphaComponent(0.35), width: 0.8)
             occupant?.alpha = 0.5
         default:
-            screen?.fillColor = .secondaryLabelColor.withAlphaComponent(0.25)
-            screen?.strokeColor = .clear
+            screen?.fillColor = .secondaryLabelColor.withAlphaComponent(0.20)
+            screen?.strokeColor = .secondaryLabelColor.withAlphaComponent(0.35)
+            setBubbleColor(stroke: .secondaryLabelColor.withAlphaComponent(0.35), width: 0.8)
         }
 
         desk.alpha = seat.status == TaskStatus.missing ? 0.45 : 1
+
+        // 思考雲の左上にタブ番号バッジ（⌘1など）を出す（非アクティブ時も控えめな色で常時表示）
+        let tabBadge = bubble?.childNode(withName: "tabBadge")
+        let tabBadgeBg = tabBadge?.childNode(withName: "tabBadgeBg") as? SKShapeNode
+        let tabBadgeLabel = tabBadge?.childNode(withName: "tabBadgeLabel") as? SKLabelNode
+        if let num = seat.tabNumber, num <= 9 {
+            tabBadgeLabel?.text = "⌘\(num)"
+            let colors = DeskScene.tabBadgeColors(isCurrent: seat.isCurrent)
+            tabBadgeBg?.fillColor = colors.bg
+            tabBadgeBg?.strokeColor = colors.stroke
+            tabBadgeBg?.lineWidth = colors.width
+            tabBadgeLabel?.fontColor = colors.text
+            tabBadge?.isHidden = false
+        } else {
+            tabBadge?.isHidden = true
+        }
     }
 
     /// 机の上の書類の山を積み直す。**コンテキストの使用量を山の高さで出す。**
@@ -1155,7 +1366,8 @@ final class DeskScene: SKScene {
     /// 島の幅は 290pt あるので、5人までは隣の島に食い込まない
     private func queuePoint(island: Int, slot: Int) -> CGPoint {
         let hub = hubPoint(island: island)
-        return CGPoint(x: hub.x - 30 - CGFloat(slot) * 24, y: hub.y + 28)
+        return CGPoint(x: hub.x - 40 - CGFloat(slot) * 30,
+                       y: hub.y + 32)
     }
 
     /// 待っている人を hub の前に並ばせる。
@@ -1182,8 +1394,9 @@ final class DeskScene: SKScene {
                 visitor = returningVisitor
                 visitors[seat.id] = visitor
             } else {
-                // 席から立ち上がったところから歩き出す
+                // 席から立ち上がったところから歩き出す。人間は1.2倍サイズ
                 visitor = person(tint: .labelColor)
+                visitor.setScale(1.2)
                 visitor.position = standingSpot(island: index, seat: seatIndex)
                 room.addChild(visitor)
                 visitors[seat.id] = visitor
@@ -1233,7 +1446,9 @@ final class DeskScene: SKScene {
                     && seat.status != TaskStatus.missing
                     && seat.status != TaskStatus.waiting
                     && returning[id] == nil
-                desk.childNode(withName: "occupant")?.isHidden = !seated
+                let occupant = desk.childNode(withName: "occupant")
+                occupant?.isHidden = !seated
+                if seated { occupant?.setScale(1.2) }
                 return
             }
         }
@@ -1269,7 +1484,7 @@ final class DeskScene: SKScene {
         let hub = hubPoint(island: island)
         let spread = columnPitch * CGFloat(seatColumns - 1)
         let col0X = hub.x - spread / 2
-        let hubFrontY = hub.y - 38
+        let hubFrontY = hub.y - 35
         let isGoingToQueue = target.y > hubFrontY
         let column = seatIndex % seatColumns
 
@@ -1283,12 +1498,12 @@ final class DeskScene: SKScene {
             let rightColX = leftColX + columnPitch
             aisleX = (leftColX + rightColX) / 2
         } else {
-            // 1列しかないときは机の隙間が無いため、机 (幅88/2=44) のすぐ外側を通す
-            aisleX = max(12, min(col0X - 54, target.x - 16))
+            // 1列しかないときは机の隙間が無いため、机 (幅184/2=92) のすぐ外側を通す
+            aisleX = max(12, min(col0X - 125, target.x - 16))
         }
 
-        // hub 机の左脇を抜ける通路の X 座標 (hub 机の幅は 100 なので左端は hub.x - 50)
-        let hubCornerX = max(12, min(hub.x - 62, target.x))
+        // hub 机の左脇を抜ける通路の X 座標 (hub 机の幅は 104 なので左端は hub.x - 52)
+        let hubCornerX = max(12, min(hub.x - 70, target.x))
 
         var points: [CGPoint] = []
 
@@ -1444,6 +1659,16 @@ final class DeskScene: SKScene {
             return
         }
 
+        // 人間がいま見ているタブがあれば、その机にカメラを寄せる
+        if let current = firstCurrentSeat() {
+            if current.island != focusedIsland || focus != current.point {
+                focusedIsland = current.island
+                focus = current.point
+                switchedAt = now
+            }
+            return
+        }
+
         guard now - switchedAt >= dwell else {
             focus = hubPoint(island: min(focusedIsland, max(0, islands.count - 1)))
             return
@@ -1462,6 +1687,16 @@ final class DeskScene: SKScene {
     private func firstNeedingPerson() -> (island: Int, point: CGPoint)? {
         for (index, island) in islands.enumerated() {
             for (slot, seat) in island.seats.enumerated() where seat.needsPerson {
+                return (index, seatPoint(island: index, index: slot))
+            }
+        }
+        return nil
+    }
+
+    /// 人間がいま見ているタブに対応する机
+    private func firstCurrentSeat() -> (island: Int, point: CGPoint)? {
+        for (index, island) in islands.enumerated() {
+            for (slot, seat) in island.seats.enumerated() where seat.isCurrent {
                 return (index, seatPoint(island: index, index: slot))
             }
         }

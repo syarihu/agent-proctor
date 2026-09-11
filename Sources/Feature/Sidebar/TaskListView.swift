@@ -216,7 +216,9 @@ public struct TaskListView: View {
                          helpers: task.currentSubagents.map {
                              DeskHelper(id: $0.id, name: $0.name, activity: $0.activity)
                          },
-                         activity: task.currentActivity))
+                         activity: task.currentActivity,
+                         isCurrent: isCurrent(task),
+                         tabNumber: tabNumber(task)))
         }
         return order.map { repo in
             DeskIsland(repo: store.tasks.first { $0.repo == repo }?.repoName ?? repo,
