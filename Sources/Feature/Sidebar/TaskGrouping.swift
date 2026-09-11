@@ -10,9 +10,44 @@ struct RepoGroup: Identifiable {
     var id: String
     /// 見出し表示名（リポジトリ名）
     var name: String
+    /// リポジトリの持ち主（remote から読んだもの）。引けなければ nil
+    var origin: RepoOrigin? = nil
     var tasks: [CollectedTask]
     /// セッションが存在しない待機中 worktree 一覧
     var worktrees: [CollectedWorktree] = []
+
+    /// `owner/repo` の見出し。
+    ///
+    /// 段を1つに畳むときに使う。持ち主の段が無くなるぶん、リポジトリ名だけだと
+    /// 別の持ち主の同名リポジトリと見分けが付かなくなる
+    var qualifiedName: String { TaskGrouping.qualified(origin, fallback: name) }
+
+    /// アバター取得用オーナー名（GitHub 以外や特定不能時は nil）
+    var avatarOwner: String? {
+        guard let origin, origin.isGitHub else { return nil }
+        return origin.owner.lowercased()
+    }
+
+    var host: String? { origin?.host }
+}
+
+/// 状態単位のグループ。配下にリポジトリの小見出しを持つ。
+///
+/// リポジトリで切ると、いま手を動かしているセッションが各リポジトリに散る。
+/// 「どれが動いているか」を先に見せたいので、外側を状態にして中をリポジトリで分ける
+struct StatusGroup: Identifiable {
+    /// 折りたたみ状態永続化用キー（`status:waiting` 形式）
+    var id: String
+    /// 見出し表示名
+    var title: String
+    /// 件数バッジの色に使う代表状態
+    var status: String
+    /// 人の手が要る箱かどうか。要確認ストリップと同じ行を出すかの判定に使う
+    var needsPerson: Bool
+    var repos: [RepoGroup]
+
+    /// 配下全リポジトリのタスク一覧
+    var tasks: [CollectedTask] { repos.flatMap(\.tasks) }
 }
 
 /// Organization 単位のグループ。配下にリポジトリグループを保持する。
@@ -65,6 +100,8 @@ enum TaskGrouping {
                 box[task.repo] = RepoGroup(id: task.repo, name: task.repoName, tasks: [])
             }
             box[task.repo]?.tasks.append(task)
+            // 持ち主はタスクごとに欠けることがあるので、引けたものを採る
+            if let origin = task.origin { box[task.repo]?.origin = origin }
         }
         attach(worktrees, keeping: keeping, order: &order, box: &box)
         return stable(order.compactMap { box[$0] }) { recency($0.tasks) }
@@ -89,6 +126,8 @@ enum TaskGrouping {
                 box[group.repo] = RepoGroup(id: group.repo, name: group.repoName, tasks: [])
             }
             box[group.repo]?.worktrees = group.idle
+            // セッションが1つも無いリポジトリはタスクから持ち主を引けない
+            if box[group.repo]?.origin == nil { box[group.repo]?.origin = group.origin }
         }
     }
 
@@ -111,14 +150,10 @@ enum TaskGrouping {
         // リポジトリ単位のまとまりは1か所で作る。持ち主で束ね直すのはそのあと。
         // 2通りに書くと、worktree が片方にしか出ないという食い違いが生まれる
         let repos = byRepository(tasks, worktrees: worktrees, keeping: keeping)
-        // 持ち主はタスク側にも worktree 側にも付いている。セッションが1つも
-        // 無いリポジトリではタスクから引けないので、worktree のほうから拾う
-        var origins: [String: RepoOrigin] = [:]
-        for task in tasks { origins[task.repo] = task.origin ?? origins[task.repo] }
-        for group in worktrees { origins[group.repo] = origins[group.repo] ?? group.origin }
-
         for repo in repos {
-            let head = heading(for: origins[repo.id], unknownTitle: unknownTitle)
+            // 持ち主はタスク側にも worktree 側にも付いており、byRepository が
+            // 拾い終えている。ここで引き直すと2通りの拾い方が並ぶ
+            let head = heading(for: repo.origin, unknownTitle: unknownTitle)
             if box[head.id] == nil {
                 order.append(head.id)
                 box[head.id] = OrgGroup(id: head.id, title: head.title,
@@ -132,6 +167,51 @@ enum TaskGrouping {
             return sorted
         }
         return stable(groups) { recency($0.tasks) }
+    }
+
+    /// 状態単位でグループ化する。
+    ///
+    /// セッションの乗っていない worktree は出さない。状態を持たないので入る箱が無く、
+    /// 入れると「過去のリポジトリが下に溜まる」のをそのまま持ち込むことになる
+    ///
+    /// - Returns: 要確認・実行中・それ以外の順。中身が無い箱は省く
+    static func byStatus(_ tasks: [CollectedTask]) -> [StatusGroup] {
+        var box: [String: [CollectedTask]] = [:]
+        for task in tasks { box[bucket(for: task), default: []].append(task) }
+        return buckets.compactMap { bucket in
+            guard let inside = box[bucket.key], !inside.isEmpty else { return nil }
+            return StatusGroup(id: "status:" + bucket.key,
+                               title: Localized.text(bucket.titleKey),
+                               status: bucket.status,
+                               needsPerson: bucket.key == waitingBucket,
+                               repos: byRepository(inside))
+        }
+    }
+
+    /// 箱の鍵。
+    ///
+    /// `StatusGroup.id` を通して `GroupFolding` の永続キーになるので、値は変えないこと。
+    /// `TaskStatus` の定数を流用していないのは、箱とタスクの状態が別の語彙だから。
+    /// done の箱は確認済み・idle・missing をまとめて受ける器で、状態の done とは範囲が違う
+    private static let waitingBucket = "waiting"
+    private static let runningBucket = "running"
+    private static let doneBucket = "done"
+
+    /// 状態の箱。出す順もこの並びで決める
+    private static let buckets: [(key: String, titleKey: String, status: String)] = [
+        (waitingBucket, "app.group.status.waiting", TaskStatus.waiting),
+        (runningBucket, "app.group.status.running", TaskStatus.running),
+        (doneBucket, "app.group.status.done", TaskStatus.seen),
+    ]
+
+    /// どの箱に入れるか。
+    ///
+    /// 要確認の判定は `TaskStatus.needsPerson` をそのまま使う。ここに独自の条件を書くと、
+    /// 上の要確認ストリップと下の一覧で「人の手が要る」の意味が食い違う
+    private static func bucket(for task: CollectedTask) -> String {
+        if TaskStatus.needsPerson(status: task.status, seenAt: task.seenAt) { return waitingBucket }
+        if task.status == TaskStatus.running { return runningBucket }
+        return doneBucket
     }
 
     /// リポジトリの origin 情報からグループ用の見出し情報を生成する。
@@ -161,6 +241,12 @@ enum TaskGrouping {
             case .repository:
                 // リポジトリ単位グループ化時はアバターを表示しない
                 head = (task.repo, task.repoName, nil, nil)
+            case .status:
+                // 状態で切っているときストリップは出さない (要確認の箱が兼ねる) ので
+                // ここは通らない。switch を網羅させるために、箱の中と同じ形にしておく
+                let owner = heading(for: task.origin, unknownTitle: unknownTitle)
+                head = (task.repo, qualified(task.origin, fallback: task.repoName),
+                        owner.owner, owner.host)
             }
             if box[head.id] == nil {
                 order.append(head.id)
@@ -179,6 +265,12 @@ enum TaskGrouping {
             if a != b { return a < b }
             return lhs.offset < rhs.offset
         }.map(\.element)
+    }
+
+    /// `owner/repo` の見出し。持ち主が引けなければ渡された名前のまま
+    static func qualified(_ origin: RepoOrigin?, fallback: String) -> String {
+        guard let origin else { return fallback }
+        return "\(origin.owner)/\(origin.name)"
     }
 
     /// オーナー特定不能グループ用キー（実在する組織キーとの衝突を防ぐため接頭辞なしの固定値）

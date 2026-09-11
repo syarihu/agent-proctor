@@ -90,30 +90,14 @@ struct SettingsView: View {
                             .disabled(!appearance.useCustomBackgroundColor && appearance.customColorHex == Appearance.defaultCustomHex)
                     }
                 }
-                LabeledContent(Localized.text("app.settings.grouping")) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Picker("", selection: $appearance.groupingMode) {
-                            Text(Localized.text("app.settings.grouping.repository"))
-                                .tag(GroupingMode.repository)
-                            Text(Localized.text("app.settings.grouping.organization"))
-                                .tag(GroupingMode.organization)
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 240)
-                        // gh に頼っているのは持ち主のアイコンだけだが、
-                        // それが出ないなら選ぶ意味が薄いので丸ごと止める
-                        .disabled(!appearance.canGroupByOrganization)
-
-                        // 選べない理由は、選べない場所のすぐ隣に置く。
-                        // 節の下 (footer) にまとめると、どの項目の話か分からない
-                        if !appearance.canGroupByOrganization {
-                            Text(Localized.text("app.settings.grouping.needs_gh"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
+                // Organization でまとめられない環境では、その理由をここで言う。
+                // 切り替え自体はサイドバーのタブに移したが、タブは並ばないだけで
+                // 「なぜ出ないか」を言えないので、説明の置き場所が要る
+                if !appearance.canGroupByOrganization {
+                    Text(Localized.text("app.settings.grouping.needs_gh"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Toggle(Localized.text("app.settings.tab_numbers"),
                        isOn: $appearance.showTabNumbers)
@@ -227,8 +211,8 @@ struct SettingsView: View {
         .onAppear {
             launchAtLogin = LoginItem.isEnabled
             automation = AutomationPermission.state()
-            appearance.refreshOrganizationAvailability()
             refreshNotifyPermission()
+            appearance.refreshOrganizationAvailability()
         }
         // 通知対象を有効化した際に未決定状態であれば即座に許可ダイアログを要求する
         .onChange(of: notices.wanted.isEmpty) { empty in

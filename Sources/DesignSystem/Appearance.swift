@@ -106,21 +106,42 @@ public final class Appearance: ObservableObject {
     }
 
     /// 実際に使用するまとめ方。gh が利用できない場合は repository にフォールバックする。
+    ///
+    /// 落とすのは organization だけ。持ち主そのものは git の remote から引けるので
+    /// 段は作れるが、gh が無いと持ち主のアイコンが出ず、段が増えるだけになるため。
+    /// 三項演算子で「organization でなければ repository」と書くと、
+    /// 増えたまとめ方が黙って repository に潰れる
     public var resolvedGrouping: GroupingMode {
-        groupingMode == .organization && canGroupByOrganization ? .organization : .repository
+        switch groupingMode {
+        case .organization:
+            return canGroupByOrganization ? .organization : .repository
+        case .repository, .status:
+            return groupingMode
+        }
     }
 
     /// Organization まとめが利用可能かを確かめるプロバイダ。UseCaseTask への直接依存を避けるために注入する
     public static var checkOrganizationAvailability: (@Sendable () async -> Bool)?
 
-    /// gh が使えるかを見に行く。設定画面を開いたときとアプリの起動時に呼ぶ。
-    /// プロセスを起こすので、メインスレッドは待たせない
+    /// 確認が飛んでいる間の重複を防ぐ札。
+    ///
+    /// `CheckOrganizationAvailability.check()` のキャッシュは確認が「終わったあと」に書かれる。
+    /// 途中で重なった呼び出しは素通りするので、gh が未認証だと呼ばれた数だけ
+    /// `gh auth token` が走る。呼び出し口が複数あるため、数える側ではなくここで止める
+    private var refreshing = false
+
+    /// gh が使えるかを見に行く。起動時・一覧・設定画面から呼ぶ。
+    /// プロセスを起こすので、メインスレッドは待たせない。
+    /// 呼び出し口が重なったときは `refreshing` が2本目を飲む
     public func refreshOrganizationAvailability() {
+        guard !refreshing else { return }
+        refreshing = true
         let check = Self.checkOrganizationAvailability
         Task {
             let available = await Task.detached(priority: .utility) {
                 await check?() ?? false
             }.value
+            refreshing = false
             if canGroupByOrganization != available { canGroupByOrganization = available }
         }
     }
