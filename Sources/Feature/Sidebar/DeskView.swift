@@ -85,8 +85,9 @@ final class DeskScene: SKScene {
     private let rowSpacing: CGFloat = 56
     /// 島と島の横の間隔。島の幅 (58 + 76) に通路を足したもの
     private let islandSpacing: CGFloat = 210
-    /// 部屋の上の余白。hub の見出し (机から 32pt 上) が奥の壁に食い込まない高さを取る
-    private let topMargin: CGFloat = 52
+    /// 部屋の上の余白。hub の見出し (机から 32pt 上) が奥の壁に食い込まない高さに、
+    /// 天井側の間を足したもの。ここが詰まっていると机が上端に貼り付いて窮屈に見える
+    private let topMargin: CGFloat = 84
     private let bottomMargin: CGFloat = 34
 
     /// 片側に積む書類の枚数の上限。左右で倍の 12 段まで出せる。
@@ -333,13 +334,12 @@ final class DeskScene: SKScene {
             occupant.zPosition = -20
             node.addChild(occupant)
 
-            let bang = SKLabelNode(text: "❗")
-            bang.name = "bang"
-            bang.fontSize = 13
-            bang.verticalAlignmentMode = .bottom
-            bang.position = CGPoint(x: 0, y: deskDepth / 2 + 30)
-            bang.isHidden = true
-            node.addChild(bang)
+            // 挙げた手。人の子にしているので、座っていても立っていても頭の上に付いてくる
+            let hand = DeskScene.handMark()
+            hand.name = "hand"
+            hand.position = CGPoint(x: 7, y: 24)
+            hand.isHidden = true
+            occupant.addChild(hand)
         }
 
         let caption = SKLabelNode(text: label)
@@ -353,6 +353,33 @@ final class DeskScene: SKScene {
         caption.position = CGPoint(x: 0, y: deskDepth / 2 + 16)
         node.addChild(caption)
 
+        return node
+    }
+
+    /// 挙げた手。
+    ///
+    /// 記号ではなく SF Symbols の `hand.raised.fill` を使うのは、
+    /// メニューバーの `StatusGlyph` が待機中に出すものと同じだから。
+    /// 同じ状態を別の絵で言うと、どちらかが別の意味に見える。
+    /// SpriteKit は記号をそのまま置けないので、色を焼いた画像にしてから貼る
+    private static let handTexture: SKTexture? = {
+        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+        guard let symbol = NSImage(systemSymbolName: "hand.raised.fill",
+                                   accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) else { return nil }
+        let tinted = NSImage(size: symbol.size, flipped: false) { rect in
+            symbol.draw(in: rect)
+            NSColor.systemOrange.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+        return SKTexture(image: tinted)
+    }()
+
+    private static func handMark() -> SKNode {
+        guard let handTexture else { return SKNode() }
+        let node = SKSpriteNode(texture: handTexture)
+        node.size = CGSize(width: 11, height: 13)
         return node
     }
 
@@ -408,57 +435,60 @@ final class DeskScene: SKScene {
 
         let screen = desk.childNode(withName: "screen") as? SKShapeNode
         let occupant = desk.childNode(withName: "occupant")
-        let bang = desk.childNode(withName: "bang")
+        let hand = occupant?.childNode(withName: "hand")
 
-        // 人の手が要るものだけ❗を出す。動いているだけのものに出すと、
+        // 席に人がいるかどうか。
+        //
+        // 立ち上げただけで何も指示していないもの (idle) と、動いていた場所が
+        // 消えたもの (missing) だけ席を空ける。それ以外は、終わったあとも
+        // 確認を待っているあいだは人がいる。誰もいない机は「ここには誰もいない」
+        // という意味に読めてほしいので、その意味を持たない状態には使わない
+        let seated = seat.status != TaskStatus.idle && seat.status != TaskStatus.missing
+        occupant?.isHidden = !seated
+
+        // 人の手が要るものだけ手を挙げる。動いているだけのものに出すと、
         // 本当に呼ばれているものが埋もれる
-        bang?.isHidden = !seat.needsPerson
-        if seat.needsPerson, bang?.action(forKey: "pulse") == nil {
-            bang?.run(.repeatForever(.sequence([
-                .scale(to: 1.18, duration: 0.5), .scale(to: 1.0, duration: 0.5),
-            ])), withKey: "pulse")
+        hand?.isHidden = !seat.needsPerson
+        if seat.needsPerson, hand?.action(forKey: "wave") == nil {
+            hand?.run(.repeatForever(.sequence([
+                .rotate(toAngle: 0.22, duration: 0.4),
+                .rotate(toAngle: -0.12, duration: 0.4),
+            ])), withKey: "wave")
         } else if !seat.needsPerson {
-            bang?.removeAction(forKey: "pulse")
-            bang?.setScale(1)
+            hand?.removeAction(forKey: "wave")
+            hand?.zRotation = 0
         }
+
+        occupant?.removeAction(forKey: "type")
+        occupant?.alpha = 1
+        // 座っているときは机の奥。立っているときは机の手前なので、重なりも入れ替える
+        occupant?.position = CGPoint(x: 0, y: 20)
+        occupant?.zPosition = -20
 
         switch seat.status {
         case TaskStatus.running:
             screen?.fillColor = NSColor(red: 0.310, green: 0.765, blue: 0.969, alpha: 0.85)
-            occupant?.isHidden = false
-            occupant?.position = CGPoint(x: 0, y: 20)
-            occupant?.alpha = 1
             // 打鍵の代わりの小さな上下。動いていることを一目で分かるようにする
-            if occupant?.action(forKey: "type") == nil {
-                occupant?.run(.repeatForever(.sequence([
-                    .moveBy(x: 0, y: 1.2, duration: 0.32),
-                    .moveBy(x: 0, y: -1.2, duration: 0.32),
-                ])), withKey: "type")
-            }
+            occupant?.run(.repeatForever(.sequence([
+                .moveBy(x: 0, y: 1.2, duration: 0.32),
+                .moveBy(x: 0, y: -1.2, duration: 0.32),
+            ])), withKey: "type")
         case TaskStatus.waiting:
             screen?.fillColor = NSColor(red: 1.0, green: 0.655, blue: 0.149, alpha: 0.9)
-            occupant?.removeAction(forKey: "type")
-            occupant?.isHidden = false
-            occupant?.alpha = 1
-            // 席を立って机の前へ。手を挙げている人は座っていない
+            // 席を立って机の手前へ。呼んでいる人は座っていない
             occupant?.position = CGPoint(x: 0, y: -22)
+            occupant?.zPosition = 20
         case TaskStatus.done:
             screen?.fillColor = NSColor(red: 0.400, green: 0.733, blue: 0.416, alpha: 0.8)
-            occupant?.removeAction(forKey: "type")
-            occupant?.isHidden = false
-            occupant?.position = CGPoint(x: 0, y: 20)
-            occupant?.alpha = 1
         case TaskStatus.failed:
             screen?.fillColor = NSColor(red: 0.937, green: 0.325, blue: 0.314, alpha: 0.85)
-            occupant?.removeAction(forKey: "type")
-            occupant?.isHidden = false
-            occupant?.position = CGPoint(x: 0, y: 20)
-            occupant?.alpha = 1
-        default:
-            // idle / seen / missing。画面は暗く、席は空ける
+        case TaskStatus.seen:
+            // 確認が済んだもの。人は残すが、まだ見ていない完了と区別するため色を落とす
             screen?.fillColor = .secondaryLabelColor.withAlphaComponent(0.3)
-            occupant?.removeAction(forKey: "type")
-            occupant?.isHidden = true
+            occupant?.alpha = 0.5
+        default:
+            // idle / missing。画面は暗く、席は空
+            screen?.fillColor = .secondaryLabelColor.withAlphaComponent(0.3)
         }
 
         desk.alpha = seat.status == TaskStatus.missing ? 0.45 : 1
@@ -661,9 +691,7 @@ final class DeskScene: SKScene {
                 // 画面に入っているものには印を出さない。本人が見えているのだから
                 guard abs(dx) > halfW - inset || abs(dy) > halfH - inset else { continue }
 
-                let marker = SKLabelNode(text: "❗")
-                marker.fontSize = 12
-                marker.verticalAlignmentMode = .center
+                let marker = DeskScene.handMark()
                 marker.position = CGPoint(
                     x: min(max(dx, -halfW + inset), halfW - inset),
                     y: min(max(dy, -halfH + inset), halfH - inset))
