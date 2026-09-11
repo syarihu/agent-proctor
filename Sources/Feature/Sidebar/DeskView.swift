@@ -68,6 +68,24 @@ struct DeskSeat: Equatable {
     let needsPerson: Bool
     let contextPercent: Int?
     let subagents: Int
+    /// いま触っているツール ("Edit: TaskStore.swift" など)。動いている間だけ入る。
+    /// 何をしているかで仕草を変えるために使う
+    let activity: String?
+}
+
+/// 机の人の仕草。`activity` の頭 ("Edit: …" の Edit) から決める。
+///
+/// ツール名をそのまま出す代わりに、体の動きで言う。
+/// 文字は小さくて読めないが、動きの違いは離れていても分かる
+enum DeskGesture {
+    /// 書いている (Edit / Write)
+    case typing
+    /// 読んでいる・探している (Read / Grep / Glob)
+    case reading
+    /// コマンドを回している (Bash)
+    case terminal
+    /// 返事を待っている (Task / WebFetch など、自分では手を動かしていないもの)
+    case thinking
 }
 
 /// リポジトリ1つ分の島。見出しの机 (hub) と、その下に並ぶセッションの机。
@@ -513,12 +531,31 @@ final class DeskScene: SKScene {
         return node
     }
 
+    /// ツール名から仕草を決める。
+    ///
+    /// 知らないツールは書いていることにする。一番多いのがそれで、
+    /// 外したときの見え方も一番おとなしい
+    private func gesture(for activity: String?) -> DeskGesture {
+        let tool = activity?.split(separator: ":").first
+            .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        switch tool {
+        case "Read", "Grep", "Glob", "LS", "NotebookRead", "Explore":
+            return .reading
+        case "Bash", "BashOutput", "KillShell", "KillBash":
+            return .terminal
+        case "Task", "Agent", "WebFetch", "WebSearch", "SendMessage":
+            return .thinking
+        default:
+            return .typing
+        }
+    }
+
     /// モニタに流す行。
     ///
     /// 人の小さな上下だけでは「動いている」ことが伝わらない。
     /// 画面の中身が変わるのが、機械が仕事をしていることの一番わかりやすい印。
     /// 中身そのものに意味は無いので、幅を振り直すだけにしている
-    private func startScreenLines(on screen: SKShapeNode) {
+    private func startScreenLines(on screen: SKShapeNode, gesture: DeskGesture) {
         guard screen.childNode(withName: "lines") == nil else { return }
         let lines = SKNode()
         lines.name = "lines"
@@ -533,18 +570,32 @@ final class DeskScene: SKScene {
         for index in 0..<4 {
             let bar = SKShapeNode(rect: CGRect(x: 0, y: 0, width: usable, height: height),
                                   cornerRadius: 0.8)
-            bar.fillColor = .white.withAlphaComponent(0.55)
+            // 端末を回しているときだけ緑。他は白。
+            // 画面の地色 (状態の色) は変えない。あれは「動いている」を言う役なので、
+            // ツールごとに変えると状態の色と読み違える
+            bar.fillColor = gesture == .terminal
+                ? NSColor(red: 0.45, green: 0.95, blue: 0.55, alpha: 0.75)
+                : .white.withAlphaComponent(gesture == .thinking ? 0.35 : 0.55)
             bar.strokeColor = .clear
             bar.position = CGPoint(x: -16.5 + inset, y: top - CGFloat(index) * (height + 2.2))
             bar.xScale = CGFloat.random(in: 0.25...1.0)
             lines.addChild(bar)
 
             // 行ごとに間合いをずらす。揃って伸び縮みすると点滅にしか見えない
+            // 書いているときは速く、待っているときは遅く。
+            // 速さそのものが「いま手を動かしているか」の合図になる
+            let pace: (TimeInterval, TimeInterval)
+            switch gesture {
+            case .typing: pace = (0.30, 0.22)
+            case .reading: pace = (0.75, 0.40)
+            case .terminal: pace = (0.50, 0.30)
+            case .thinking: pace = (1.20, 0.60)
+            }
             bar.run(.sequence([
                 .wait(forDuration: Double(index) * 0.11),
                 .repeatForever(.sequence([
                     .run { bar.xScale = CGFloat.random(in: 0.25...1.0) },
-                    .wait(forDuration: 0.34, withRange: 0.24),
+                    .wait(forDuration: pace.0, withRange: pace.1),
                 ])),
             ]), withKey: "type")
         }
@@ -589,6 +640,69 @@ final class DeskScene: SKScene {
                     .moveBy(x: 0, y: -1.5, duration: 0.38),
                 ])),
             ]), withKey: "fidget")
+        }
+    }
+
+    /// 席の人に仕草をさせる。
+    ///
+    /// 動きの向きと速さで、何をしているかを言う。
+    /// 打鍵は細かい上下、読むのは左右に目を走らせる動き、
+    /// 端末は待ちが混じるので時々うなずく、返事待ちは呼吸だけ
+    private func act(_ occupant: SKNode, gesture: DeskGesture) {
+        occupant.removeAction(forKey: "gesture")
+        occupant.xScale = 1
+        occupant.yScale = 1
+
+        let motion: SKAction
+        switch gesture {
+        case .typing:
+            motion = .sequence([
+                .moveBy(x: 0, y: 1.2, duration: 0.28),
+                .moveBy(x: 0, y: -1.2, duration: 0.28),
+            ])
+        case .reading:
+            // 左右に振る。読む・探すは目が横に動く
+            motion = .sequence([
+                .moveBy(x: 2.5, y: 0, duration: 0.55),
+                .moveBy(x: -5.0, y: 0, duration: 1.1),
+                .moveBy(x: 2.5, y: 0, duration: 0.55),
+            ])
+        case .terminal:
+            // 流れるのを見ている。時々うなずくだけ
+            motion = .sequence([
+                .wait(forDuration: 0.9),
+                .moveBy(x: 0, y: -1.6, duration: 0.14),
+                .moveBy(x: 0, y: 1.6, duration: 0.22),
+            ])
+        case .thinking:
+            // 自分では手を動かしていない。呼吸だけ
+            motion = .sequence([
+                .scaleY(to: 1.035, duration: 1.1),
+                .scaleY(to: 1.0, duration: 1.1),
+            ])
+        }
+        occupant.run(.repeatForever(motion), withKey: "gesture")
+
+        // 読んでいるときだけ手元に紙を持たせる。
+        // 動きだけでは「読む」と「打つ」が見分けづらい
+        let sheet = occupant.childNode(withName: "sheet")
+        if gesture == .reading {
+            guard sheet == nil else { return }
+            let paper = SKShapeNode(rect: CGRect(x: -6, y: 0, width: 12, height: 14),
+                                    cornerRadius: 1)
+            paper.name = "sheet"
+            paper.fillColor = NSColor(white: 0.93, alpha: 0.9)
+            paper.strokeColor = .black.withAlphaComponent(0.18)
+            paper.lineWidth = 0.5
+            paper.position = CGPoint(x: 0, y: 2)
+            paper.zPosition = 2
+            occupant.addChild(paper)
+            paper.run(.repeatForever(.sequence([
+                .rotate(toAngle: 0.10, duration: 0.55),
+                .rotate(toAngle: -0.10, duration: 0.55),
+            ])))
+        } else {
+            sheet?.removeFromParent()
         }
     }
 
@@ -641,7 +755,11 @@ final class DeskScene: SKScene {
     /// 毎回描き直すと、紙の山のばらつきが振り直されてチラつき、
     /// 打鍵の上下も 0.5 秒ごとに位置を戻されてしまう
     private func dress(_ desk: SKNode, as seat: DeskSeat) {
-        let signature = "\(seat.status)/\(seat.needsPerson)/\(seat.contextPercent ?? -1)/\(seat.subagents)"
+        let move = gesture(for: seat.activity)
+        let signature = """
+            \(seat.status)/\(seat.needsPerson)/\(seat.contextPercent ?? -1)\
+            /\(seat.subagents)/\(move)
+            """
         if desk.userData?["dressed"] as? String == signature { return }
         if desk.userData == nil { desk.userData = NSMutableDictionary() }
         desk.userData?["dressed"] = signature
@@ -675,7 +793,8 @@ final class DeskScene: SKScene {
             hand?.zRotation = 0
         }
 
-        occupant?.removeAction(forKey: "type")
+        occupant?.removeAction(forKey: "gesture")
+        occupant?.childNode(withName: "sheet")?.removeFromParent()
         occupant?.alpha = 1
         if let screen, seat.status != TaskStatus.running { stopScreenLines(on: screen) }
         // 手伝いが出るのは動いている間だけ。止まった机に人だけ残ると、
@@ -690,12 +809,8 @@ final class DeskScene: SKScene {
         switch seat.status {
         case TaskStatus.running:
             screen?.fillColor = NSColor(red: 0.310, green: 0.765, blue: 0.969, alpha: 0.85)
-            if let screen { startScreenLines(on: screen) }
-            // 打鍵の代わりの小さな上下。動いていることを一目で分かるようにする
-            occupant?.run(.repeatForever(.sequence([
-                .moveBy(x: 0, y: 1.2, duration: 0.32),
-                .moveBy(x: 0, y: -1.2, duration: 0.32),
-            ])), withKey: "type")
+            if let screen { startScreenLines(on: screen, gesture: move) }
+            if let occupant { act(occupant, gesture: move) }
         case TaskStatus.waiting:
             screen?.fillColor = NSColor(red: 1.0, green: 0.655, blue: 0.149, alpha: 0.9)
         case TaskStatus.done:

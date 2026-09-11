@@ -212,7 +212,8 @@ public struct TaskListView: View {
                          needsPerson: TaskStatus.needsPerson(status: task.status,
                                                              seenAt: task.seenAt),
                          contextPercent: task.contextPercent,
-                         subagents: task.subagents))
+                         subagents: task.subagents,
+                         activity: task.currentActivity))
         }
         return order.map { repo in
             DeskIsland(repo: store.tasks.first { $0.repo == repo }?.repoName ?? repo,
