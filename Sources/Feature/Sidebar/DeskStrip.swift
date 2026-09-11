@@ -72,7 +72,8 @@ final class DeskScene: SKScene {
     /// 島と島の間隔。島の幅 (58 + 76) に通路を足したもの
     private let islandSpacing: CGFloat = 210
     private let sideMargin: CGFloat = 105
-    private let topMargin: CGFloat = 40
+    /// 部屋の上の余白。hub の見出し (机から 32pt 上) が奥の壁に食い込まない高さを取る
+    private let topMargin: CGFloat = 52
     private let bottomMargin: CGFloat = 34
 
     /// worker の縦の段数 (2カラムなので2人で1段)
@@ -264,7 +265,9 @@ final class DeskScene: SKScene {
         caption.fontSize = 8
         caption.fontColor = .secondaryLabelColor.withAlphaComponent(isHub ? 0.85 : 0.7)
         caption.verticalAlignmentMode = .bottom
-        caption.position = CGPoint(x: 0, y: deskDepth / 2 + 12)
+        // 書類を片側6枚 (24pt) 積むので、見出しはその上まで逃がす。
+        // ここを詰めると、使用量が多い机で山が見出しを突き抜ける
+        caption.position = CGPoint(x: 0, y: deskDepth / 2 + 16)
         node.addChild(caption)
 
         return node
@@ -274,7 +277,7 @@ final class DeskScene: SKScene {
     /// これ以上高くすると見出しに届く
     private let maxSheetsPerSide = 6
     private let sheetWidth: CGFloat = 13
-    private let sheetHeight: CGFloat = 3.2
+    private let sheetHeight: CGFloat = 4
 
     /// 机の上の書類の山を積み直す。**コンテキストの使用量を山の高さで出す。**
     ///

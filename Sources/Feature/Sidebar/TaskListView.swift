@@ -141,7 +141,7 @@ public struct TaskListView: View {
                 }
 
                 // 作業場の帯 (素振り)。高さも表示切り替えもまだ固定で、
-                // 「280pt の帯で横視点の事務所が読めるか」だけを確かめるために置いている
+                // 「280pt の帯で俯瞰の事務所が読めるか」だけを確かめるために置いている
                 DeskStrip(height: 170)
             }
             .animation(.spring(response: 0.32, dampingFraction: 0.82),
