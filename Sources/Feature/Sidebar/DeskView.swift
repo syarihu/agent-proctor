@@ -513,6 +513,85 @@ final class DeskScene: SKScene {
         return node
     }
 
+    /// モニタに流す行。
+    ///
+    /// 人の小さな上下だけでは「動いている」ことが伝わらない。
+    /// 画面の中身が変わるのが、機械が仕事をしていることの一番わかりやすい印。
+    /// 中身そのものに意味は無いので、幅を振り直すだけにしている
+    private func startScreenLines(on screen: SKShapeNode) {
+        guard screen.childNode(withName: "lines") == nil else { return }
+        let lines = SKNode()
+        lines.name = "lines"
+        lines.zPosition = 1
+        screen.addChild(lines)
+
+        let inset: CGFloat = 3.5
+        let height: CGFloat = 2
+        let top = deskDepth / 2 - 4 + 20 - inset - height
+        let usable = 33 - inset * 2
+
+        for index in 0..<4 {
+            let bar = SKShapeNode(rect: CGRect(x: 0, y: 0, width: usable, height: height),
+                                  cornerRadius: 0.8)
+            bar.fillColor = .white.withAlphaComponent(0.55)
+            bar.strokeColor = .clear
+            bar.position = CGPoint(x: -16.5 + inset, y: top - CGFloat(index) * (height + 2.2))
+            bar.xScale = CGFloat.random(in: 0.25...1.0)
+            lines.addChild(bar)
+
+            // 行ごとに間合いをずらす。揃って伸び縮みすると点滅にしか見えない
+            bar.run(.sequence([
+                .wait(forDuration: Double(index) * 0.11),
+                .repeatForever(.sequence([
+                    .run { bar.xScale = CGFloat.random(in: 0.25...1.0) },
+                    .wait(forDuration: 0.34, withRange: 0.24),
+                ])),
+            ]), withKey: "type")
+        }
+    }
+
+    private func stopScreenLines(on screen: SKShapeNode) {
+        screen.childNode(withName: "lines")?.removeFromParent()
+    }
+
+    /// 机まわりのサブエージェント。
+    ///
+    /// 一覧では机の下に小さく畳むしかないが、俯瞰なら人を増やすだけで
+    /// 「この机は何人がかりで動いている」が一目で分かる。ここは俯瞰の独壇場
+    private func setHelpers(_ desk: SKNode, count: Int, tint: NSColor) {
+        // 4人まで。机の左右に振り分けて、足りなければ後ろの段へ回す。
+        // それ以上出しても、机の間隔 (列の間隔は最小 120pt) に収まらない
+        let shown = min(4, max(0, count))
+        for index in 0..<4 {
+            let name = "helper\(index)"
+            let existing = desk.childNode(withName: name)
+            guard index < shown else {
+                existing?.removeFromParent()
+                continue
+            }
+            guard existing == nil else { continue }
+
+            let helper = person(tint: tint)
+            helper.name = name
+            helper.setScale(0.62)
+            let side: CGFloat = index % 2 == 0 ? -1 : 1
+            helper.position = CGPoint(x: side * (deskWidth / 2 + 12),
+                                      y: index < 2 ? 4 : 26)
+            helper.zPosition = 10
+            helper.alpha = 0.8
+            desk.addChild(helper)
+
+            // 少しずつ揺らす。止まっていると置物に見える
+            helper.run(.sequence([
+                .wait(forDuration: Double(index) * 0.2),
+                .repeatForever(.sequence([
+                    .moveBy(x: 0, y: 1.5, duration: 0.38),
+                    .moveBy(x: 0, y: -1.5, duration: 0.38),
+                ])),
+            ]), withKey: "fidget")
+        }
+    }
+
     /// 人1人。俯瞰なので背丈は詰めて、頭を大きめに取る
     private func person(tint: NSColor) -> SKNode {
         let node = SKNode()
@@ -562,7 +641,7 @@ final class DeskScene: SKScene {
     /// 毎回描き直すと、紙の山のばらつきが振り直されてチラつき、
     /// 打鍵の上下も 0.5 秒ごとに位置を戻されてしまう
     private func dress(_ desk: SKNode, as seat: DeskSeat) {
-        let signature = "\(seat.status)/\(seat.needsPerson)/\(seat.contextPercent ?? -1)"
+        let signature = "\(seat.status)/\(seat.needsPerson)/\(seat.contextPercent ?? -1)/\(seat.subagents)"
         if desk.userData?["dressed"] as? String == signature { return }
         if desk.userData == nil { desk.userData = NSMutableDictionary() }
         desk.userData?["dressed"] = signature
@@ -598,6 +677,12 @@ final class DeskScene: SKScene {
 
         occupant?.removeAction(forKey: "type")
         occupant?.alpha = 1
+        if let screen, seat.status != TaskStatus.running { stopScreenLines(on: screen) }
+        // 手伝いが出るのは動いている間だけ。止まった机に人だけ残ると、
+        // まだ動いているように見える
+        setHelpers(desk,
+                   count: seat.status == TaskStatus.running ? seat.subagents : 0,
+                   tint: .labelColor)
         // 座っているときは机の奥。立っているときは机の手前なので、重なりも入れ替える
         occupant?.position = CGPoint(x: 0, y: 28)
         occupant?.zPosition = -20
@@ -605,6 +690,7 @@ final class DeskScene: SKScene {
         switch seat.status {
         case TaskStatus.running:
             screen?.fillColor = NSColor(red: 0.310, green: 0.765, blue: 0.969, alpha: 0.85)
+            if let screen { startScreenLines(on: screen) }
             // 打鍵の代わりの小さな上下。動いていることを一目で分かるようにする
             occupant?.run(.repeatForever(.sequence([
                 .moveBy(x: 0, y: 1.2, duration: 0.32),
