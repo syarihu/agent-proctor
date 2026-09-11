@@ -79,12 +79,18 @@ final class DeskScene: SKScene {
 
     private let deskWidth: CGFloat = 58
     private let deskDepth: CGFloat = 17
-    /// 机は2カラム。中心からの振り分け幅。机の幅が 58 なので隣とは 18pt 空く
-    private let columnOffset: CGFloat = 38
-    /// 段と段の縦の間隔。机の縦の専有 (前面 + 天板 + モニタ + 見出し) がおよそ 47pt
-    private let rowSpacing: CGFloat = 56
-    /// 島と島の横の間隔。島の幅 (58 + 76) に通路を足したもの
-    private let islandSpacing: CGFloat = 210
+    /// 机は2カラム。中心からの振り分け幅。
+    /// 左右の間隔 (112pt) が見出しの折り返し幅 (100pt) より広くないと、
+    /// 隣の机の見出しと文字がぶつかる
+    private let columnOffset: CGFloat = 56
+    /// 見出しを折り返す幅。カラムの間隔より 12pt 狭くして、隣と触れないようにする
+    private let captionWidth: CGFloat = 100
+    /// 段と段の縦の間隔。
+    /// 机の縦の専有 (前面 14.5 + 2行の見出し 22) と、下の段のモニタの天 (18.5) が
+    /// 重ならない高さを取る
+    private let rowSpacing: CGFloat = 72
+    /// 島と島の横の間隔。島の幅 (58 + 112) に通路を足したもの
+    private let islandSpacing: CGFloat = 250
     /// 部屋の上の余白。hub の見出し (机から 32pt 上) が奥の壁に食い込まない高さに、
     /// 天井側の間を足したもの。ここが詰まっていると机が上端に貼り付いて窮屈に見える
     private let topMargin: CGFloat = 84
@@ -342,15 +348,20 @@ final class DeskScene: SKScene {
             occupant.addChild(hand)
         }
 
+        // 見出しは机の下。上に置くと書類の山 (片側6枚 24pt) と場所を取り合ううえ、
+        // 名前が長いと隣の机の見出しとぶつかる。
+        // 折り返しは文字単位にしている。セッション名はハイフン続きで空白が無いことが多く、
+        // 単語単位だと折り返す場所が見つからずに幅をはみ出す
         let caption = SKLabelNode(text: label)
         caption.name = "caption"
         caption.fontName = "SFMono-Regular"
         caption.fontSize = 8
         caption.fontColor = .secondaryLabelColor.withAlphaComponent(isHub ? 0.85 : 0.7)
-        caption.verticalAlignmentMode = .bottom
-        // 書類を片側6枚 (24pt) 積むので、見出しはその上まで逃がす。
-        // ここを詰めると、使用量が多い机で山が見出しを突き抜ける
-        caption.position = CGPoint(x: 0, y: deskDepth / 2 + 16)
+        caption.numberOfLines = 2
+        caption.lineBreakMode = .byCharWrapping
+        caption.preferredMaxLayoutWidth = captionWidth
+        caption.verticalAlignmentMode = .top
+        caption.position = CGPoint(x: 0, y: -deskDepth / 2 - 9)
         node.addChild(caption)
 
         return node
@@ -475,8 +486,8 @@ final class DeskScene: SKScene {
             ])), withKey: "type")
         case TaskStatus.waiting:
             screen?.fillColor = NSColor(red: 1.0, green: 0.655, blue: 0.149, alpha: 0.9)
-            // 席を立って机の手前へ。呼んでいる人は座っていない
-            occupant?.position = CGPoint(x: 0, y: -22)
+            // 席を立って机の脇へ。真下は見出しが使うので空けておく
+            occupant?.position = CGPoint(x: -(deskWidth / 2 + 9), y: -4)
             occupant?.zPosition = 20
         case TaskStatus.done:
             screen?.fillColor = NSColor(red: 0.400, green: 0.733, blue: 0.416, alpha: 0.8)
