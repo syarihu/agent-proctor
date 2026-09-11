@@ -86,9 +86,10 @@ final class DeskScene: SKScene {
     /// 見出しを折り返す幅。カラムの間隔より 12pt 狭くして、隣と触れないようにする
     private let captionWidth: CGFloat = 100
     /// 段と段の縦の間隔。
-    /// 机の縦の専有 (前面 14.5 + 2行の見出し 22) と、下の段のモニタの天 (18.5) が
-    /// 重ならない高さを取る
-    private let rowSpacing: CGFloat = 72
+    /// 机の縦の専有 (前面 14.5 + 3行の見出し 30) と、下の段のモニタの天 (18.5) が
+    /// 余裕をもって離れる高さを取る。ここを詰めると、名前の長い机の3行目が
+    /// 下の段のモニタに乗る
+    private let rowSpacing: CGFloat = 88
     /// 島と島の横の間隔。島の幅 (58 + 112) に通路を足したもの
     private let islandSpacing: CGFloat = 250
     /// 部屋の上の余白。hub の見出し (机から 32pt 上) が奥の壁に食い込まない高さに、
@@ -348,8 +349,8 @@ final class DeskScene: SKScene {
             occupant.addChild(hand)
         }
 
-        // 見出しは机の下。上に置くと書類の山 (片側6枚 24pt) と場所を取り合ううえ、
-        // 名前が長いと隣の机の見出しとぶつかる。
+        // 見出しは机の下、最大3行。上に置くと書類の山 (片側6枚 24pt) と場所を
+        // 取り合ううえ、名前が長いと隣の机の見出しとぶつかる。
         // 折り返しは文字単位にしている。セッション名はハイフン続きで空白が無いことが多く、
         // 単語単位だと折り返す場所が見つからずに幅をはみ出す
         let caption = SKLabelNode(text: label)
@@ -357,7 +358,7 @@ final class DeskScene: SKScene {
         caption.fontName = "SFMono-Regular"
         caption.fontSize = 8
         caption.fontColor = .secondaryLabelColor.withAlphaComponent(isHub ? 0.85 : 0.7)
-        caption.numberOfLines = 2
+        caption.numberOfLines = 3
         caption.lineBreakMode = .byCharWrapping
         caption.preferredMaxLayoutWidth = captionWidth
         caption.verticalAlignmentMode = .top
