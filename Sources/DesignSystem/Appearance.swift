@@ -113,14 +113,25 @@ public final class Appearance: ObservableObject {
     /// Organization まとめが利用可能かを確かめるプロバイダ。UseCaseTask への直接依存を避けるために注入する
     public static var checkOrganizationAvailability: (@Sendable () async -> Bool)?
 
-    /// gh が使えるかを見に行く。設定画面を開いたときとアプリの起動時に呼ぶ。
-    /// プロセスを起こすので、メインスレッドは待たせない
+    /// 確認が飛んでいる間の重複を防ぐ札。
+    ///
+    /// `CheckOrganizationAvailability.check()` のキャッシュは確認が「終わったあと」に書かれる。
+    /// 途中で重なった呼び出しは素通りするので、gh が未認証だと呼ばれた数だけ
+    /// `gh auth token` が走る。呼び出し口が複数あるため、数える側ではなくここで止める
+    private var refreshing = false
+
+    /// gh が使えるかを見に行く。起動時・一覧・設定画面から呼ぶ。
+    /// プロセスを起こすので、メインスレッドは待たせない。
+    /// 呼び出し口が重なったときは `refreshing` が2本目を飲む
     public func refreshOrganizationAvailability() {
+        guard !refreshing else { return }
+        refreshing = true
         let check = Self.checkOrganizationAvailability
         Task {
             let available = await Task.detached(priority: .utility) {
                 await check?() ?? false
             }.value
+            refreshing = false
             if canGroupByOrganization != available { canGroupByOrganization = available }
         }
     }

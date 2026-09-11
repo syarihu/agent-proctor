@@ -110,9 +110,10 @@
 "app.settings.background.match_iterm" = "Match iTerm2";
 "app.settings.background.custom" = "Custom";
 "app.settings.reset" = "Reset";
-"app.settings.grouping" = "Group rows by";
-"app.settings.grouping.repository" = "Repository";
-"app.settings.grouping.organization" = "Organization";
+"app.filter.grouping" = "Group rows by";
+"app.filter.grouping.organization.short" = "Org";
+"app.filter.grouping.repository" = "Repository";
+"app.filter.grouping.organization" = "Organization";
 "app.settings.grouping.needs_gh" = "Grouping by organization reads the owner from the git remote and its icon through the GitHub CLI. Install gh and run “gh auth login” to turn this on.";
 "app.settings.tab_numbers" = "Show tab numbers (⌘1–⌘9)";
 "app.settings.count_changes" = "Count file changes";

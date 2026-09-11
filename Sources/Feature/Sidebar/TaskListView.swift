@@ -65,6 +65,7 @@ public struct TaskListView: View {
             ambientGlow
 
             VStack(spacing: 0) {
+                listHeader
                 if !pending.isEmpty {
                     AttentionInbox(
                         tasks: pending, base: base, avatars: avatars,
@@ -124,6 +125,27 @@ public struct TaskListView: View {
         .onChange(of: ordering) { _ in
             pullRequests.keep(worktrees: Set(store.tasks.map(\.worktree)))
         }
+        // Organization のタブを出せるかは gh 次第。起動時と、アプリに戻ってきたときに引き直す。
+        // 効くのは「出せなかったものが出せるようになる」向きだけ。
+        // 一度使えると分かった gh が消えても、次に立ち上げ直すまでタブは残る
+        .onAppear { appearance.refreshOrganizationAvailability() }
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification)) { _ in
+            appearance.refreshOrganizationAvailability()
+        }
+    }
+
+    /// 一番上に置く行。表示の切り替え口はここに集める。
+    ///
+    /// 要確認ストリップは該当が無いと丸ごと消えるので、切り替え口を相乗りさせられない。
+    /// 常に出ている行が要る
+    private var listHeader: some View {
+        GroupingTabs(base: base, appearance: appearance)
+            // 左右は下の行の文字の始まりに合わせる (ScrollView の 0.3 + 行の 0.4)。
+            // 上はパネルの角丸から離す分
+            .padding(.horizontal, base * 0.7)
+            .padding(.top, base * 0.7)
+            .padding(.bottom, base * 0.2)
     }
 
     private var rateLimitSummaries: [AgentQuotaSummary] {

@@ -110,9 +110,10 @@
 "app.settings.background.match_iterm" = "iTerm2 に合わせる";
 "app.settings.background.custom" = "カスタム";
 "app.settings.reset" = "もとに戻す";
-"app.settings.grouping" = "行のまとめ方";
-"app.settings.grouping.repository" = "リポジトリ";
-"app.settings.grouping.organization" = "Organization";
+"app.filter.grouping" = "行のまとめ方";
+"app.filter.grouping.organization.short" = "組織";
+"app.filter.grouping.repository" = "リポジトリ";
+"app.filter.grouping.organization" = "Organization";
 "app.settings.grouping.needs_gh" = "Organization でまとめるには、持ち主を git の remote から、アイコンを GitHub CLI から読みます。gh を入れて「gh auth login」を済ませると選べるようになります。";
 "app.settings.tab_numbers" = "タブ番号 (⌘1〜⌘9) を出す";
 "app.settings.count_changes" = "ファイルの変更を数える";
