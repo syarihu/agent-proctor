@@ -10,7 +10,7 @@ import SwiftUI
 /// 部屋はビューポートより広いことがあり、そのぶんはカメラで送る。
 struct DeskView: View {
     let islands: [DeskIsland]
-    /// サイドバーが見えているか。隠れているあいだは 60fps で回し続けない
+    /// サイドバーが見えているか。隠れているあいだはコマ数を落とす
     let running: Bool
     /// 机をクリックしたときに開くセッション。一覧の行クリックと同じ相手を渡す
     var onOpen: (String) -> Void
@@ -20,7 +20,14 @@ struct DeskView: View {
     @StateObject private var box = SceneBox()
 
     var body: some View {
-        SpriteView(scene: box.scene, isPaused: !running, options: [.allowsTransparency])
+        // **止めるのではなくコマ数を落とす。**
+        // `isPaused` で止めると、一度も描かないうちに止まった場合に
+        // シーンが出ないまま view の地色 (白) が出る。アプリを立ち上げ直した直後は
+        // サイドバーがまだ「見えている」と分かっていないので、必ずそこに落ちる。
+        // 2fps なら常駐していても負荷はほぼ無く、描かれないことも無い
+        SpriteView(scene: box.scene,
+                   preferredFramesPerSecond: running ? 60 : 2,
+                   options: [.allowsTransparency])
             .onAppear {
                 box.scene.onOpen = onOpen
                 box.scene.apply(islands: islands)
@@ -205,7 +212,9 @@ final class DeskScene: SKScene {
     /// 組み直しが要るなら組み直す。組み直したかどうかを返す
     @discardableResult
     private func rebuildIfNeeded() -> Bool {
-        guard size.height > 80, !islands.isEmpty else { return false }
+        // 島が無くても床は組む。立ち上げ直後は台帳がまだ読めていないので、
+        // 島が揃うまで何も描かないと、そのあいだ地色が出る
+        guard size.height > 80 else { return false }
         let wanted = CGSize(width: roomWidth, height: roomHeight)
         guard skeleton(of: islands) != builtSkeleton
                 || columns != builtColumns
@@ -271,6 +280,7 @@ final class DeskScene: SKScene {
 
     private func rebuild() {
         guard size.height > 80 else { return }
+        // 島が1つも無いときは hubPoint(0) を焦点に置く。部屋の左上あたりになる
         room.removeFromParent()
         room = SKNode()
         addChild(room)
@@ -781,7 +791,7 @@ final class DeskScene: SKScene {
     /// 見取り図の突き合わせ (`skeleton`) はここでやらない。文字列を毎フレーム
     /// 組み立てることになるので、安い比較 (大きさと列数) だけにする
     private func validateLayout() {
-        guard size.height > 80, !islands.isEmpty else { return }
+        guard size.height > 80 else { return }
         guard builtSkeleton == nil
                 || seatColumns != builtSeatColumns
                 || abs(roomWidth - builtRoom.width) > 1
