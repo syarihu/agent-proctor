@@ -42,6 +42,8 @@ struct StatusGroup: Identifiable {
     var title: String
     /// 件数バッジの色に使う代表状態
     var status: String
+    /// 人の手が要る箱かどうか。要確認ストリップと同じ行を出すかの判定に使う
+    var needsPerson: Bool
     var repos: [RepoGroup]
 
     /// 配下全リポジトリのタスク一覧
@@ -181,6 +183,7 @@ enum TaskGrouping {
             return StatusGroup(id: "status:" + bucket.key,
                                title: Localized.text(bucket.titleKey),
                                status: bucket.status,
+                               needsPerson: bucket.key == waitingBucket,
                                repos: byRepository(inside))
         }
     }
@@ -239,8 +242,8 @@ enum TaskGrouping {
                 // リポジトリ単位グループ化時はアバターを表示しない
                 head = (task.repo, task.repoName, nil, nil)
             case .status:
-                // 状態で切っているときの下の一覧はリポジトリの小見出しを出す。
-                // ストリップも同じ形にして、上下で見出しの読み方を変えない
+                // 状態で切っているときストリップは出さない (要確認の箱が兼ねる) ので
+                // ここは通らない。switch を網羅させるために、箱の中と同じ形にしておく
                 let owner = heading(for: task.origin, unknownTitle: unknownTitle)
                 head = (task.repo, qualified(task.origin, fallback: task.repoName),
                         owner.owner, owner.host)

@@ -61,7 +61,7 @@ public struct TaskListView: View {
         let statuses = byStatus ? statusGroups : []
         let repos = byOrg || byStatus ? [] : repoGroups
         let limits = rateLimitSummaries
-        // 要確認タスクはグルーピングモードに関わらず最上部に表示する
+        // 要確認タスク。状態で切るとき以外は、まとめ方に関わらず一覧の上に固定する
         let pending = CollectTasks.awaitingReview(store.tasks)
         let ordering = orderKey(orgs: orgs, repos: repos, statuses: statuses)
         return ZStack {
@@ -70,7 +70,9 @@ public struct TaskListView: View {
 
             VStack(spacing: 0) {
                 listHeader
-                if !pending.isEmpty {
+                // 状態で切っているときは要確認の箱が同じものを出すので、
+                // ストリップは畳む。拾う対象 (needsPerson) が同じで中身が丸ごと重なる
+                if !pending.isEmpty && !byStatus {
                     AttentionInbox(
                         tasks: pending, base: base, avatars: avatars,
                         mode: grouping,
@@ -113,7 +115,9 @@ public struct TaskListView: View {
                                     StatusHeader(
                                         group: bucket, base: base,
                                         collapsed: folding.isCollapsed(bucket.id),
-                                        onToggle: { toggle(bucket.id) })
+                                        onToggle: { toggle(bucket.id) },
+                                        onClearAll: bucket.needsPerson
+                                            ? { onClearAttention(bucket.tasks) } : nil)
                                     if !folding.isCollapsed(bucket.id) {
                                         ForEach(bucket.repos) { repo in
                                             statusRepoSection(repo, in: bucket)
@@ -204,11 +208,15 @@ public struct TaskListView: View {
                     collapsed: folded, onToggle: { toggle(key) })
         if !folded {
             ForEach(group.tasks) { task in
+                // 行はどの箱でも同じ。いま開いているタブの強調もタブ番号も
+                // ここでしか出せないので、要確認だけ別の行にはしない。
+                // 足りない分 (片付けと締めメッセージ) は onClear を渡して出す
                 TaskRow(task: task, base: base,
                         isCurrent: isCurrent(task),
                         tabNumber: tabNumber(task),
                         pullRequests: pullRequests,
-                        onOpen: onOpen, onClose: onClose)
+                        onOpen: onOpen, onClose: onClose,
+                        onClear: bucket.needsPerson ? { onClearAttention([$0]) } : nil)
                     .padding(.leading, base)
             }
         }
@@ -667,9 +675,14 @@ private struct TaskRow: View {
     @ObservedObject var pullRequests: PullRequestStore
     var onOpen: (CollectedTask) -> Void
     var onClose: (CollectedTask) -> Void
+    /// 要確認の箱に置くときだけ渡す。片付けボタンと、ターンの締めメッセージが出る。
+    /// それ以外の場所では片付ける相手がいないので nil
+    var onClear: ((CollectedTask) -> Void)?
 
     @State private var hovering = false
     @State private var diving = false
+    /// 片付けボタンの上にいるか
+    @State private var clearHovering = false
     /// 閉じるボタンの上にいるか。行のホバーとは別に持つ (色を変えるため)
     @State private var closeHovering = false
 
@@ -752,6 +765,18 @@ private struct TaskRow: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
+                // ターンの締めメッセージ。要確認の箱でだけ出す。
+                // 承認要求があるならそちらが先 (聞かれていることのほうが急ぐ)
+                if onClear != nil, task.currentRequest == nil,
+                   let summary = task.currentSummary {
+                    Text(summary)
+                        .font(.system(size: base * 0.75))
+                        .foregroundStyle(Palette.dim)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
                 // 実行中ツール。頻繁に更新されるためアニメーションは適用しない
                 if let activity = task.currentActivity {
                     Text(activity)
@@ -780,7 +805,12 @@ private struct TaskRow: View {
         .padding(.vertical, base * 0.5)
         .frame(maxWidth: .infinity, alignment: .leading)
         // 行全体のレイアウト幅の変動による文字揺れを防ぐためオーバーレイで配置する
-        .overlay(alignment: .topTrailing) { closeButton }
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 0) {
+                if onClear != nil { clearButton }
+                closeButton
+            }
+        }
         .background(
             ZStack {
                 // 現在選択中のタブを示すインジケータ。タスク状態色との混同を防ぐ配色にする
@@ -836,6 +866,30 @@ private struct TaskRow: View {
         }
     }
 
+    /// ホバー時のみ表示する片付けボタン。台帳からは消さず、確認済みにするだけ。
+    /// 見出しと同じく、nonactivatingPanel 上で1回目のクリックを拾うため onTapGesture を使う。
+    @ViewBuilder
+    private var clearButton: some View {
+        Image(systemName: "checkmark.circle")
+            .font(.system(size: base * 0.85))
+            .foregroundStyle(clearHovering ? Palette.done : Palette.dim)
+            // タップ判定領域を広げて押しやすくする
+            .padding(base * 0.3)
+            .contentShape(Rectangle())
+            .onHover { clearHovering = $0 }
+            .onTapGesture { onClear?(task) }
+            .help(Localized.text("app.inbox.clear_one"))
+            // .help はツールチップで読み上げ名にならない。Button ではなく
+            // onTapGesture を使っている以上、ボタンだと分かる情報もここで足す
+            .accessibilityElement()
+            .accessibilityLabel(Localized.text("app.inbox.clear_one"))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { onClear?(task) }
+            .opacity(hovering ? 1 : 0)
+            .allowsHitTesting(hovering)
+            .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+
     /// ホバー時のみ表示する削除ボタン。台帳レコードのみを削除し worktree には影響しない。
     /// nonactivatingPanel 上で1回目のクリックを確実に拾うため、Button ではなく onTapGesture を使用する。
     @ViewBuilder
@@ -849,6 +903,10 @@ private struct TaskRow: View {
             .onHover { closeHovering = $0 }
             .onTapGesture { onClose(task) }
             .help(Localized.text("app.row.close_help"))
+            .accessibilityElement()
+            .accessibilityLabel(Localized.text("app.row.close_help"))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { onClose(task) }
             .opacity(hovering ? 1 : 0)
             .allowsHitTesting(hovering)
             .animation(.easeOut(duration: 0.12), value: hovering)
@@ -1149,8 +1207,9 @@ private extension View {
 
 /// サイドバー最上部の未確認通知エリア。未確認のセッションを1行ずつ並べる。
 ///
-/// グループ化方式（リポジトリ / Organization）や折りたたみ状態に関わらず、
-/// 確認待ちのセッションを最上部に固定して視認性を確保する。
+/// 折りたたみ状態に関わらず、確認待ちのセッションを最上部に固定して視認性を確保する。
+/// 出るのはリポジトリ単位・Organization 単位のときだけで、
+/// 状態単位のときは要確認の箱が同じものを出すので呼ばれない。
 ///
 /// 一覧と一緒にスクロールされないよう、ScrollView の外に配置している。
 /// また、未対応項目が不可視化されるのを防ぐため、折りたたみ機能は持たせない
@@ -1256,6 +1315,10 @@ private struct ClearButton: View {
             // 行全体の onTapGesture との競合を防ぎ、内側のタップを優先させる
             .onTapGesture(perform: action)
             .help(help)
+            .accessibilityElement()
+            .accessibilityLabel(help)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { action() }
     }
 }
 
@@ -1265,6 +1328,8 @@ private struct StatusHeader: View {
     let base: CGFloat
     let collapsed: Bool
     var onToggle: () -> Void
+    /// 人の手が要る箱だけ全件クリアを出す。それ以外は片付ける相手がいない
+    var onClearAll: (() -> Void)?
 
     @State private var hovering = false
 
@@ -1292,6 +1357,12 @@ private struct StatusHeader: View {
                 .background(Capsule().fill(Palette.status(group.status).opacity(0.35)))
 
             Spacer(minLength: 0)
+
+            if let onClearAll {
+                ClearButton(base: base, size: base * 0.9,
+                            help: Localized.text("app.inbox.clear_all"),
+                            action: onClearAll)
+            }
         }
         .padding(.horizontal, base * 0.4)
         .padding(.vertical, base * 0.3)
