@@ -359,14 +359,14 @@ final class DeskScene: SKScene {
         // 取り合ううえ、名前が長いと隣の机の見出しとぶつかる。
         // 折り返しは文字単位にしている。セッション名はハイフン続きで空白が無いことが多く、
         // 単語単位だと折り返す場所が見つからずに幅をはみ出す
-        let caption = SKLabelNode(text: label)
+        let size = captionFontSize(for: label)
+        let caption = SKLabelNode(text: wrapped(label, size: size))
         caption.name = "caption"
         caption.fontName = "SFMono-Regular"
-        caption.fontSize = captionFontSize(for: label)
+        caption.fontSize = size
         caption.fontColor = .secondaryLabelColor.withAlphaComponent(isHub ? 0.85 : 0.7)
-        caption.numberOfLines = captionLines
-        caption.lineBreakMode = .byCharWrapping
-        caption.preferredMaxLayoutWidth = captionWidth
+        // 折り返しは自分で入れた改行でやる。行数は数えてあるので上限は要らない
+        caption.numberOfLines = 0
         caption.verticalAlignmentMode = .top
         caption.position = CGPoint(x: 0, y: -deskDepth / 2 - 9)
         node.addChild(caption)
@@ -389,6 +389,47 @@ final class DeskScene: SKScene {
         // 1行に入るのは (幅 ÷ 文字送り) 文字。それが captionLines 行ぶんあればよい
         let fits = captionWidth * CGFloat(captionLines) / units
         return max(captionMinSize, min(captionSize, (fits * 2).rounded(.down) / 2))
+    }
+
+    /// 見出しを自分で折り返す。
+    ///
+    /// `SKLabelNode` の `preferredMaxLayoutWidth` による折り返しは**空白でしか折れない**。
+    /// セッション名はハイフン続きだったり和文だったりで空白が無いことが多く、
+    /// 折る場所が見つからないまま行数を使い切って「…」で切られてしまう
+    /// (`lineBreakMode` を `.byCharWrapping` にしても変わらない)。
+    /// 改行を自分で入れてしまえば、どんな文字列でも同じところで折れる。
+    ///
+    /// 幅の見積もりは `captionFontSize(for:)` と同じ根拠 (欧文 0.6 / 和文 1.0)
+    private func wrapped(_ label: String, size: CGFloat) -> String {
+        let capacity = captionWidth / size
+        var lines: [String] = []
+        var current = ""
+        var used: CGFloat = 0
+        var cut = false
+
+        for character in label {
+            let advance: CGFloat = character.isASCII ? 0.6 : 1.0
+            if used + advance > capacity, !current.isEmpty {
+                // 最後の行まで使い切った。ここから先は入らない
+                if lines.count == captionLines - 1 {
+                    cut = true
+                    break
+                }
+                lines.append(current)
+                current = ""
+                used = 0
+            }
+            current.append(character)
+            used += advance
+        }
+        lines.append(current)
+
+        // 入りきらなかったことを示す。1文字返してから「…」を置く
+        if cut, var last = lines.last, !last.isEmpty {
+            last.removeLast()
+            lines[lines.count - 1] = last + "…"
+        }
+        return lines.joined(separator: "\n")
     }
 
     /// 挙げた手。
