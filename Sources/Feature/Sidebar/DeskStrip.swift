@@ -250,11 +250,14 @@ final class DeskScene: SKScene {
         node.addChild(screen)
 
         // 書類の山を載せる器。中身は restack が入れ替える。
-        // 天板の右手前に置くのは、モニタ (奥) と見出し (上) のどちらとも重ならない場所だから
-        let stack = SKNode()
-        stack.name = "stack"
-        stack.position = CGPoint(x: width / 2 - 10, y: -4)
-        node.addChild(stack)
+        // 天板の両端に置くのは、モニタ (奥) と見出し (上) のどちらとも重ならない場所だから。
+        // 片側に積み上げるより、半分ずつ左右に分けたほうが低い山で同じ量を出せる
+        for (name, side) in [("stackL", -1.0), ("stackR", 1.0)] as [(String, CGFloat)] {
+            let stack = SKNode()
+            stack.name = name
+            stack.position = CGPoint(x: side * (width / 2 - 9), y: -4)
+            node.addChild(stack)
+        }
 
         let caption = SKLabelNode(text: label)
         caption.fontName = "SFMono-Regular"
@@ -267,9 +270,11 @@ final class DeskScene: SKScene {
         return node
     }
 
-    /// 机の上に積む書類の枚数の上限。
-    /// これ以上積むと見出しに届くうえ、6段もあれば使用量の増減は十分読める
-    private let maxSheets = 6
+    /// 片側に積む書類の枚数の上限。左右で倍の 12 段まで出せる。
+    /// これ以上高くすると見出しに届く
+    private let maxSheetsPerSide = 6
+    private let sheetWidth: CGFloat = 13
+    private let sheetHeight: CGFloat = 3.2
 
     /// 机の上の書類の山を積み直す。**コンテキストの使用量を山の高さで出す。**
     ///
@@ -277,30 +282,39 @@ final class DeskScene: SKScene {
     /// 色の変わり目は `Palette.context` と同じ (50% で橙、80% で赤)。
     /// 数字を読ませるのではなく、机を一瞥して「そろそろ危ない」が分かることを狙っている
     private func restack(_ desk: SKNode, percent: Int) {
-        guard let stack = desk.childNode(withName: "stack") else { return }
-        stack.removeAllChildren()
-
-        let sheets = Int((Double(min(100, max(0, percent))) / 100 * Double(maxSheets)).rounded())
-        guard sheets > 0 else { return }
+        let capped = min(100, max(0, percent))
+        let total = Int((Double(capped) / 100 * Double(maxSheetsPerSide * 2)).rounded())
 
         let tint: NSColor
-        if percent >= 80 {
+        if capped >= 80 {
             tint = NSColor(red: 0.937, green: 0.325, blue: 0.314, alpha: 1)  // #ef5350
-        } else if percent >= 50 {
+        } else if capped >= 50 {
             tint = NSColor(red: 1.0, green: 0.718, blue: 0.302, alpha: 1)    // #ffb74d
         } else {
             tint = NSColor(white: 0.93, alpha: 1)
         }
 
+        // 左から1枚ずつ交互に積む。左右の高さが1枚差までしか開かないので、
+        // どちらを見ても使用量が読める
+        pile(desk, name: "stackL", sheets: (total + 1) / 2, tint: tint)
+        pile(desk, name: "stackR", sheets: total / 2, tint: tint)
+    }
+
+    private func pile(_ desk: SKNode, name: String, sheets: Int, tint: NSColor) {
+        guard let stack = desk.childNode(withName: name) else { return }
+        stack.removeAllChildren()
+        guard sheets > 0 else { return }
+
         for index in 0..<sheets {
-            let sheet = SKShapeNode(rect: CGRect(x: -5.5, y: 0, width: 11, height: 2.6),
-                                    cornerRadius: 0.5)
+            let sheet = SKShapeNode(
+                rect: CGRect(x: -sheetWidth / 2, y: 0, width: sheetWidth, height: sheetHeight),
+                cornerRadius: 0.5)
             sheet.fillColor = tint.withAlphaComponent(0.9)
-            sheet.strokeColor = .black.withAlphaComponent(0.12)
+            sheet.strokeColor = .black.withAlphaComponent(0.14)
             sheet.lineWidth = 0.5
             // 1枚ずつ横にずらす。きっちり重ねると1枚の板に見えて、枚数が読めない
-            sheet.position = CGPoint(x: CGFloat.random(in: -1.5...1.5),
-                                     y: CGFloat(index) * 2.6)
+            sheet.position = CGPoint(x: CGFloat.random(in: -1.6...1.6),
+                                     y: CGFloat(index) * sheetHeight)
             stack.addChild(sheet)
         }
     }
