@@ -112,10 +112,29 @@ final class DeskScene: SKScene {
 
     /// SKScene の `camera` に差すノード。出来事のある所へ寄せるために動かす
     private let eye = SKCameraNode()
-    /// 歩いている人。重なり順を毎フレーム引き直すために持っておく
-    private var walkers: [SKNode] = []
+    /// 歩いている人。島ごとに1人。重なり順を毎フレーム引き直すために持っておく
+    private var walkers: [Int: SKNode] = [:]
     /// 実寸が決まってから組み立てる。カメラの可動範囲を帯の大きさから決めているため
     private var built = false
+
+    /// 島ごとの稼働の量。受け渡しが起きるたびに増え、時間とともに減る。
+    ///
+    /// 本番ではここが「動いているセッションの数 + 直近の受け渡しの回数」になる。
+    /// 素振りでは配り終えるたびに 1 足しているだけ
+    private var activity: [Double] = []
+    /// いまカメラが張り付いている島
+    private var focused = 0
+    /// 最後に島を乗り換えた時刻。乗り換えの間隔を空けるために持つ
+    private var switchedAt: TimeInterval = 0
+    private var lastUpdate: TimeInterval = 0
+
+    /// 稼働の半減期 (秒)。短すぎると1回の受け渡しでカメラが飛ぶ
+    private let activityHalfLife: TimeInterval = 12
+    /// 一度寄ったら最低これだけは留まる (秒)。
+    /// これが無いと、僅差の島どうしでカメラが行ったり来たりして落ち着かない
+    private let dwell: TimeInterval = 8
+    /// 乗り換えに要る差。1.4 倍以上忙しくないと、カメラは動かない
+    private let switchMargin: Double = 1.4
 
     override func didMove(to view: SKView) {
         addChild(eye)
@@ -131,6 +150,7 @@ final class DeskScene: SKScene {
     private func buildIfPossible() {
         guard !built, size.height > 40 else { return }
         built = true
+        activity = Array(repeating: 0, count: islands.count)
         eye.position = clampCamera(hubPoint(island: 0))
         buildRoom()
         for index in islands.indices { startRound(island: index) }
@@ -262,9 +282,56 @@ final class DeskScene: SKScene {
         return node
     }
 
-    /// 手前のものほど後に描く。歩くたびに奥行きが変わるので毎フレーム引き直す
     override func update(_ currentTime: TimeInterval) {
-        for walker in walkers { walker.zPosition = -walker.position.y }
+        // 手前のものほど後に描く。歩くたびに奥行きが変わるので毎フレーム引き直す
+        for walker in walkers.values { walker.zPosition = -walker.position.y }
+
+        // 最初のフレームは前回時刻を持たないので、減衰も追従もさせない
+        guard lastUpdate > 0 else {
+            lastUpdate = currentTime
+            switchedAt = currentTime
+            return
+        }
+        let delta = currentTime - lastUpdate
+        lastUpdate = currentTime
+
+        decayActivity(by: delta)
+        reconsiderFocus(at: currentTime)
+        followFocused(by: delta)
+    }
+
+    /// 稼働を時間で減らす。フレーム間隔で決めるのは、コマ落ちしても減り方を変えないため
+    private func decayActivity(by delta: TimeInterval) {
+        let factor = pow(0.5, delta / activityHalfLife)
+        for index in activity.indices { activity[index] *= factor }
+    }
+
+    /// カメラをどの島に置くかを選び直す。
+    ///
+    /// 一番稼働の多い島に張り付く。ただし僅差で乗り換えると画面が落ち着かないので、
+    /// 「前の島より `switchMargin` 倍は忙しいこと」と「乗り換えてから `dwell` 秒は経つこと」の
+    /// 両方を満たしたときだけ動かす
+    private func reconsiderFocus(at now: TimeInterval) {
+        guard now - switchedAt >= dwell else { return }
+        guard let busiest = activity.indices.max(by: { activity[$0] < activity[$1] }) else { return }
+        guard busiest != focused else { return }
+        guard activity[busiest] > activity[focused] * switchMargin else { return }
+        focused = busiest
+        switchedAt = now
+    }
+
+    /// 張り付いている島の使いをカメラで追う。
+    ///
+    /// 行き先を都度 `SKAction` で指定すると、次の行き先が決まるたびに前の動きを
+    /// 打ち切ることになり、カメラが小刻みに向きを変える。毎フレーム少しずつ寄せると
+    /// 人の動きに遅れて付いていく形になり、見ていて落ち着く
+    private func followFocused(by delta: TimeInterval) {
+        guard let walker = walkers[focused] else { return }
+        let target = clampCamera(walker.position)
+        // 1秒でおよそ 92% 詰める速さ。フレーム間隔に依らず同じ寄り方になる
+        let ratio = 1 - pow(0.08, delta)
+        eye.position = CGPoint(x: eye.position.x + (target.x - eye.position.x) * ratio,
+                               y: eye.position.y + (target.y - eye.position.y) * ratio)
     }
 
     // MARK: - 動き
@@ -279,7 +346,7 @@ final class DeskScene: SKScene {
         let walker = person(tint: .labelColor)
         walker.position = home
         addChild(walker)
-        walkers.append(walker)
+        walkers[index] = walker
 
         var steps: [SKAction] = []
         for slot in island.workers.indices {
@@ -288,8 +355,16 @@ final class DeskScene: SKScene {
             steps.append(.run { [weak self] in self?.givePaper(to: walker) })
             steps.append(walk(walker, to: target))
             steps.append(.wait(forDuration: 0.5))
-            steps.append(.run { [weak self] in self?.takePaper(from: walker) })
+            steps.append(.run { [weak self] in
+                self?.takePaper(from: walker)
+                // 1件配り終えた。カメラはこの数の多い島に張り付く
+                self?.activity[index] += 1
+            })
             steps.append(walk(walker, to: home))
+            // 配り終えてからの間合いを毎回ばらつかせる。
+            // 片方を固定で速くすると忙しさの順位が変わらず、カメラの乗り換えが
+            // 一度も起きないので、規則が効いているのか確かめられない
+            steps.append(.wait(forDuration: 1.3, withRange: 2.2))
         }
         // 島ごとに出発をずらす。同時に動くとカメラの取り合いが常に起きて落ち着かない
         walker.run(.sequence([
@@ -301,8 +376,7 @@ final class DeskScene: SKScene {
     /// 歩行。距離に比例した時間をかけ、小さく伸び縮みさせて歩いているように見せる。
     /// 同時にカメラを同じ時間で追従させる (出来事のある所を映す、の素振り)
     private func walk(_ node: SKNode, to point: CGPoint) -> SKAction {
-        SKAction.run { [weak self] in
-            guard let self else { return }
+        SKAction.run {
             let distance = hypot(node.position.x - point.x, node.position.y - point.y)
             let duration = TimeInterval(distance / 65)
 
@@ -315,8 +389,6 @@ final class DeskScene: SKScene {
                     .scaleY(to: 1.0, duration: 0.13),
                 ]),
                 count: max(1, Int(duration / 0.26))))
-
-            self.focus(on: point, duration: duration)
         }
     }
 
@@ -339,17 +411,6 @@ final class DeskScene: SKScene {
             .group([.moveBy(x: 6, y: 20, duration: 0.3), .fadeOut(withDuration: 0.3)]),
             .removeFromParent(),
         ]))
-    }
-
-    /// カメラを寄せる。
-    ///
-    /// 島が複数あると、別々の島で同時に人が動く。カメラは1つしかないので
-    /// **後から来た要求が勝つ**ことにしている。割り込みのたびに前の動きを止めるので、
-    /// 途中で行き先が変わって見えるが、両方を追おうとして中間の何も無い所を
-    /// 映し続けるよりはましだと判断した
-    private func focus(on point: CGPoint, duration: TimeInterval) {
-        eye.removeAllActions()
-        eye.run(.move(to: clampCamera(point), duration: duration))
     }
 
     /// カメラが部屋の外を映さないように可動範囲を切る。
