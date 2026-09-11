@@ -193,6 +193,19 @@ public struct TaskListView: View {
         .padding(.bottom, base * 0.2)
     }
 
+    /// 机に出す名前。
+    ///
+    /// `displayName` はタブのタイトルを優先する。人が付けた名前のほうが当てになるからだが、
+    /// タブのタイトルは端末の幅に合わせて**上流で「…」まで切られて**台帳に載る。
+    /// 1行しか使わない一覧ではそれで足りる。机は3行使えるので、
+    /// 切られているとわざわざ短いほうを選んだことになる。
+    /// 切られているときだけ、エージェントが付けた名前に譲る
+    private func deskName(_ task: CollectedTask) -> String {
+        if let title = task.title, !title.hasSuffix("…") { return title }
+        if let name = task.name, !name.isEmpty { return name }
+        return task.displayName
+    }
+
     /// 俯瞰に出す島。リポジトリごとに1島、その中に台帳のセッションを並べる。
     ///
     /// 並び順は一覧と揃える (`store.tasks` の順)。同じ台帳を見ているのに
@@ -207,7 +220,7 @@ public struct TaskListView: View {
             }
             byRepo[task.repo]?.append(
                 DeskSeat(id: task.id,
-                         name: task.displayName,
+                         name: deskName(task),
                          status: task.displayStatus,
                          needsPerson: TaskStatus.needsPerson(status: task.status,
                                                              seenAt: task.seenAt),
