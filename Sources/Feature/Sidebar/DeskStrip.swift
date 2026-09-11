@@ -42,20 +42,25 @@ private final class SceneBox: ObservableObject {
 /// 斜め上から見た事務所。
 final class DeskScene: SKScene {
     /// 部屋の幅。ビューポート (サイドバー幅) より広く取り、カメラで見る所を選ぶ
-    private let roomWidth: CGFloat = 900
+    private let roomWidth: CGFloat = 800
 
     /// 奥行きは帯の高さに収める。上下にもスクロールさせると目が休まらないので、
     /// 縦は「奥の列と手前の列」を置ける分だけあればよい
     private var backRowY: CGFloat { size.height * 0.63 }
     private var frontRowY: CGFloat { size.height * 0.26 }
 
-    /// 机の立ち位置。左端が hub、残りが worker という想定
+    /// 机の立ち位置。左端が hub、残りが worker という想定。
+    ///
+    /// 奥と手前を交互に置いて 120pt 間隔で詰める。机の幅が 58pt なので隣とは 62pt 空く。
+    /// これ以上離すと 280pt のビューポートに机が1つ半しか入らず、事務所に見えない
     private var desks: [(x: CGFloat, y: CGFloat, name: String, isHub: Bool)] {
         [
-            (140, backRowY, "hub", true),
-            (330, frontRowY, "worker-1", false),
-            (520, backRowY, "worker-2", false),
-            (710, frontRowY, "worker-3", false),
+            (100, backRowY, "hub", true),
+            (220, frontRowY, "worker-1", false),
+            (340, backRowY, "worker-2", false),
+            (460, frontRowY, "worker-3", false),
+            (580, backRowY, "worker-4", false),
+            (700, frontRowY, "worker-5", false),
         ]
     }
 
@@ -234,7 +239,7 @@ final class DeskScene: SKScene {
         }
 
         var steps: [SKAction] = []
-        for target in [1, 0, 3, 0, 2, 0] {
+        for target in [1, 3, 5, 2, 4] {
             steps.append(.wait(forDuration: 0.5))
             steps.append(.run { [weak self] in self?.givePaper(to: walker) })
             steps.append(walk(walker, to: spot(target)))
