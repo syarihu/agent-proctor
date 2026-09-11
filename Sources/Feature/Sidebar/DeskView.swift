@@ -193,6 +193,19 @@ final class DeskScene: SKScene {
     /// 席へ帰る途中の人。席の id で引く。
     /// 席に着くまで机の occupant を隠しておき、重なって2人に見えるのを防ぐ
     private var returning: [String: SKNode] = [:]
+    /// 新しく増えた席へ向かって扉から歩いている人。席の id で引く。
+    /// 着席するまで机の occupant を隠しておき、到着したら座らせる
+    private var arriving: [String: SKNode] = [:]
+    /// 到着アニメーション待ちの席ID
+    private var pendingArrivalSeats: Set<String> = []
+    /// 到着アニメーション待ちのリポジトリ名
+    private var pendingArrivalRepos: Set<String> = []
+    /// 以前認識していた席とリポジトリの集合。増分（新規着席）の検出に使う
+    private var knownSeatIds: Set<String> = []
+    private var knownRepos: Set<String> = []
+    private var hasInitializedArrivals = false
+    /// 奥の壁の高さ。正面エントランス扉を収めるため 32pt 確保する
+    private let wallHeight: CGFloat = 32
     /// 歩く速さ (pt/秒)。机を迂回して少し道程が伸びるので、直進していた頃 (70) より少し早足にしてテンポを保つ
     private let walkSpeed: CGFloat = 80
     /// 島ごとの稼働の量。いま動いているセッションの数を秒単位でならしたもの
@@ -229,10 +242,41 @@ final class DeskScene: SKScene {
     /// 台帳の中身を反映する。
     ///
     /// 骨格 (島と机の顔ぶれ) が同じなら組み直さず、机の見た目だけ差し替える。
-    /// 状態が変わるたびに部屋を作り直すと、歩いている人が毎回入口に戻ってしまう
+    /// 状態が変わるたびに部屋を作り直すと、歩いている人が毎回入口に戻ってしまう。
+    /// 新しく増えた席やリポジトリを検出した場合は、正面エントランスからの入室アニメーションを走らせる
     func apply(islands: [DeskIsland]) {
         self.islands = islands
-        if !rebuildIfNeeded() { refreshSeats() }
+
+        let currentSeats = Set(islands.flatMap { $0.seats.map(\.id) })
+        let currentRepos = Set(islands.map(\.repo))
+
+        if !hasInitializedArrivals {
+            knownSeatIds = currentSeats
+            knownRepos = currentRepos
+            hasInitializedArrivals = true
+            if !rebuildIfNeeded() { refreshSeats() }
+            return
+        }
+
+        let newSeats = currentSeats.subtracting(knownSeatIds)
+        let newRepos = currentRepos.subtracting(knownRepos)
+
+        knownSeatIds = currentSeats
+        knownRepos = currentRepos
+
+        if !newSeats.isEmpty || !newRepos.isEmpty {
+            pendingArrivalSeats.formUnion(newSeats)
+            pendingArrivalRepos.formUnion(newRepos)
+        }
+
+        let rebuilt = rebuildIfNeeded()
+        if !rebuilt {
+            refreshSeats()
+        }
+
+        if !newSeats.isEmpty || !newRepos.isEmpty {
+            animateArrivals(seatIds: newSeats, repoNames: newRepos)
+        }
     }
 
     /// 部屋の骨格。机の顔ぶれと並び順だけを見て、状態や使用量は含めない
@@ -304,9 +348,10 @@ final class DeskScene: SKScene {
                        y: hub.y - hubRowSpacing - rowSpacing * CGFloat(row))
     }
 
-    /// 人が机の前に立つ位置。印刷用紙の手前に立つ
-    private func standing(at desk: CGPoint) -> CGPoint {
-        CGPoint(x: desk.x, y: desk.y - 80)
+    /// 机の後ろの椅子の位置（ディスプレイの目の前、座席の occupant の座標）
+    private func chairSpot(island: Int, seat: Int) -> CGPoint {
+        let desk = seatPoint(island: island, index: seat)
+        return CGPoint(x: desk.x, y: desk.y + 30)
     }
 
     // MARK: - 組み立て
@@ -319,6 +364,7 @@ final class DeskScene: SKScene {
         addChild(room)
         visitors.removeAll()
         returning.removeAll()
+        arriving.removeAll()
         activity = Array(repeating: 0, count: islands.count)
         builtSkeleton = skeleton(of: islands)
         builtColumns = columns
@@ -358,13 +404,25 @@ final class DeskScene: SKScene {
         }
 
         // 奥の壁。上端に帯を置くと「奥がある」ことが一目で分かる
-        let wallHeight: CGFloat = 18
         let wall = SKShapeNode(rect: CGRect(x: 0, y: roomHeight - wallHeight,
                                             width: roomWidth, height: wallHeight))
         wall.fillColor = .secondaryLabelColor.withAlphaComponent(0.12)
         wall.strokeColor = .clear
         wall.zPosition = -9990
         room.addChild(wall)
+
+        // 壁の下端の巾木（はばき）。床と壁の境界をくっきりさせる
+        let baseboard = SKShapeNode(rect: CGRect(x: 0, y: roomHeight - wallHeight - 1.5,
+                                                 width: roomWidth, height: 1.5))
+        baseboard.fillColor = .secondaryLabelColor.withAlphaComponent(0.25)
+        baseboard.strokeColor = .clear
+        baseboard.zPosition = -9985
+        room.addChild(baseboard)
+
+        // 正面エントランス扉（吹き出しや中央の机に被らないよう奥壁の左上に配置）
+        let door = entranceDoorNode()
+        door.position = doorPosition
+        room.addChild(door)
     }
 
     private func hairline(from: CGPoint, to: CGPoint) -> SKShapeNode {
@@ -665,7 +723,11 @@ final class DeskScene: SKScene {
         // 手前のものほど後に描く。人が机の前に立ったときに正しく重なる
         node.zPosition = -point.y
         // クリックの当たり判定はこの名前で引く。hub には開く相手がいない
-        if let seat { node.name = "seat:\(seat.id)" }
+        if let seat {
+            node.name = "seat:\(seat.id)"
+        } else {
+            node.name = "hub:\(label)"
+        }
 
         // セッション机は横2倍 (184pt)、hub は作業領域不要でちょい大きめ (104pt)
         let width = isHub ? hubDeskWidth : deskWidth
@@ -720,6 +782,9 @@ final class DeskScene: SKScene {
         occupant.setScale(1.2)
         occupant.position = CGPoint(x: 0, y: 30)
         occupant.zPosition = -20
+        if isHub && pendingArrivalRepos.contains(label) {
+            occupant.isHidden = true
+        }
         node.addChild(occupant)
 
         // 頭上の吹き出し（hub は大きめ、セッションは横2倍でタスク内容を広く表示）
@@ -833,6 +898,28 @@ final class DeskScene: SKScene {
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? NSColor(white: 0.70, alpha: 0.85)
             : NSColor(white: 0.35, alpha: 0.9)
+    }
+
+    // 正面エントランス扉の配色。壁と同じく動的プロバイダで明暗両対応にする
+    private static let doorFrameColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(white: 0.28, alpha: 0.95)
+            : NSColor(white: 0.68, alpha: 0.95)
+    }
+    private static let doorOpeningColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.92, green: 0.85, blue: 0.65, alpha: 0.35)
+            : NSColor(red: 0.98, green: 0.94, blue: 0.82, alpha: 0.90)
+    }
+    private static let doorLeafColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(white: 0.16, alpha: 0.95)
+            : NSColor(white: 0.92, alpha: 0.98)
+    }
+    private static let doorMatColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(white: 0.22, alpha: 0.60)
+            : NSColor(white: 0.82, alpha: 0.70)
     }
 
     /// 連続帳票用紙に印刷する作業ログ行（3行）。
@@ -1158,7 +1245,10 @@ final class DeskScene: SKScene {
     private func dress(_ desk: SKNode, as seat: DeskSeat) {
         let move = gesture(for: seat.activity)
         let crew = seat.helpers.map { "\($0.id):\($0.activity ?? "-")" }.joined(separator: ",")
-        let isAway = visitors[seat.id] != nil || returning[seat.id] != nil
+        let isAway = visitors[seat.id] != nil
+            || returning[seat.id] != nil
+            || arriving[seat.id] != nil
+            || pendingArrivalSeats.contains(seat.id)
         let signature = """
             \(seat.status)/\(seat.needsPerson)/\(seat.subagents)/\(move)/\(crew)/\(isAway)/\(seat.activity ?? "-")/\(seat.isCurrent)/\(seat.tabNumber ?? -1)
             """
@@ -1184,21 +1274,19 @@ final class DeskScene: SKScene {
         let bubbleLabel = bubble?.childNode(withName: "bubbleLabel") as? SKLabelNode
         let paper = desk.childNode(withName: "printedPaper")
 
-        let isIdle = seat.status == TaskStatus.idle || seat.status == TaskStatus.missing
-        bubble?.isHidden = isIdle
-        paper?.isHidden = isIdle
-        if !isIdle {
+        let isMissing = seat.status == TaskStatus.missing
+        bubble?.isHidden = isMissing
+        paper?.isHidden = isMissing
+        if !isMissing {
             bubbleLabel?.text = truncateScreenText(seat.name, limit: 30)
         }
 
         // 席に人がいるかどうか。
         //
-        // 立ち上げただけで何も指示していないもの (idle) と、動いていた場所が
-        // 消えたもの (missing) だけ席を空ける。それ以外は、終わったあとも
-        // 確認を待っているあいだは人がいる。誰もいない机は「ここには誰もいない」
-        // という意味に読めてほしいので、その意味を持たない状態には使わない。
-        // 待機中は本人が hub へ質問しに行っているか席へ帰る途中なので、席にはいない
-        let seated = !isIdle
+        // 動いていた場所が消えたもの (missing) だけ席を空ける。
+        // セッション開始直後の待機中 (idle) も、扉から入ってきて席に座り指示を待つ。
+        // 質問で行列に並んでいる最中 (waiting) や、移動中 (isAway) は席を離れる
+        let seated = !isMissing
             && seat.status != TaskStatus.waiting
             && !isAway
         occupant?.isHidden = !seated
@@ -1397,7 +1485,7 @@ final class DeskScene: SKScene {
                 // 席から立ち上がったところから歩き出す。人間は1.2倍サイズ
                 visitor = person(tint: .labelColor)
                 visitor.setScale(1.2)
-                visitor.position = standingSpot(island: index, seat: seatIndex)
+                visitor.position = chairSpot(island: index, seat: seatIndex)
                 room.addChild(visitor)
                 visitors[seat.id] = visitor
             }
@@ -1442,10 +1530,11 @@ final class DeskScene: SKScene {
         guard let desk = room.childNode(withName: "seat:\(id)") else { return }
         for island in islands {
             if let seat = island.seats.first(where: { $0.id == id }) {
-                let seated = seat.status != TaskStatus.idle
-                    && seat.status != TaskStatus.missing
+                let seated = seat.status != TaskStatus.missing
                     && seat.status != TaskStatus.waiting
                     && returning[id] == nil
+                    && arriving[id] == nil
+                    && !pendingArrivalSeats.contains(id)
                 let occupant = desk.childNode(withName: "occupant")
                 occupant?.isHidden = !seated
                 if seated { occupant?.setScale(1.2) }
@@ -1454,15 +1543,11 @@ final class DeskScene: SKScene {
         }
     }
 
-    private func standingSpot(island: Int, seat: Int) -> CGPoint {
-        standing(at: seatPoint(island: island, index: seat))
-    }
-
     /// 席へ帰る先。机がもう無ければ nil
     private func homeSpot(of id: String) -> (island: Int, seat: Int, spot: CGPoint)? {
         for (index, island) in islands.enumerated() {
             if let seat = island.seats.firstIndex(where: { $0.id == id }) {
-                return (index, seat, standingSpot(island: index, seat: seat))
+                return (index, seat, chairSpot(island: index, seat: seat))
             }
         }
         return nil
@@ -1591,12 +1676,301 @@ final class DeskScene: SKScene {
         visitor.run(.sequence(actions), withKey: "walk")
     }
 
+    // MARK: - エントランスと入室演出
+
+    /// 正面エントランスの扉の位置（奥壁の左上。中央の hub や吹き出しに被らない場所）
+    private var doorPosition: CGPoint {
+        CGPoint(x: 38, y: roomHeight - wallHeight)
+    }
+
+    /// 正面エントランスの扉ノード（両開きドア、上部に緑の誘導灯、手前にマット）
+    private func entranceDoorNode() -> SKNode {
+        let node = SKNode()
+        node.name = "entranceDoor"
+
+        // 玄関マット（床の上）
+        let mat = SKShapeNode(rect: CGRect(x: -24, y: -10, width: 48, height: 12), cornerRadius: 2.0)
+        mat.fillColor = DeskScene.doorMatColor
+        mat.strokeColor = .secondaryLabelColor.withAlphaComponent(0.20)
+        mat.lineWidth = 0.8
+        mat.zPosition = -9980
+        node.addChild(mat)
+
+        // ドア枠（壁に埋め込まれた外枠）
+        let frame = SKShapeNode(rect: CGRect(x: -21, y: 0, width: 42, height: wallHeight), cornerRadius: 1.5)
+        frame.fillColor = DeskScene.doorFrameColor
+        frame.strokeColor = .secondaryLabelColor.withAlphaComponent(0.4)
+        frame.lineWidth = 1.0
+        frame.zPosition = -9970
+        node.addChild(frame)
+
+        // 扉の奥（開いた時に見える廊下のあかり）
+        let opening = SKShapeNode(rect: CGRect(x: -19, y: 0, width: 38, height: wallHeight - 8))
+        opening.fillColor = DeskScene.doorOpeningColor
+        opening.strokeColor = .clear
+        opening.zPosition = -9965
+        node.addChild(opening)
+
+        // 左扉（開閉時に左端を軸にスケール変化）
+        let leftLeafWrapper = SKNode()
+        leftLeafWrapper.name = "leftLeaf"
+        leftLeafWrapper.position = CGPoint(x: -19, y: 0)
+        leftLeafWrapper.zPosition = -9950
+
+        let leftLeaf = SKShapeNode(rect: CGRect(x: 0, y: 0, width: 18.5, height: wallHeight - 8), cornerRadius: 1)
+        leftLeaf.fillColor = DeskScene.doorLeafColor
+        leftLeaf.strokeColor = .secondaryLabelColor.withAlphaComponent(0.4)
+        leftLeaf.lineWidth = 0.8
+        leftLeafWrapper.addChild(leftLeaf)
+
+        // 左ドアノブ（真鍮風の丸）
+        let leftKnob = SKShapeNode(circleOfRadius: 1.1)
+        leftKnob.fillColor = NSColor(red: 0.85, green: 0.75, blue: 0.35, alpha: 0.9)
+        leftKnob.strokeColor = .clear
+        leftKnob.position = CGPoint(x: 15.5, y: (wallHeight - 8) / 2)
+        leftLeafWrapper.addChild(leftKnob)
+        node.addChild(leftLeafWrapper)
+
+        // 右扉（開閉時に右端を軸にスケール変化）
+        let rightLeafWrapper = SKNode()
+        rightLeafWrapper.name = "rightLeaf"
+        rightLeafWrapper.position = CGPoint(x: 19, y: 0)
+        rightLeafWrapper.zPosition = -9950
+
+        let rightLeaf = SKShapeNode(rect: CGRect(x: -18.5, y: 0, width: 18.5, height: wallHeight - 8), cornerRadius: 1)
+        rightLeaf.fillColor = DeskScene.doorLeafColor
+        rightLeaf.strokeColor = .secondaryLabelColor.withAlphaComponent(0.4)
+        rightLeaf.lineWidth = 0.8
+        rightLeafWrapper.addChild(rightLeaf)
+
+        // 右ドアノブ
+        let rightKnob = SKShapeNode(circleOfRadius: 1.1)
+        rightKnob.fillColor = NSColor(red: 0.85, green: 0.75, blue: 0.35, alpha: 0.9)
+        rightKnob.strokeColor = .clear
+        rightKnob.position = CGPoint(x: -15.5, y: (wallHeight - 8) / 2)
+        rightLeafWrapper.addChild(rightKnob)
+        node.addChild(rightLeafWrapper)
+
+        // 誘導灯（ドア上部のかもいに掲げる緑のランプ）
+        let exitSign = SKShapeNode(rect: CGRect(x: -9, y: wallHeight - 7, width: 18, height: 5.5), cornerRadius: 1.2)
+        exitSign.fillColor = NSColor(red: 0.15, green: 0.82, blue: 0.40, alpha: 0.92)
+        exitSign.strokeColor = .white.withAlphaComponent(0.6)
+        exitSign.lineWidth = 0.6
+        exitSign.zPosition = -9940
+        node.addChild(exitSign)
+
+        return node
+    }
+
+    /// 正面エントランスの扉を開閉する
+    private func animateDoor(open: Bool, duration: TimeInterval = 0.22) {
+        guard let door = room.childNode(withName: "entranceDoor") else { return }
+        let targetScale: CGFloat = open ? 0.12 : 1.0
+        let leftAction = SKAction.scaleX(to: targetScale, duration: duration)
+        let rightAction = SKAction.scaleX(to: targetScale, duration: duration)
+        leftAction.timingMode = open ? .easeOut : .easeIn
+        rightAction.timingMode = open ? .easeOut : .easeIn
+        door.childNode(withName: "leftLeaf")?.run(leftAction, withKey: "doorSwing")
+        door.childNode(withName: "rightLeaf")?.run(rightAction, withKey: "doorSwing")
+    }
+
+    /// 正面エントランス扉から指定の机の前までの歩行ルート
+    private func arrivalWaypoints(to target: CGPoint, island: Int, seatIndex: Int) -> [CGPoint] {
+        let doorFront = CGPoint(x: doorPosition.x, y: doorPosition.y - 16)
+        let hub = hubPoint(island: island)
+        let spread = columnPitch * CGFloat(seatColumns - 1)
+        let col0X = hub.x - spread / 2
+        let hubFrontY = hub.y - 35
+        let column = seatIndex % seatColumns
+
+        let aisleX: CGFloat
+        if seatColumns > 1 {
+            let gapIndex = max(0, min(seatColumns - 2, column == 0 ? 0 : column - 1))
+            let leftColX = col0X + columnPitch * CGFloat(gapIndex)
+            let rightColX = leftColX + columnPitch
+            aisleX = (leftColX + rightColX) / 2
+        } else {
+            aisleX = max(12, min(col0X - 125, target.x - 16))
+        }
+
+        let hubCornerX = max(doorPosition.x, min(hub.x - 110, target.x))
+        let topHallwayY = min(roomHeight - wallHeight - 16, hub.y + 40)
+
+        var points: [CGPoint] = []
+
+        // 1. 扉の前から上部横通路へ
+        if abs(doorFront.y - topHallwayY) >= 4 {
+            points.append(CGPoint(x: doorFront.x, y: topHallwayY))
+        }
+
+        // 2. 上部横通路を島の脇 (hubCornerX) まで歩く
+        if abs(doorFront.x - hubCornerX) >= 4 {
+            points.append(CGPoint(x: hubCornerX, y: topHallwayY))
+        }
+
+        // 3. 島の脇を通って hub の手前まで下りる
+        if abs(topHallwayY - hubFrontY) >= 4 {
+            points.append(CGPoint(x: hubCornerX, y: hubFrontY))
+        }
+
+        // 4. hub の手前を通って机の縦通路へ入る
+        if abs(hubCornerX - aisleX) >= 4 {
+            points.append(CGPoint(x: aisleX, y: hubFrontY))
+        }
+
+        // 5. 縦通路を自分の席の段まで進む
+        if abs(hubFrontY - target.y) >= 4 {
+            points.append(CGPoint(x: aisleX, y: target.y))
+        }
+
+        // 6. 自分の席の前に入る
+        if abs(aisleX - target.x) >= 4 {
+            points.append(target)
+        }
+
+        return points
+    }
+
+    /// 新しく追加された席やリポジトリへの入室アニメーション。
+    /// 正面エントランスから入ってきて、自分の席まで歩いて着席する
+    private func animateArrivals(seatIds: Set<String>, repoNames: Set<String>) {
+        guard !seatIds.isEmpty || !repoNames.isEmpty else { return }
+
+        // 扉を開く
+        animateDoor(open: true)
+
+        let doorSpawn = CGPoint(x: doorPosition.x, y: doorPosition.y + 6)
+        let doorFront = CGPoint(x: doorPosition.x, y: doorPosition.y - 16)
+
+        var delay: TimeInterval = 0.0
+
+        // 新しいリポジトリの hub があれば、まず hub の担当者が入室
+        for repo in repoNames {
+            guard let islandIndex = islands.firstIndex(where: { $0.repo == repo }) else { continue }
+            let hub = hubPoint(island: islandIndex)
+            let hubChair = CGPoint(x: hub.x, y: hub.y + 30)
+
+            let walker = person(tint: .labelColor)
+            walker.setScale(1.2)
+            walker.position = doorSpawn
+            walker.alpha = 0
+            room.addChild(walker)
+
+            var actions: [SKAction] = []
+            if delay > 0 {
+                actions.append(.wait(forDuration: delay))
+            }
+            actions.append(.fadeIn(withDuration: 0.15))
+            actions.append(.move(to: doorFront, duration: 0.25))
+
+            // 扉から hub 机の椅子へのルート
+            let topHallwayY = min(roomHeight - wallHeight - 16, hub.y + 40)
+            let points = [
+                CGPoint(x: doorFront.x, y: topHallwayY),
+                CGPoint(x: hub.x, y: topHallwayY),
+                hubChair
+            ]
+            var from = doorFront
+            for pt in points {
+                let dist = hypot(pt.x - from.x, pt.y - from.y)
+                guard dist > 1 else { continue }
+                actions.append(.move(to: pt, duration: max(0.05, TimeInterval(dist / walkSpeed))))
+                from = pt
+            }
+            actions.append(.run { [weak self, weak walker] in
+                walker?.removeAction(forKey: "bob")
+                walker?.removeFromParent()
+                self?.pendingArrivalRepos.remove(repo)
+                if let desk = self?.room.childNode(withName: "hub:\(repo)"),
+                   let occupant = desk.childNode(withName: "occupant") {
+                    occupant.isHidden = false
+                    occupant.setScale(1.2)
+                    occupant.run(.sequence([
+                        .scale(to: 1.38, duration: 0.12),
+                        .scale(to: 1.2, duration: 0.12),
+                    ]))
+                }
+            })
+
+            let bobAction = SKAction.repeatForever(.sequence([
+                .moveBy(x: 0, y: 1.2, duration: 0.12),
+                .moveBy(x: 0, y: -1.2, duration: 0.12),
+            ]))
+            walker.run(bobAction, withKey: "bob")
+            walker.run(.sequence(actions), withKey: "walk")
+
+            delay += 0.35
+        }
+
+        // 各席の担当エージェントが入室
+        for seatId in seatIds {
+            guard let home = homeSpot(of: seatId) else {
+                pendingArrivalSeats.remove(seatId)
+                refreshSeatOccupant(id: seatId)
+                continue
+            }
+
+            let walker = person(tint: .labelColor)
+            walker.setScale(1.2)
+            walker.position = doorSpawn
+            walker.alpha = 0
+            room.addChild(walker)
+            arriving[seatId] = walker
+
+            var actions: [SKAction] = []
+            if delay > 0 {
+                actions.append(.wait(forDuration: delay))
+            }
+            actions.append(.fadeIn(withDuration: 0.15))
+            actions.append(.move(to: doorFront, duration: 0.25))
+
+            let points = arrivalWaypoints(to: home.spot, island: home.island, seatIndex: home.seat)
+            var from = doorFront
+            for pt in points {
+                let dist = hypot(pt.x - from.x, pt.y - from.y)
+                guard dist > 1 else { continue }
+                actions.append(.move(to: pt, duration: max(0.05, TimeInterval(dist / walkSpeed))))
+                from = pt
+            }
+            actions.append(.run { [weak self, weak walker] in
+                walker?.removeAction(forKey: "bob")
+                walker?.removeFromParent()
+                self?.arriving.removeValue(forKey: seatId)
+                self?.pendingArrivalSeats.remove(seatId)
+                self?.refreshSeatOccupant(id: seatId)
+                if let desk = self?.room.childNode(withName: "seat:\(seatId)"),
+                   let occupant = desk.childNode(withName: "occupant") {
+                    occupant.run(.sequence([
+                        .scale(to: 1.38, duration: 0.12),
+                        .scale(to: 1.2, duration: 0.12),
+                    ]))
+                }
+            })
+
+            let bobAction = SKAction.repeatForever(.sequence([
+                .moveBy(x: 0, y: 1.2, duration: 0.12),
+                .moveBy(x: 0, y: -1.2, duration: 0.12),
+            ]))
+            walker.run(bobAction, withKey: "bob")
+            walker.run(.sequence(actions), withKey: "walk")
+
+            delay += 0.35
+        }
+
+        // 全員が出たあとに扉を閉める
+        run(.sequence([
+            .wait(forDuration: delay + 0.35),
+            .run { [weak self] in self?.animateDoor(open: false) }
+        ]))
+    }
+
     // MARK: - カメラ
 
     override func update(_ currentTime: TimeInterval) {
         // 手前のものほど後に描く。歩くたびに奥行きが変わるので毎フレーム引き直す
         for visitor in visitors.values { visitor.zPosition = -visitor.position.y }
         for visitor in returning.values { visitor.zPosition = -visitor.position.y }
+        for arriver in arriving.values { arriver.zPosition = -arriver.position.y }
 
         guard lastUpdate > 0 else {
             lastUpdate = currentTime
@@ -1655,6 +2029,13 @@ final class DeskScene: SKScene {
         if let calling = firstNeedingPerson() {
             focus = calling.point
             focusedIsland = calling.island
+            switchedAt = now
+            return
+        }
+
+        // 新しく入室してきた人が歩いていれば、その人をカメラで追う
+        if !arriving.isEmpty, let firstArriver = arriving.values.first {
+            focus = firstArriver.position
             switchedAt = now
             return
         }
