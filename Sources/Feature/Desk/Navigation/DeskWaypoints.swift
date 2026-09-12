@@ -138,7 +138,7 @@ struct DeskLayout {
         points.append(CGPoint(x: aisleX, y: topHallwayY))
 
         // 2. 主通路を南下し、スイートの扉の正面に出る
-        let doorApproachY = suite.doorY + 18
+        let doorApproachY = doorApproach(suite)
         points.append(CGPoint(x: aisleX, y: doorApproachY))
         points.append(CGPoint(x: suite.doorX, y: doorApproachY))
 
@@ -194,7 +194,7 @@ struct DeskLayout {
         points.append(CGPoint(x: suite.doorX, y: suite.entryLaneY))
 
         // 3. 扉を出て主通路を北上し、正面エントランスへ
-        let doorApproachY = suite.doorY + 18
+        let doorApproachY = doorApproach(suite)
         points.append(CGPoint(x: suite.doorX, y: doorApproachY))
         points.append(CGPoint(x: plan.mainAisleX, y: doorApproachY))
         points.append(CGPoint(x: plan.mainAisleX, y: topHallwayY))
@@ -264,6 +264,15 @@ struct DeskLayout {
             CGPoint(x: target.x, y: approachY),
             target
         ], from: start)
+    }
+
+    /// スイートの扉の正面に立つ高さ。
+    ///
+    /// 一番北のスイートは上端が北壁の横通路と接しているので、単純に扉の 18pt 手前を取ると
+    /// 通路より北、つまり壁の中に点が出る。そこへ寄ってから引き返す形になり、
+    /// 出入りのたびに壁を往復して見える。通路より北へは出さない
+    private func doorApproach(_ suite: OfficeFloorPlan.Suite) -> CGFloat {
+        min(topHallwayY, suite.doorY + 18)
     }
 
     /// 区画の行に対応する側面扉の高さ。扉は行ごとに開いているので一番近いものを選ぶ
