@@ -212,6 +212,7 @@ final class DeskScene: SKScene {
         builtWhiteboardKeys = Self.effectiveSummaries(from: rateLimits).map(\.key)
 
         buildFloor()
+        buildSuites()
 
         let layout = self.layout
         for (index, island) in islands.enumerated() {
@@ -290,6 +291,17 @@ final class DeskScene: SKScene {
             whiteboard.position = positions[i]
             room.addChild(whiteboard)
             whiteboardNodes.append(whiteboard)
+        }
+    }
+
+    /// 組織ごとのスイート（壁・扉・組織銘板）を敷く
+    private func buildSuites() {
+        let plan = self.plan
+        for suite in plan.suites {
+            let node = OfficeSuiteNode(suite: suite,
+                                       showsWalls: plan.style.showsWalls,
+                                       showsSideDoors: plan.style.showsLounge)
+            room.addChild(node)
         }
     }
 

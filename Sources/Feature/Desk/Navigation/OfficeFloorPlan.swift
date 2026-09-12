@@ -211,8 +211,11 @@ extension OfficeFloorPlan {
 
         let showsWalls = style.showsWalls
         let wallInset = showsWalls ? OfficeMetrics.wallInset : 0
-        let plateBandHeight = showsWalls ? OfficeMetrics.plateBand : 0
         let doorBandHeight = showsWalls ? OfficeMetrics.doorBand : 0
+        // 組織銘板の帯は壁を出さないときも残す。
+        // 壁が無いと組織の切れ目を示すものが何も無くなり、どこからどこまでが
+        // 同じ組織なのか分からなくなるため
+        let plateBandHeight = OfficeMetrics.plateBand
 
         // 各スイートの中身の高さを先に出す（部屋全体の高さが要るため）
         func seatRows(_ index: Int) -> Int {
