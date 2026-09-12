@@ -445,7 +445,9 @@ extension OfficeFloorPlan {
                         isVertical: false))
                 }
 
-                // 行ごとに西壁の側面扉を開ける。区画が縦に伸びても数歩でラウンジへ抜けられる
+                // 区画の行ごとに西壁の側面扉を開ける。
+                // エージェントは飛ぶようになったので通り道としては使われないが、
+                // 奥まった区画に出口が無いフロアは間取りとして不自然に見える
                 if style.showsLounge {
                     let doorCenterY = rowTop - rowHeight / 2
                     sideDoorYs.append(doorCenterY)

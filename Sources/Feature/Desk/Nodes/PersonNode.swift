@@ -212,9 +212,35 @@ final class PersonNode: SKNode {
         run(bobAction, withKey: "bob")
     }
 
-    /// 歩行時の上下ボブ運動を停止する
+    /// 飛行時のふわふわした上下動を開始する。
+    ///
+    /// 影を小さく薄くして、床から浮いていることを見せる。歩行のボブより周期を長く、
+    /// 振れ幅を大きくしてあり、同じ画面に歩く人と飛ぶエージェントが混ざっても区別が付く
+    func startHovering() {
+        shadow.removeAction(forKey: "lift")
+        shadow.run(.group([
+            .scale(to: 0.55, duration: 0.18),
+            .fadeAlpha(to: 0.45, duration: 0.18)
+        ]), withKey: "lift")
+
+        if action(forKey: "bob") != nil { return }
+        run(.repeatForever(.sequence([
+            .moveBy(x: 0, y: 2.2, duration: 0.42),
+            .moveBy(x: 0, y: -2.2, duration: 0.42),
+        ])), withKey: "bob")
+    }
+
+    /// 上下動を止めて着地する。
+    ///
+    /// 影を戻すのをここでまとめてやっているのは、歩き終わりも飛び終わりも
+    /// 呼ばれるのがこのメソッドだから。飛んだまま影が縮んだ状態で残るのを防ぐ
     func stopBobbing() {
         removeAction(forKey: "bob")
+        shadow.removeAction(forKey: "lift")
+        shadow.run(.group([
+            .scale(to: 1.0, duration: 0.18),
+            .fadeAlpha(to: 1.0, duration: 0.18)
+        ]), withKey: "lift")
     }
 
     /// 着席時などの嬉しいリアクション（ピョンと少し跳ねるスケール変化）

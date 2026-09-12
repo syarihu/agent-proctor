@@ -19,7 +19,14 @@ final class DeskScene: SKScene {
 
     // MARK: - 寸法とレイアウト
 
-    private let walkSpeed: CGFloat = 80
+    /// 人が床を歩く速さ (pt/秒)
+    private let walkSpeed: CGFloat = 120
+    /// エージェントが飛ぶ速さ (pt/秒)。
+    ///
+    /// 机や壁を避けて通路を辿らせると、リポジトリが増えて床が広がるほど移動が長くなる。
+    /// エージェントは飛べることにして、間取りに関係なく直線で結ぶ。
+    /// 人（リポジトリの担当者）は床を歩いたままにして、両者の違いを動きでも出す
+    private let flySpeed: CGFloat = 320
 
     /// 間取りをどこまで出すか。サイドバーは `.compact`、オフィス窓は `.suites`
     var layoutStyle: OfficeLayoutStyle = .compact {
@@ -439,24 +446,12 @@ final class DeskScene: SKScene {
             visitor.userData?.removeObject(forKey: "target")
             visitor.removeAction(forKey: "walk")
 
-            let points = layout.queueWaypoints(from: visitor.position, to: home.spot, island: home.island, seatIndex: home.seat)
-            var actions: [SKAction] = []
-            var from = visitor.position
-            for pt in points {
-                let dist = hypot(pt.x - from.x, pt.y - from.y)
-                guard dist > 1 else { continue }
-                actions.append(.move(to: pt, duration: max(0.05, TimeInterval(dist / walkSpeed))))
-                from = pt
-            }
-            actions.append(.run { [weak self, weak visitor] in
+            fly(visitor, to: home.spot) { [weak self, weak visitor] in
                 visitor?.stopBobbing()
                 visitor?.removeFromParent()
                 self?.returning.removeValue(forKey: id)
                 self?.refreshSeatOccupant(id: id)
-            })
-
-            visitor.startBobbing()
-            visitor.run(.sequence(actions), withKey: "walk")
+            }
         }
     }
 
@@ -467,26 +462,9 @@ final class DeskScene: SKScene {
         visitor.userData?["target"] = NSValue(point: target)
         visitor.removeAction(forKey: "walk")
 
-        let points = layout.queueWaypoints(from: visitor.position, to: target, island: island, seatIndex: seatIndex)
-        guard !points.isEmpty else {
-            visitor.stopBobbing()
-            return
-        }
-
-        var actions: [SKAction] = []
-        var from = visitor.position
-        for pt in points {
-            let dist = hypot(pt.x - from.x, pt.y - from.y)
-            guard dist > 1 else { continue }
-            actions.append(.move(to: pt, duration: max(0.05, TimeInterval(dist / walkSpeed))))
-            from = pt
-        }
-        actions.append(.run { [weak visitor] in
+        fly(visitor, to: target) { [weak visitor] in
             visitor?.stopBobbing()
-        })
-
-        visitor.startBobbing()
-        visitor.run(.sequence(actions), withKey: "walk")
+        }
     }
 
     private func refreshSeatOccupant(id: String) {
@@ -600,15 +578,7 @@ final class DeskScene: SKScene {
             return
         }
 
-        // ラウンジの中にいるなら席を移るだけ。自席からのルートを流すと、
-        // いったん部屋を出てスイートまで戻ってから帰ってくることになる
-        if layout.isInsideLounge(walker.position) {
-            walk(walker, along: [spot]) { [weak walker] in walker?.stopBobbing() }
-            return
-        }
-
-        let points = layout.loungeWaypoints(from: walker.position, island: island, seatIndex: seatIndex)
-        walk(walker, along: points) { [weak walker] in
+        fly(walker, to: spot) { [weak walker] in
             walker?.stopBobbing()
         }
     }
@@ -623,10 +593,7 @@ final class DeskScene: SKScene {
         }
         leavingLounge[id] = walker
 
-        let points = layout.returnFromLoungeWaypoints(from: walker.position,
-                                                      to: home.spot,
-                                                      island: home.island)
-        walk(walker, along: points) { [weak self, weak walker] in
+        fly(walker, to: home.spot) { [weak self, weak walker] in
             walker?.stopBobbing()
             walker?.removeFromParent()
             self?.leavingLounge.removeValue(forKey: id)
@@ -634,26 +601,29 @@ final class DeskScene: SKScene {
         }
     }
 
-    /// 折れ線に沿って歩かせる。距離から所要時間を出すので、遠いほどゆっくり着く
-    private func walk(_ walker: PersonNode, along points: [CGPoint], completion: @escaping () -> Void) {
+    /// エージェントを目的地までまっすぐ飛ばす。
+    ///
+    /// 通路を辿らないので、机やプランターや壁の位置に関係なく最短で着く
+    private func fly(_ walker: PersonNode, to target: CGPoint, completion: @escaping () -> Void) {
         walker.removeAction(forKey: "walk")
-        guard !points.isEmpty else {
+
+        let distance = hypot(target.x - walker.position.x, target.y - walker.position.y)
+        guard distance > 1 else {
             completion()
             return
         }
 
-        var actions: [SKAction] = []
-        var from = walker.position
-        for point in points {
-            let distance = hypot(point.x - from.x, point.y - from.y)
-            guard distance > 1 else { continue }
-            actions.append(.move(to: point, duration: max(0.05, TimeInterval(distance / walkSpeed))))
-            from = point
-        }
-        actions.append(.run(completion))
+        walker.startHovering()
+        walker.run(.sequence([Self.flight(to: target, distance: distance, speed: flySpeed),
+                              .run(completion)]),
+                   withKey: "walk")
+    }
 
-        walker.startBobbing()
-        walker.run(.sequence(actions), withKey: "walk")
+    /// 飛行の移動アクション。飛び立ちと着地をなめらかにする
+    private static func flight(to target: CGPoint, distance: CGFloat, speed: CGFloat) -> SKAction {
+        let move = SKAction.move(to: target, duration: max(0.12, TimeInterval(distance / speed)))
+        move.timingMode = .easeInEaseOut
+        return move
     }
 
     // MARK: - 扉の開閉連動
@@ -743,14 +713,12 @@ final class DeskScene: SKScene {
             actions.append(.fadeIn(withDuration: 0.15))
             actions.append(.move(to: doorFront, duration: 0.25))
 
-            let points = layout.arrivalWaypoints(to: home.spot, island: home.island, seatIndex: home.seat)
-            var from = doorFront
-            for pt in points {
-                let dist = hypot(pt.x - from.x, pt.y - from.y)
-                guard dist > 1 else { continue }
-                actions.append(.move(to: pt, duration: max(0.05, TimeInterval(dist / walkSpeed))))
-                from = pt
-            }
+            // 扉をくぐったら、あとは自席までまっすぐ飛ぶ
+            actions.append(.run { [weak walker] in walker?.startHovering() })
+            actions.append(Self.flight(to: home.spot,
+                                       distance: hypot(home.spot.x - doorFront.x,
+                                                       home.spot.y - doorFront.y),
+                                       speed: flySpeed))
             actions.append(.run { [weak self, weak walker] in
                 guard let self else { return }
                 walker?.stopBobbing()
@@ -766,7 +734,6 @@ final class DeskScene: SKScene {
                 }
             })
 
-            walker.startBobbing()
             walker.run(.sequence(actions), withKey: "walk")
             delay += 0.35
         }
@@ -811,6 +778,7 @@ final class DeskScene: SKScene {
                 ]))
             })
 
+            // 人は床を歩いて出ていく。扉に着く手前で開ける
             let waypoints = layout.departureWaypoints(from: walker.position)
             var from = walker.position
             var requestedOpen = false
@@ -884,7 +852,6 @@ final class DeskScene: SKScene {
             }
 
             departing[nodeKey] = walker
-            walker.startBobbing()
 
             var actions: [SKAction] = []
             if delay > 0 { actions.append(.wait(forDuration: delay)) }
@@ -912,22 +879,16 @@ final class DeskScene: SKScene {
                 ]))
             }
 
-            let waypoints = layout.departureWaypoints(from: walker.position)
-            var from = walker.position
-            var requestedOpen = false
-            for pt in waypoints {
-                if !requestedOpen && hypot(pt.x - doorFront.x, pt.y - doorFront.y) < 4 {
-                    requestedOpen = true
-                    actions.append(.run { [weak self] in self?.requestDoorOpen() })
-                }
-                let dist = hypot(pt.x - from.x, pt.y - from.y)
-                guard dist > 1 else { continue }
-                actions.append(.move(to: pt, duration: max(0.05, TimeInterval(dist / walkSpeed))))
-                from = pt
-            }
-            if !requestedOpen {
-                actions.append(.run { [weak self] in self?.requestDoorOpen() })
-            }
+            // 席を立ったら扉の正面までまっすぐ飛ぶ
+            let liftOff = walker.position
+            actions.append(.run { [weak self, weak walker] in
+                walker?.startHovering()
+                self?.requestDoorOpen()
+            })
+            actions.append(Self.flight(to: doorFront,
+                                       distance: hypot(doorFront.x - liftOff.x,
+                                                       doorFront.y - liftOff.y),
+                                       speed: flySpeed))
             actions.append(.group([
                 .move(to: doorSpawn, duration: 0.35),
                 .fadeOut(withDuration: 0.35)
