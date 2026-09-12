@@ -2,25 +2,94 @@ import AppKit
 import Foundation
 import SpriteKit
 
+/// 作業者の種類。
+/// 人間（リポジトリ担当者）とエージェント（AIセッション作業員）で外見を差別化し、
+/// 誰が人間で誰が自律エージェントかを一目で把握できるようにする。
+enum PersonKind: Equatable {
+    case human // リポジトリ担当の人間。髪・目・服（シャツ襟）を持つ
+    case agent // セッション作業員（AI）。バイザー・サイバー調の筐体を持つ
+}
+
 /// オフィスで働くエージェント・作業員の SpriteKit ノード。
 ///
 /// 俯瞰視点のため背丈を少し詰め、頭を大きめにして視認性を高めている。
 /// 作業の仕草（タイピング・読書／検索・ターミナル注視・思考）や歩行アニメーションをカプセル化する。
 final class PersonNode: SKNode {
+    // MARK: - カラー定義
+
+    /// 人間の肌色（ライト／ダーク両対応）
+    static let humanSkinColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.95, green: 0.81, blue: 0.70, alpha: 0.98)
+            : NSColor(red: 0.92, green: 0.78, blue: 0.67, alpha: 1.0)
+    }
+
+    /// 人間の髪色
+    static let humanHairColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.16, green: 0.14, blue: 0.18, alpha: 1.0)
+            : NSColor(red: 0.20, green: 0.18, blue: 0.22, alpha: 1.0)
+    }
+
+    /// 人間の服の色（開発者らしい落ち着いたセーター）
+    static let humanClothesColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.26, green: 0.44, blue: 0.64, alpha: 0.98)
+            : NSColor(red: 0.22, green: 0.40, blue: 0.60, alpha: 1.0)
+    }
+
+    /// 人間の目の色（見下ろし視点になじむ控えめなチャコール）
+    static let humanEyeColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.15, green: 0.13, blue: 0.16, alpha: 0.90)
+            : NSColor(red: 0.18, green: 0.16, blue: 0.20, alpha: 0.90)
+    }
+
+    /// 人間のシャツ襟色（セーターの下から覗く白い襟）
+    static let humanCollarColor = NSColor.white.withAlphaComponent(0.92)
+
+    /// エージェントの筐体色（クールなチタン／スレート調）
+    static let agentChassisColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.22, green: 0.26, blue: 0.33, alpha: 0.95)
+            : NSColor(red: 0.36, green: 0.40, blue: 0.47, alpha: 1.0)
+    }
+
+    /// エージェントのバイザースリット発光色（シアン）
+    static let agentVisorColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.20, green: 0.88, blue: 1.0, alpha: 0.98)
+            : NSColor(red: 0.05, green: 0.72, blue: 0.95, alpha: 1.0)
+    }
+
+    /// エージェントのバイザー光沢
+    static let agentVisorGlintColor = NSColor.white.withAlphaComponent(0.88)
+
+    /// エージェントの胸部コアLED色
+    static let agentCoreLedColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.20, green: 0.88, blue: 1.0, alpha: 0.90)
+            : NSColor(red: 0.05, green: 0.70, blue: 0.95, alpha: 0.95)
+    }
+
+    // MARK: - プロパティ
+
+    let kind: PersonKind
     let body: SKShapeNode
     let head: SKShapeNode
     let shadow: SKShapeNode
 
-    init(tint: NSColor) {
+    init(kind: PersonKind = .agent, tint: NSColor = .labelColor) {
+        self.kind = kind
+
         body = SKShapeNode(rect: CGRect(x: -7, y: 0, width: 14, height: 18),
                            cornerRadius: 6)
-        body.fillColor = tint.withAlphaComponent(0.75)
         body.strokeColor = .clear
 
         head = SKShapeNode(circleOfRadius: 7)
-        head.fillColor = tint.withAlphaComponent(0.85)
         head.strokeColor = .clear
         head.position = CGPoint(x: 0, y: 21)
+        head.zPosition = 5 // 体より前面に頭部を配置して襟や輪郭の重なりを綺麗に見せる
 
         shadow = SKShapeNode(ellipseOf: CGSize(width: 19, height: 7))
         shadow.fillColor = .black.withAlphaComponent(0.14)
@@ -32,6 +101,87 @@ final class PersonNode: SKNode {
         addChild(body)
         addChild(head)
         addChild(shadow)
+
+        switch kind {
+        case .human:
+            // 人間：セーター、白いシャツ襟、肌色の顔、髪型、目元を配置する
+            body.fillColor = Self.humanClothesColor
+
+            let collar = SKShapeNode()
+            let collarPath = CGMutablePath()
+            collarPath.move(to: CGPoint(x: -3.0, y: 15.0))
+            collarPath.addLine(to: CGPoint(x: 0, y: 12.0))
+            collarPath.addLine(to: CGPoint(x: 3.0, y: 15.0))
+            collar.path = collarPath
+            collar.strokeColor = Self.humanCollarColor
+            collar.lineWidth = 1.3
+            collar.lineCap = .round
+            collar.fillColor = .clear
+            collar.zPosition = 1
+            body.addChild(collar)
+
+            head.fillColor = Self.humanSkinColor
+
+            // 髪の毛（頭部上部を覆い、前髪の分け目を作る）
+            let hair = SKShapeNode()
+            let hairPath = CGMutablePath()
+            hairPath.move(to: CGPoint(x: -7.2, y: -1.5))
+            hairPath.addLine(to: CGPoint(x: -7.2, y: 0))
+            hairPath.addArc(center: .zero, radius: 7.2, startAngle: .pi, endAngle: 0, clockwise: true)
+            hairPath.addLine(to: CGPoint(x: 7.2, y: -1.5))
+            hairPath.addQuadCurve(to: CGPoint(x: 0.0, y: 2.2), control: CGPoint(x: 3.5, y: -0.2))
+            hairPath.addQuadCurve(to: CGPoint(x: -7.2, y: -1.5), control: CGPoint(x: -3.5, y: -0.5))
+            hairPath.closeSubpath()
+            hair.path = hairPath
+            hair.fillColor = Self.humanHairColor
+            hair.strokeColor = .clear
+            hair.zPosition = 2
+            head.addChild(hair)
+
+            // 目元（見下ろし視点に合わせた控えめな瞳）
+            let eyeL = SKShapeNode(circleOfRadius: 0.8)
+            eyeL.position = CGPoint(x: -2.6, y: -2.0)
+            eyeL.fillColor = Self.humanEyeColor
+            eyeL.strokeColor = .clear
+            eyeL.zPosition = 1
+            head.addChild(eyeL)
+
+            let eyeR = SKShapeNode(circleOfRadius: 0.8)
+            eyeR.position = CGPoint(x: 2.6, y: -2.0)
+            eyeR.fillColor = Self.humanEyeColor
+            eyeR.strokeColor = .clear
+            eyeR.zPosition = 1
+            head.addChild(eyeR)
+
+        case .agent:
+            // エージェント：サイバー調のチタン筐体、発光バイザー、胸部コアLED
+            let chassisFill = (tint == .labelColor) ? Self.agentChassisColor : tint.withAlphaComponent(0.85)
+            body.fillColor = chassisFill
+            head.fillColor = (tint == .labelColor) ? Self.agentChassisColor : tint.withAlphaComponent(0.90)
+
+            // 発光バイザースリット
+            let visor = SKShapeNode(rect: CGRect(x: -4.5, y: -2.2, width: 9.0, height: 2.4),
+                                    cornerRadius: 1.2)
+            visor.fillColor = Self.agentVisorColor
+            visor.strokeColor = .clear
+            visor.zPosition = 2
+            head.addChild(visor)
+
+            let visorGlint = SKShapeNode(rect: CGRect(x: -2.8, y: -1.4, width: 5.6, height: 0.8),
+                                         cornerRadius: 0.4)
+            visorGlint.fillColor = Self.agentVisorGlintColor
+            visorGlint.strokeColor = .clear
+            visorGlint.zPosition = 3
+            head.addChild(visorGlint)
+
+            // 胸部コアLED
+            let coreLed = SKShapeNode(circleOfRadius: 1.0)
+            coreLed.position = CGPoint(x: 0, y: 9.0)
+            coreLed.fillColor = Self.agentCoreLedColor
+            coreLed.strokeColor = .clear
+            coreLed.zPosition = 1
+            body.addChild(coreLed)
+        }
     }
 
     required init?(coder aDecoder: NSCoder) {

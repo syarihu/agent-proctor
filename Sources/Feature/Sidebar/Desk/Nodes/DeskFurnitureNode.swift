@@ -138,8 +138,8 @@ final class DeskFurnitureNode: SKNode {
         stackR.position = CGPoint(x: (width / 2 - 11), y: -6)
         stackR.zPosition = 3
 
-        // 席の作業者
-        occupant = PersonNode(tint: .labelColor)
+        // 席の作業者（リポジトリ担当者は人間、セッション作業員はAIエージェント）
+        occupant = PersonNode(kind: isHub ? .human : .agent)
         occupant.name = "occupant"
         occupant.setScale(1.2)
         occupant.position = CGPoint(x: 0, y: 30)
@@ -307,7 +307,8 @@ final class DeskFurnitureNode: SKNode {
                 helper.position = home
             } else {
                 childNode(withName: name)?.removeFromParent()
-                helper = PersonNode(tint: tint)
+                // 手伝いエージェント（サブエージェント）はAIとして生成
+                helper = PersonNode(kind: .agent, tint: tint)
                 helper.name = name
                 helper.setScale(0.94)
                 helper.position = home

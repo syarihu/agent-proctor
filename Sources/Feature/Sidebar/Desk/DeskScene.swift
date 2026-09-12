@@ -344,7 +344,7 @@ final class DeskScene: SKScene {
                 visitor = returningVisitor
                 visitors[seat.id] = visitor
             } else {
-                visitor = PersonNode(tint: .labelColor)
+                visitor = PersonNode(kind: .agent)
                 visitor.setScale(1.2)
                 visitor.position = layout.chairSpot(island: index, seat: seatIndex)
                 room.addChild(visitor)
@@ -463,7 +463,7 @@ final class DeskScene: SKScene {
             let hub = layout.hubPoint(island: islandIndex)
             let hubChair = CGPoint(x: hub.x, y: hub.y + 30)
 
-            let walker = PersonNode(tint: .labelColor)
+            let walker = PersonNode(kind: .human)
             walker.setScale(1.2)
             walker.position = doorSpawn
             walker.alpha = 0
@@ -517,7 +517,7 @@ final class DeskScene: SKScene {
                 continue
             }
 
-            let walker = PersonNode(tint: .labelColor)
+            let walker = PersonNode(kind: .agent)
             walker.setScale(1.2)
             walker.position = doorSpawn
             walker.alpha = 0
@@ -577,7 +577,7 @@ final class DeskScene: SKScene {
             guard let desk = room.childNode(withName: nodeKey) as? DeskFurnitureNode else { continue }
             guard !desk.occupant.isHidden else { continue }
 
-            let walker = PersonNode(tint: .labelColor)
+            let walker = PersonNode(kind: .human)
             walker.setScale(1.2)
             walker.position = CGPoint(x: desk.position.x, y: desk.position.y + 30)
             walker.alpha = 0
@@ -658,7 +658,7 @@ final class DeskScene: SKScene {
                 walker.removeAction(forKey: "walk")
                 wasSeated = false
             } else if let desk = desk, !desk.occupant.isHidden {
-                let newWalker = PersonNode(tint: .labelColor)
+                let newWalker = PersonNode(kind: .agent)
                 newWalker.setScale(1.2)
                 newWalker.position = CGPoint(x: desk.position.x, y: desk.position.y + 30)
                 newWalker.alpha = 0
