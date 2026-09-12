@@ -51,8 +51,15 @@ final class PersonNode: SKNode {
     /// エージェントの筐体色（クールなチタン／スレート調）
     static let agentChassisColor = NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(red: 0.22, green: 0.26, blue: 0.33, alpha: 0.95)
+            ? NSColor(red: 0.25, green: 0.30, blue: 0.38, alpha: 0.98)
             : NSColor(red: 0.36, green: 0.40, blue: 0.47, alpha: 1.0)
+    }
+
+    /// エージェントの輪郭線色（暗い部屋やモニタ前でも筐体をくっきり際立たせる白線）
+    static let agentStrokeColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor.white.withAlphaComponent(0.80)
+            : NSColor.white.withAlphaComponent(0.95)
     }
 
     /// エージェントのバイザースリット発光色（シアン）
@@ -154,10 +161,15 @@ final class PersonNode: SKNode {
             head.addChild(eyeR)
 
         case .agent:
-            // エージェント：サイバー調のチタン筐体、発光バイザー、胸部コアLED
+            // エージェント：サイバー調のチタン筐体、白い輪郭線、発光バイザー、胸部コアLED
             let chassisFill = (tint == .labelColor) ? Self.agentChassisColor : tint.withAlphaComponent(0.85)
             body.fillColor = chassisFill
+            body.strokeColor = Self.agentStrokeColor
+            body.lineWidth = 1.0
+
             head.fillColor = (tint == .labelColor) ? Self.agentChassisColor : tint.withAlphaComponent(0.90)
+            head.strokeColor = Self.agentStrokeColor
+            head.lineWidth = 1.0
 
             // 発光バイザースリット
             let visor = SKShapeNode(rect: CGRect(x: -4.5, y: -2.2, width: 9.0, height: 2.4),
