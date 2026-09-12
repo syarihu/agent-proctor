@@ -94,6 +94,7 @@ final class DeskScene: SKScene {
     private var knownSeatIds: Set<String> = []
     private var knownRepos: Set<String> = []
     private var hasInitializedArrivals = false
+    private let createdAt = Date()
 
     // MARK: - ライフサイクル
 
@@ -121,7 +122,13 @@ final class DeskScene: SKScene {
         if !hasInitializedArrivals {
             knownSeatIds = currentSeats
             knownRepos = currentRepos
-            hasInitializedArrivals = true
+            // 起動直後、台帳の読み込みが非同期で完了する前に空の配列が渡ってくることがある。
+            // 席またはリポジトリが存在する最初のデータを受け取った時点、
+            // または起動から一定時間（1.5秒）経過した時点で初期化完了とし、
+            // その時点のセッションは「最初から着席している既存セッション」として扱う
+            if !currentSeats.isEmpty || !currentRepos.isEmpty || Date().timeIntervalSince(createdAt) > 1.5 {
+                hasInitializedArrivals = true
+            }
             if !rebuildIfNeeded() { refreshSeats() }
             return
         }
@@ -163,7 +170,8 @@ final class DeskScene: SKScene {
     @discardableResult
     private func rebuildIfNeeded() -> Bool {
         guard size.height > 80 else { return false }
-        guard departing.isEmpty else { return false }
+        // 退室中・入室中のエージェントがいる間は部屋の組み直しを保留し、歩き終わるまで待つ
+        guard departing.isEmpty && arriving.isEmpty else { return false }
         let wanted = CGSize(width: roomWidth, height: roomHeight)
         guard skeleton(of: islands) != builtSkeleton
                 || columns != builtColumns
@@ -188,6 +196,8 @@ final class DeskScene: SKScene {
         returning.removeAll()
         arriving.removeAll()
         departing.removeAll()
+        pendingArrivalSeats.removeAll()
+        pendingArrivalRepos.removeAll()
         openDoorCount = 0
         activity = Array(repeating: 0, count: islands.count)
         builtSkeleton = skeleton(of: islands)
@@ -200,6 +210,9 @@ final class DeskScene: SKScene {
         for (index, island) in islands.enumerated() {
             let hubNode = DeskFurnitureNode(at: layout.hubPoint(island: index),
                                              label: island.repo, isHub: true, seat: nil)
+            if pendingArrivalRepos.contains(island.repo) {
+                hubNode.occupant.isHidden = true
+            }
             room.addChild(hubNode)
 
             for (slot, seat) in island.seats.enumerated() {
@@ -402,12 +415,17 @@ final class DeskScene: SKScene {
 
     private func refreshSeatOccupant(id: String) {
         guard let desk = room.childNode(withName: "seat:\(id)") as? DeskFurnitureNode else { return }
-        let isAway = visitors[id] != nil
-            || returning[id] != nil
-            || arriving[id] != nil
-            || departing[id] != nil
-            || pendingArrivalSeats.contains(id)
-        desk.occupant.isHidden = isAway
+        for island in islands {
+            if let seat = island.seats.first(where: { $0.id == id }) {
+                let isAway = visitors[id] != nil
+                    || returning[id] != nil
+                    || arriving[id] != nil
+                    || departing[id] != nil
+                    || pendingArrivalSeats.contains(id)
+                desk.dress(as: seat, isAway: isAway)
+                return
+            }
+        }
     }
 
     // MARK: - 扉の開閉連動
@@ -468,13 +486,17 @@ final class DeskScene: SKScene {
                 from = pt
             }
             actions.append(.run { [weak self, weak walker] in
+                guard let self else { return }
                 walker?.stopBobbing()
                 walker?.removeFromParent()
-                self?.pendingArrivalRepos.remove(repo)
-                if let desk = self?.room.childNode(withName: "hub:\(repo)") as? DeskFurnitureNode {
+                self.pendingArrivalRepos.remove(repo)
+                if let desk = self.room.childNode(withName: "hub:\(repo)") as? DeskFurnitureNode {
                     desk.occupant.isHidden = false
                     desk.occupant.setScale(1.2)
                     desk.occupant.cheer()
+                }
+                if self.arriving.isEmpty {
+                    _ = self.rebuildIfNeeded()
                 }
             })
 
@@ -511,13 +533,17 @@ final class DeskScene: SKScene {
                 from = pt
             }
             actions.append(.run { [weak self, weak walker] in
+                guard let self else { return }
                 walker?.stopBobbing()
                 walker?.removeFromParent()
-                self?.arriving.removeValue(forKey: seatId)
-                self?.pendingArrivalSeats.remove(seatId)
-                self?.refreshSeatOccupant(id: seatId)
-                if let desk = self?.room.childNode(withName: "seat:\(seatId)") as? DeskFurnitureNode {
+                self.arriving.removeValue(forKey: seatId)
+                self.pendingArrivalSeats.remove(seatId)
+                self.refreshSeatOccupant(id: seatId)
+                if let desk = self.room.childNode(withName: "seat:\(seatId)") as? DeskFurnitureNode {
                     desk.occupant.cheer()
+                }
+                if self.arriving.isEmpty {
+                    _ = self.rebuildIfNeeded()
                 }
             })
 
