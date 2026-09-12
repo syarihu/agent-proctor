@@ -3,60 +3,38 @@ import Foundation
 
 /// 事務所内の机・待機列・通路・扉の配置幾何と歩行ルート計算。
 ///
+/// 間取りそのものは `OfficeFloorPlan` が持ち、ここはそれを引いて座標とルートを返す窓口。
 /// SpriteKit シーンに依存せず純粋な座標計算として完結しているため、
 /// 単体テストや独立したプレビュー・別アプリへのスピンアウトでもそのまま利用できる。
 struct DeskLayout {
-    let roomWidth: CGFloat
-    let roomHeight: CGFloat
-    let wallHeight: CGFloat = 80
-    // 壁（80pt）と上部通路（20pt）、および人間の思考雲（高さ約34pt＋頭上余白）が
-    // 互いに干渉せず、人物の背後にゆったりとした北壁空間を確保するために 210pt を確保する
-    let topMargin: CGFloat = 210
-    let bottomMargin: CGFloat = 60
-    let islandSpacing: CGFloat
-    let islandHeight: CGFloat
-    let columns: Int = 1
-    let seatColumns: Int
-    let columnPitch: CGFloat
+    let plan: OfficeFloorPlan
+
+    var roomWidth: CGFloat { plan.size.width }
+    var roomHeight: CGFloat { plan.size.height }
+    var wallHeight: CGFloat { OfficeMetrics.wallHeight }
+    var seatColumns: Int { plan.seatColumns }
+    var columnPitch: CGFloat { plan.columnPitch }
+
     let deskWidth: CGFloat = 184
     let deskDepth: CGFloat = 24
     let hubDeskWidth: CGFloat = 104
-    let hubRowSpacing: CGFloat = 145
-    let rowSpacing: CGFloat = 185
-    static let partitionExtraSpacing: CGFloat = 80
-    let partitionBefore: Set<Int>
 
-    init(roomWidth: CGFloat,
-         roomHeight: CGFloat,
-         islandSpacing: CGFloat,
-         islandHeight: CGFloat,
-         seatColumns: Int,
-         columnPitch: CGFloat,
-         partitionBefore: Set<Int> = []) {
-        self.roomWidth = roomWidth
-        self.roomHeight = roomHeight
-        self.islandSpacing = islandSpacing
-        self.islandHeight = islandHeight
-        self.seatColumns = seatColumns
-        self.columnPitch = columnPitch
-        self.partitionBefore = partitionBefore
+    init(plan: OfficeFloorPlan) {
+        self.plan = plan
     }
 
     // MARK: - 主要ポイント
 
-    /// 正面エントランスの扉の位置（奥壁の左寄り、ホワイトボードと並ぶ位置）
+    /// 正面エントランスの扉の位置（北壁の左寄り、レート上限ボードと並ぶ位置）
     var doorPosition: CGPoint {
-        let hubX = roomWidth / 2
-        // 人間の左側に配置するホワイトボード（幅140、hubX - 100）と干渉せず、
-        // 部屋の左端からも適度な余白（最小64pt）を保つために hubX - 215 に配置する
-        let doorX = max(64, hubX - 215)
+        // 壁に掛かるボード（中央から左へ 100pt、幅 140pt）と干渉せず、
+        // 部屋の左端からも余白を保つ位置に開ける
+        let doorX = max(64, plan.contentCenterX - 215)
         return CGPoint(x: doorX, y: roomHeight - wallHeight)
     }
 
     /// 正面エントランス手前の横通路の高さ (Y)
-    var topHallwayY: CGFloat {
-        roomHeight - wallHeight - 20
-    }
+    var topHallwayY: CGFloat { plan.topHallwayY }
 
     /// 正面エントランス扉の真正面
     var doorFront: CGPoint {
@@ -69,28 +47,25 @@ struct DeskLayout {
     }
 
     /// ツール別ホワイトボードの配置位置一覧。
-    /// 正面エントランス扉（hubX - 215）の右側、および人間（hubX）を挟む形でツールごとに並べる。
+    /// スイート群の中心を基準に、正面エントランス扉の右側へ順に並べる。
     func whiteboardPositions(count: Int) -> [CGPoint] {
         guard count > 0 else { return [] }
-        let hubX = roomWidth / 2
+        let centerX = plan.contentCenterX
         // 壁面中央（全高80pt）の高さに掛け金具とともに配置する
         let boardY = roomHeight - wallHeight / 2 - 2
 
         if count == 1 {
-            return [CGPoint(x: hubX + 105, y: boardY)]
+            return [CGPoint(x: centerX + 105, y: boardY)]
         }
 
         var points: [CGPoint] = []
-        // 1枚目（Claude）: 人間の左側（扉 hubX - 215 と 人間 hubX の中間）
-        points.append(CGPoint(x: hubX - 100, y: boardY))
-
-        // 2枚目（Antigravity）: 人間の右側
-        points.append(CGPoint(x: hubX + 100, y: boardY))
-
+        // 1枚目（Claude）: 中心の左側（扉 centerX - 215 と 中心の中間）
+        points.append(CGPoint(x: centerX - 100, y: boardY))
+        // 2枚目（Antigravity）: 中心の右側
+        points.append(CGPoint(x: centerX + 100, y: boardY))
         // 3枚目以降（Codex や複数アカウント）: 右側へ順に展開
         for i in 2..<count {
-            let x = hubX + 100 + CGFloat(i - 1) * 155
-            points.append(CGPoint(x: x, y: boardY))
+            points.append(CGPoint(x: centerX + 100 + CGFloat(i - 1) * 155, y: boardY))
         }
         return points
     }
@@ -99,17 +74,7 @@ struct DeskLayout {
 
     /// 島の見出し (hub) の机の位置
     func hubPoint(island: Int) -> CGPoint {
-        let column = CGFloat(island % columns)
-        let row = CGFloat(island / columns)
-        let spread = islandSpacing * CGFloat(columns - 1)
-        var extra: CGFloat = 0
-        for i in 0...island {
-            if partitionBefore.contains(i) {
-                extra += Self.partitionExtraSpacing
-            }
-        }
-        return CGPoint(x: roomWidth / 2 - spread / 2 + islandSpacing * column,
-                       y: roomHeight - topMargin - islandHeight * row - extra)
+        plan.zone(island: island)?.hubPoint ?? CGPoint(x: roomWidth / 2, y: roomHeight / 2)
     }
 
     /// 各行において人間（中央の見出し机）に近い順に並べた列インデックスの配列。
@@ -130,18 +95,22 @@ struct DeskLayout {
 
     /// 島の中の机の位置。上の段から、人間（中央の hub 机）に近い列から順に配置していく
     func seatPoint(island: Int, index: Int) -> CGPoint {
-        let hub = hubPoint(island: island)
-        let spread = columnPitch * CGFloat(seatColumns - 1)
-        let row = index / seatColumns
-        let col = Self.columnOrder(seatColumns: seatColumns)[index % seatColumns]
-        return CGPoint(x: hub.x - spread / 2 + columnPitch * CGFloat(col),
-                       y: hub.y - hubRowSpacing - rowSpacing * CGFloat(row))
+        guard let zone = plan.zone(island: island), index < zone.seatPoints.count else {
+            return hubPoint(island: island)
+        }
+        return zone.seatPoints[index]
     }
 
     /// 机の後ろの椅子の位置（ディスプレイの目の前、座席の作業者の座標）
     func chairSpot(island: Int, seat: Int) -> CGPoint {
         let desk = seatPoint(island: island, index: seat)
         return CGPoint(x: desk.x, y: desk.y + 30)
+    }
+
+    /// hub の机の後ろの椅子の位置
+    func hubChairSpot(island: Int) -> CGPoint {
+        let hub = hubPoint(island: island)
+        return CGPoint(x: hub.x, y: hub.y + 30)
     }
 
     /// hub の机の前の待機列の位置
@@ -151,130 +120,87 @@ struct DeskLayout {
                        y: hub.y - 38 - CGFloat(slot) * 24)
     }
 
-    // MARK: - ローパーテーション座標計算
-
-    /// 仕切りを挟む前後の島の実際の机の占有幅から、パーテーションの左右の X 座標を計算する。
-    /// 画面幅いっぱいに伸ばさず、実際の机の配置エリアに合わせた自然な幅に収める。
-    func partitionSpan(prevIsland: DeskIsland, nextIsland: DeskIsland, prevIndex: Int, nextIndex: Int) -> (startX: CGFloat, endX: CGFloat) {
-        let hubX = roomWidth / 2
-        var minDeskX = hubX - hubDeskWidth / 2
-        var maxDeskX = hubX + hubDeskWidth / 2
-
-        for (slot, _) in prevIsland.seats.enumerated() {
-            let pt = seatPoint(island: prevIndex, index: slot)
-            minDeskX = min(minDeskX, pt.x - deskWidth / 2)
-            maxDeskX = max(maxDeskX, pt.x + deskWidth / 2)
-        }
-        for (slot, _) in nextIsland.seats.enumerated() {
-            let pt = seatPoint(island: nextIndex, index: slot)
-            minDeskX = min(minDeskX, pt.x - deskWidth / 2)
-            maxDeskX = max(maxDeskX, pt.x + deskWidth / 2)
-        }
-
-        // 机の占有幅に対して左右に 36pt の余白を取り、最小幅 360pt（モジュール約5枚分）を確保する
-        let contentWidth = maxDeskX - minDeskX
-        let targetWidth = max(360, contentWidth + 72)
-        let center = (minDeskX + maxDeskX) / 2
-        let startX = max(40, center - targetWidth / 2)
-        let endX = min(roomWidth - 40, center + targetWidth / 2)
-        return (startX, endX)
-    }
-
-    /// 異なる Organization 間のローパーテーションの Y 座標。
-    /// 前の島の連続帳票用紙の最下端と、次の島のハブ机上端の中間地点に配置し、用紙との重なりを防ぐ
-    func partitionY(prevIndex: Int, nextIndex: Int, prevSeatCount: Int) -> CGFloat {
-        let prevHub = hubPoint(island: prevIndex)
-        let nextHub = hubPoint(island: nextIndex)
-        let seatRows = max(1, (prevSeatCount + seatColumns - 1) / seatColumns)
-        let lowestSeatY = prevSeatCount > 0
-            ? prevHub.y - hubRowSpacing - rowSpacing * CGFloat(seatRows - 1)
-            : prevHub.y
-        // 連続帳票用紙の最下端（12 + 4 + 60 = 76pt 下）
-        let paperBottomY = prevSeatCount > 0 ? lowestSeatY - 76 : prevHub.y - 12
-        // 次の島のハブ机の作業員・ホワイトボード上端（nextHub.y + 37）
-        let nextHubTopY = nextHub.y + 37
-        return (paperBottomY + nextHubTopY) / 2
-    }
-
     // MARK: - 歩行ルート計算
+
+    /// 正面エントランス扉から、指定の区画の中の目的地までの折れ線。
+    ///
+    /// 北壁の扉 → 西の主通路 → スイートの扉 → スイートの西通路 → 区画の西通路 → 目的地。
+    /// 机やプランターの上を横切らないよう、通路として空けてある帯だけを辿る
+    private func routeIntoZone(target: CGPoint, island: Int, approachY: CGFloat) -> [CGPoint] {
+        guard let zone = plan.zone(island: island), let suite = plan.suite(island: island) else {
+            return [target]
+        }
+
+        var points: [CGPoint] = [doorFront]
+
+        // 1. 北壁の横通路を西の主通路まで移動する
+        let aisleX = plan.mainAisleX
+        points.append(CGPoint(x: aisleX, y: topHallwayY))
+
+        // 2. 主通路を南下し、スイートの扉の正面に出る
+        let doorApproachY = suite.doorY + 18
+        points.append(CGPoint(x: aisleX, y: doorApproachY))
+        points.append(CGPoint(x: suite.doorX, y: doorApproachY))
+
+        // 3. 扉をくぐり、スイートの西通路へ回り込む
+        points.append(CGPoint(x: suite.doorX, y: suite.entryLaneY))
+        points.append(CGPoint(x: suite.aisleX, y: suite.entryLaneY))
+
+        // 4. 目的の区画の高さまで南下し、区画の西通路へ入る
+        points.append(CGPoint(x: suite.aisleX, y: zone.northLaneY))
+        points.append(CGPoint(x: zone.westAisleX, y: zone.northLaneY))
+
+        // 5. 席の背後の高さまで下り、机の後ろから着席する
+        points.append(CGPoint(x: zone.westAisleX, y: approachY))
+        points.append(CGPoint(x: target.x, y: approachY))
+        points.append(target)
+
+        return Self.prune(points)
+    }
 
     /// 正面エントランス扉から指定の机の前までの歩行ルート
     func arrivalWaypoints(to target: CGPoint, island: Int, seatIndex: Int) -> [CGPoint] {
-        let hub = hubPoint(island: island)
-        let spread = columnPitch * CGFloat(seatColumns - 1)
-        let col0X = hub.x - spread / 2
-        let approachY = target.y + 26
-        let row = seatIndex / seatColumns
+        routeIntoZone(target: target, island: island, approachY: target.y + 26)
+    }
 
-        var points: [CGPoint] = []
-
-        // 1. 扉の正面（上部横通路）へ出る
-        points.append(doorFront)
-
-        if island == 0 && row == 0 {
-            // 最前列（Island 0, Row 0）の席の背後は北壁との間の広い空間のため、上部横通路から直接自分の列へ進入できる
-            if abs(doorFront.x - target.x) >= 4 {
-                points.append(CGPoint(x: target.x, y: topHallwayY))
-            }
-            if abs(topHallwayY - approachY) >= 4 {
-                points.append(CGPoint(x: target.x, y: approachY))
-            }
-        } else {
-            // 後続列（Row 1 以降）や後続の島へは、前列の机を横切らないよう西側の主通路（開口部）を回り込んで進む
-            let aisleX = min(doorFront.x - 24, col0X - (deskWidth / 2 + 36))
-            if abs(doorFront.x - aisleX) >= 4 {
-                points.append(CGPoint(x: aisleX, y: topHallwayY))
-            }
-            if abs(topHallwayY - approachY) >= 4 {
-                points.append(CGPoint(x: aisleX, y: approachY))
-            }
-            if abs(aisleX - target.x) >= 4 {
-                points.append(CGPoint(x: target.x, y: approachY))
-            }
-        }
-
-        // 椅子に着席する（南へ一歩進む）
-        points.append(target)
-
-        return points
+    /// 正面エントランス扉から指定の島のハブ机までの歩行ルート
+    func hubArrivalWaypoints(island: Int) -> [CGPoint] {
+        let chair = hubChairSpot(island: island)
+        return routeIntoZone(target: chair, island: island, approachY: chair.y + 26)
     }
 
     /// 机の前や待機列から正面エントランス扉への歩行ルート
     func departureWaypoints(from start: CGPoint) -> [CGPoint] {
-        let hubX = roomWidth / 2
-        let col0X = hubX - columnPitch * CGFloat(seatColumns - 1) / 2
+        guard let suite = suiteContaining(start) else {
+            return Self.prune([CGPoint(x: start.x, y: start.y + 26), doorFront])
+        }
+        let zone = zoneContaining(start, in: suite)
         let approachY = start.y + 26
-        let hub = hubPoint(island: 0)
-        let isRow0OrAbove = start.y >= hub.y - hubRowSpacing
 
         var points: [CGPoint] = []
 
-        // 1. 椅子から後ろ（北）へ一歩下がり、背後通路へ出る（机やモニタを突っ切らない）
+        // 1. 椅子から後ろ（北）へ一歩下がり、背後の通路へ出る（机やモニタを突っ切らない）
         points.append(CGPoint(x: start.x, y: approachY))
 
-        if isRow0OrAbove {
-            // 最前列（Row 0）または待機列からは直接扉へ向かえる
-            if abs(start.x - doorFront.x) >= 4 {
-                points.append(CGPoint(x: doorFront.x, y: approachY))
-            }
-            if abs(approachY - topHallwayY) >= 4 {
-                points.append(doorFront)
-            }
+        // 2. 区画の西通路 → スイートの西通路 → 扉の正面、と来た道を戻る
+        if let zone {
+            points.append(CGPoint(x: zone.westAisleX, y: approachY))
+            points.append(CGPoint(x: zone.westAisleX, y: zone.northLaneY))
+            points.append(CGPoint(x: suite.aisleX, y: zone.northLaneY))
         } else {
-            // 後続列からは西側南北主通路へ横移動して北上する
-            let aisleX = min(doorFront.x - 24, col0X - (deskWidth / 2 + 36))
-            if abs(start.x - aisleX) >= 4 {
-                points.append(CGPoint(x: aisleX, y: approachY))
-            }
-            if abs(approachY - topHallwayY) >= 4 {
-                points.append(CGPoint(x: aisleX, y: topHallwayY))
-            }
-            if abs(aisleX - doorFront.x) >= 4 {
-                points.append(doorFront)
-            }
+            points.append(CGPoint(x: suite.aisleX, y: approachY))
         }
+        points.append(CGPoint(x: suite.aisleX, y: suite.entryLaneY))
+        points.append(CGPoint(x: suite.doorX, y: suite.entryLaneY))
 
-        return points
+        // 3. 扉を出て主通路を北上し、正面エントランスへ
+        let doorApproachY = suite.doorY + 18
+        points.append(CGPoint(x: suite.doorX, y: doorApproachY))
+        points.append(CGPoint(x: plan.mainAisleX, y: doorApproachY))
+        points.append(CGPoint(x: plan.mainAisleX, y: topHallwayY))
+        points.append(doorFront)
+
+        return Self.prune(points, from: start)
     }
 
     /// 待機列へ向かう／待機列から席へ戻るための歩行ルート
@@ -282,9 +208,7 @@ struct DeskLayout {
         guard hypot(start.x - target.x, start.y - target.y) >= 2 else { return [] }
 
         // すでに同じ高さにいるなら直線で歩ける
-        if abs(start.y - target.y) < 4 {
-            return [target]
-        }
+        if abs(start.y - target.y) < 4 { return [target] }
 
         let hub = hubPoint(island: island)
 
@@ -293,41 +217,68 @@ struct DeskLayout {
             return [target]
         }
 
-        let row = seatIndex / seatColumns
+        let row = seatIndex / max(1, seatColumns)
 
-        // 最上段（Row 0）の席とハブ机の間には机が存在しないため直線
-        if row == 0 && seatColumns == 1 {
-            return [target]
-        }
+        // 最上段（Row 0）の席とハブ机の間には机が存在しないため直線で行き来できる
+        if row == 0 && seatColumns == 1 { return [target] }
 
         let isGoingToQueue = target.y > start.y
 
         if seatColumns > 1 {
+            // 列が複数あるときは、机と机の間（ハブ机の真下の中央通路）を縦に使う
             let centerAisleX = hub.x
             var points: [CGPoint] = []
             if isGoingToQueue {
-                if abs(start.x - centerAisleX) >= 4 {
-                    points.append(CGPoint(x: centerAisleX, y: start.y))
-                }
-                points.append(target)
+                points.append(CGPoint(x: centerAisleX, y: start.y))
             } else {
-                if abs(centerAisleX - target.x) >= 4 {
-                    points.append(CGPoint(x: centerAisleX, y: target.y))
-                }
-                points.append(target)
+                points.append(CGPoint(x: centerAisleX, y: target.y))
             }
-            return points
-        } else {
-            let aisleX = hub.x - (deskWidth / 2 + 14)
-            var points: [CGPoint] = []
-            if abs(start.x - aisleX) >= 4 {
-                points.append(CGPoint(x: aisleX, y: start.y))
-            }
-            points.append(CGPoint(x: aisleX, y: target.y))
-            if abs(aisleX - target.x) >= 4 {
-                points.append(target)
-            }
-            return points
+            points.append(target)
+            return Self.prune(points, from: start)
         }
+
+        // 1列のときは区画の西通路を回り込む
+        let aisleX = plan.zone(island: island)?.westAisleX ?? (hub.x - (deskWidth / 2 + 14))
+        return Self.prune([
+            CGPoint(x: aisleX, y: start.y),
+            CGPoint(x: aisleX, y: target.y),
+            target
+        ], from: start)
+    }
+
+    // MARK: - 補助
+
+    private func suiteContaining(_ point: CGPoint) -> OfficeFloorPlan.Suite? {
+        if let hit = plan.suites.first(where: { $0.frame.insetBy(dx: -8, dy: -8).contains(point) }) {
+            return hit
+        }
+        // 壁を出さない compact では枠の外に出ていることがあるので、一番近いスイートに寄せる
+        return plan.suites.min {
+            abs($0.frame.midY - point.y) < abs($1.frame.midY - point.y)
+        }
+    }
+
+    private func zoneContaining(_ point: CGPoint, in suite: OfficeFloorPlan.Suite) -> OfficeFloorPlan.RepoZone? {
+        if let hit = suite.zones.first(where: { $0.frame.insetBy(dx: -8, dy: -8).contains(point) }) {
+            return hit
+        }
+        return suite.zones.min {
+            hypot($0.hubPoint.x - point.x, $0.hubPoint.y - point.y)
+                < hypot($1.hubPoint.x - point.x, $1.hubPoint.y - point.y)
+        }
+    }
+
+    /// 折れ線から、直前の点とほぼ重なる点を落とす。
+    /// そのまま `SKAction.move` に流すと 0 距離の移動が挟まって歩きがカクつくため
+    private static func prune(_ points: [CGPoint], from start: CGPoint? = nil) -> [CGPoint] {
+        var result: [CGPoint] = []
+        var previous = start
+        for point in points {
+            if let previous, hypot(point.x - previous.x, point.y - previous.y) < 4 { continue }
+            result.append(point)
+            previous = point
+        }
+        if result.isEmpty, let last = points.last { result.append(last) }
+        return result
     }
 }

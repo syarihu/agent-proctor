@@ -118,6 +118,7 @@ private struct OfficeView: View {
                  rateLimits: store.rateLimitSummaries,
                  running: store.collecting,
                  persistenceKey: "OfficeWindow",
+                 style: .suites,
                  onOpen: onOpen)
             .background(Color(nsColor: .windowBackgroundColor))
     }

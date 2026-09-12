@@ -19,69 +19,50 @@ final class DeskScene: SKScene {
 
     // MARK: - 寸法とレイアウト
 
-    private let deskWidth: CGFloat = 184
-    private let hubDeskWidth: CGFloat = 104
-    private let deskDepth: CGFloat = 24
     private let walkSpeed: CGFloat = 80
-    private var columns: Int { 1 }
-    private var islandRows: Int { max(1, (islands.count + columns - 1) / columns) }
-    private var seatColumns: Int { max(1, min(6, Int(size.width / 245))) }
-    private var columnPitch: CGFloat { max(242, (size.width - 24) / CGFloat(seatColumns)) }
 
-    private var islandWidth: CGFloat {
-        deskWidth + columnPitch * CGFloat(seatColumns - 1)
-    }
-    private let hubRowSpacing: CGFloat = 145
-    private let rowSpacing: CGFloat = 185
-    private var islandSpacing: CGFloat { max(300, islandWidth + 110) }
-    private let sideMargin: CGFloat = 180
-    // 壁高（80pt）の導入に伴い、北壁・通路・人間の思考雲が干渉しないよう上部マージンを拡大する
-    private let topMargin: CGFloat = 210
-    private let bottomMargin: CGFloat = 60
-
-    private var islandHeight: CGFloat {
-        let seatRows = islands.map {
-            ($0.seats.count + seatColumns - 1) / seatColumns
-        }.max() ?? 1
-        return hubRowSpacing + rowSpacing * CGFloat(max(0, seatRows - 1)) + 190
-    }
-
-    private var roomWidth: CGFloat {
-        let naturalWidth = islandWidth + sideMargin * 2
-        let boardCount = max(2, rateLimits.count)
-        // 3枚以上のボードが壁に並ぶ場合、端が見切れないよう部屋の最小幅を確保する
-        let minWidthForBoards: CGFloat = boardCount >= 3 ? CGFloat(boardCount - 1) * 155 + 460 : 580
-        return max(minWidthForBoards, naturalWidth)
-    }
-
-    private var partitionIndices: Set<Int> {
-        var indices = Set<Int>()
-        var prevOrg: String? = nil
-        for (index, island) in islands.enumerated() {
-            if let prev = prevOrg, prev != island.organizationKey {
-                indices.insert(index)
-            }
-            prevOrg = island.organizationKey
+    /// 間取りをどこまで出すか。サイドバーは `.compact`、オフィス窓は `.suites`
+    var layoutStyle: OfficeLayoutStyle = .compact {
+        didSet {
+            guard layoutStyle != oldValue else { return }
+            rebuildIfNeeded()
         }
-        return indices
     }
 
-    private var roomHeight: CGFloat {
-        let extra = CGFloat(partitionIndices.count) * DeskLayout.partitionExtraSpacing
-        return max(size.height, topMargin + bottomMargin + islandHeight * CGFloat(islandRows) + extra)
+    /// 北壁に並ぶレート上限ボードが見切れないために要る部屋の最小幅
+    private var minContentWidth: CGFloat {
+        let boardCount = max(2, rateLimits.count)
+        return boardCount >= 3 ? CGFloat(boardCount - 1) * 155 + 460 : 580
     }
 
-    var layout: DeskLayout {
-        DeskLayout(
-            roomWidth: roomWidth,
-            roomHeight: roomHeight,
-            islandSpacing: islandSpacing,
-            islandHeight: islandHeight,
-            seatColumns: seatColumns,
-            columnPitch: columnPitch,
-            partitionBefore: partitionIndices
-        )
+    /// 間取りの計算結果。台帳・表示領域・見せ方が変わらない限り使い回す。
+    /// `layout` は1フレームに何度も引かれるので、その都度組み直すと無駄が大きい
+    private var cachedPlan: OfficeFloorPlan?
+    private var cachedPlanKey: String?
+
+    private var planKey: String {
+        "\(skeleton(of: islands))|\(Int(size.width))x\(Int(size.height))|\(layoutStyle)|\(Int(minContentWidth))"
     }
+
+    private var plan: OfficeFloorPlan {
+        let key = planKey
+        if let cachedPlan, cachedPlanKey == key { return cachedPlan }
+        let built = OfficeFloorPlan.build(
+            islands: islands,
+            viewport: size,
+            style: layoutStyle,
+            minContentWidth: minContentWidth,
+            noOrganizationName: Localized.text("app.group.no_organization"))
+        cachedPlan = built
+        cachedPlanKey = key
+        return built
+    }
+
+    private var roomWidth: CGFloat { plan.size.width }
+    private var roomHeight: CGFloat { plan.size.height }
+    private var seatColumns: Int { plan.seatColumns }
+
+    var layout: DeskLayout { DeskLayout(plan: plan) }
 
     // MARK: - シーンノードと状態
 
@@ -89,10 +70,7 @@ final class DeskScene: SKScene {
     private let eye = SKCameraNode()
     private let markers = SKNode()
 
-    private var builtRoom: CGSize = .zero
-    private var builtSkeleton: String?
-    private var builtColumns = 0
-    private var builtSeatColumns = 0
+    private var builtPlanKey: String?
     private var builtWhiteboardKeys: [String] = []
 
     private var islands: [DeskIsland] = []
@@ -209,15 +187,8 @@ final class DeskScene: SKScene {
         guard size.height > 80 else { return false }
         // 退室中・入室中のエージェントがいる間は部屋の組み直しを保留し、歩き終わるまで待つ
         guard departing.isEmpty && arriving.isEmpty else { return false }
-        let wanted = CGSize(width: roomWidth, height: roomHeight)
         let wantedKeys = Self.effectiveSummaries(from: rateLimits).map(\.key)
-        guard skeleton(of: islands) != builtSkeleton
-                || columns != builtColumns
-                || seatColumns != builtSeatColumns
-                || abs(wanted.width - builtRoom.width) > 1
-                || abs(wanted.height - builtRoom.height) > 1
-                || wantedKeys != builtWhiteboardKeys
-        else { return false }
+        guard planKey != builtPlanKey || wantedKeys != builtWhiteboardKeys else { return false }
         rebuild()
         return true
     }
@@ -237,44 +208,17 @@ final class DeskScene: SKScene {
         departing.removeAll()
         openDoorCount = 0
         activity = Array(repeating: 0, count: islands.count)
-        builtSkeleton = skeleton(of: islands)
-        builtColumns = columns
-        builtSeatColumns = seatColumns
-        builtRoom = CGSize(width: roomWidth, height: roomHeight)
+        builtPlanKey = planKey
         builtWhiteboardKeys = Self.effectiveSummaries(from: rateLimits).map(\.key)
 
         buildFloor()
 
-        // 異なる Organization の境界にローパーテーションを設置する
-        var previousOrgKey: String? = nil
-        var previousOrgName: String? = nil
+        let layout = self.layout
         for (index, island) in islands.enumerated() {
-            let currentOrgName = island.organizationName ?? Localized.text("app.group.no_organization")
-            if let prevOrg = previousOrgKey, prevOrg != island.organizationKey {
-                let prevIndex = index - 1
-                let (startX, endX) = layout.partitionSpan(prevIsland: islands[prevIndex],
-                                                          nextIsland: island,
-                                                          prevIndex: prevIndex,
-                                                          nextIndex: index)
-                let partitionY = layout.partitionY(prevIndex: prevIndex,
-                                                   nextIndex: index,
-                                                   prevSeatCount: islands[prevIndex].seats.count)
-                let partition = OfficePartitionNode(
-                    upperOrgName: previousOrgName ?? Localized.text("app.group.no_organization"),
-                    lowerOrgName: currentOrgName,
-                    startX: startX,
-                    endX: endX
-                )
-                partition.position = CGPoint(x: 0, y: partitionY)
-                partition.zPosition = -partitionY
-                room.addChild(partition)
-            }
-            previousOrgKey = island.organizationKey
-            previousOrgName = currentOrgName
-
+            let orgName = island.organizationName ?? Localized.text("app.group.no_organization")
             let hubNode = DeskFurnitureNode(at: layout.hubPoint(island: index),
-                                             label: island.repo, isHub: true, seat: nil,
-                                             orgName: currentOrgName)
+                                            label: island.repo, isHub: true, seat: nil,
+                                            orgName: orgName)
             if pendingArrivalRepos.contains(island.repo) {
                 hubNode.occupant.isHidden = true
             }
@@ -338,15 +282,6 @@ final class DeskScene: SKScene {
         door.position = layout.doorPosition
         room.addChild(door)
 
-        // 正面エントランス横に最上段 Organization の銘板を掲示する
-        if let topOrg = islands.first?.organizationName ?? (islands.isEmpty ? nil : Localized.text("app.group.no_organization")) {
-            let plaque = OfficePartitionNode.createEntrancePlaqueNode(orgName: topOrg)
-            plaque.position = CGPoint(x: layout.doorPosition.x + 48,
-                                      y: roomHeight - layout.wallHeight / 2 - 2)
-            plaque.zPosition = -9980
-            room.addChild(plaque)
-        }
-
         whiteboardNodes.removeAll()
         let effective = Self.effectiveSummaries(from: rateLimits)
         let positions = layout.whiteboardPositions(count: effective.count)
@@ -372,12 +307,7 @@ final class DeskScene: SKScene {
     private func validateLayout() {
         guard size.height > 80 else { return }
         guard departing.isEmpty && arriving.isEmpty else { return }
-        guard builtSkeleton == nil
-                || columns != builtColumns
-                || seatColumns != builtSeatColumns
-                || abs(roomWidth - builtRoom.width) > 1
-                || abs(roomHeight - builtRoom.height) > 1
-        else { return }
+        guard builtPlanKey == nil || builtPlanKey != planKey else { return }
         rebuild()
     }
 
@@ -537,7 +467,6 @@ final class DeskScene: SKScene {
 
         requestDoorOpen()
 
-        let topHallwayY = layout.topHallwayY
         let doorSpawn = layout.doorSpawn
         let doorFront = layout.doorFront
 
@@ -545,8 +474,6 @@ final class DeskScene: SKScene {
 
         for repo in repoNames {
             guard let islandIndex = islands.firstIndex(where: { $0.repo == repo }) else { continue }
-            let hub = layout.hubPoint(island: islandIndex)
-            let hubChair = CGPoint(x: hub.x, y: hub.y + 30)
 
             let walker = PersonNode(kind: .human)
             walker.setScale(1.2)
@@ -559,17 +486,7 @@ final class DeskScene: SKScene {
             actions.append(.fadeIn(withDuration: 0.15))
             actions.append(.move(to: doorFront, duration: 0.25))
 
-            let aisleX = islandIndex == 0
-                ? max(doorFront.x + 24, hub.x - (layout.hubDeskWidth / 2 + 36))
-                : doorFront.x
-            let approachY = hubChair.y + 26
-            let points = [
-                doorFront,
-                CGPoint(x: aisleX, y: topHallwayY),
-                CGPoint(x: aisleX, y: approachY),
-                CGPoint(x: hubChair.x, y: approachY),
-                hubChair
-            ]
+            let points = layout.hubArrivalWaypoints(island: islandIndex)
             var from = doorFront
             for pt in points {
                 let dist = hypot(pt.x - from.x, pt.y - from.y)
