@@ -89,6 +89,8 @@ final class DeskScene: SKScene {
     private var resting: [String: PersonNode] = [:]
     // ラウンジから自席へ戻っている最中のエージェント
     private var leavingLounge: [String: PersonNode] = [:]
+    // 休憩中の人が座っているラウンジの席番号。組み直しをまたいでも変えない
+    private var restSeats: [String: Int] = [:]
 
     // 扉の開閉要求カウンタ
     private var openDoorCount: Int = 0
@@ -509,8 +511,7 @@ final class DeskScene: SKScene {
 
         var counts: [OfficeLoungeNode.Board: Int] = [:]
         var attention: [OfficeLoungeNode.Attention] = []
-        var stillResting: Set<String> = []
-        var sofaIndex = 0
+        var onBreak: [(id: String, island: Int, slot: Int)] = []
 
         for (index, island) in islands.enumerated() {
             for (slot, seat) in island.seats.enumerated() {
@@ -522,17 +523,22 @@ final class DeskScene: SKScene {
                                                                 request: seat.request))
                 }
 
-                // ソファへ送るのは `seen` だけ。ディスプレイの「休憩中」は
+                // ラウンジへ送るのは `seen` だけ。ディスプレイの「休憩中」は
                 // サイドバーの完了の箱と同じ範囲なので、こちらより広い。
                 // 入口から歩いてきている最中の人は、着席してから改めて送る
                 guard seat.status == TaskStatus.seen,
                       !pendingArrivalSeats.contains(seat.id) else { continue }
-                stillResting.insert(seat.id)
-                sendToLounge(seat: seat, island: index, slot: slot, sofaIndex: sofaIndex)
-                sofaIndex += 1
+                onBreak.append((seat.id, index, slot))
             }
         }
 
+        assignRestSeats(to: onBreak.map(\.id))
+        for entry in onBreak {
+            sendToLounge(id: entry.id, island: entry.island, slot: entry.slot,
+                         seatIndex: restSeats[entry.id] ?? 0)
+        }
+
+        let stillResting = Set(onBreak.map(\.id))
         for (id, walker) in resting where !stillResting.contains(id) {
             returnFromLounge(id: id, walker: walker)
         }
@@ -540,41 +546,68 @@ final class DeskScene: SKScene {
         loungeNode?.setCounts(counts, attention: attention)
     }
 
-    private func sendToLounge(seat: DeskSeat, island: Int, slot: Int, sofaIndex: Int) {
-        guard let sofa = layout.sofaSpot(index: sofaIndex) else { return }
+    /// 休憩に入った人へラウンジの席を割り当てる。
+    ///
+    /// 並び順で毎回振り直すと、誰かが新しく休憩に入っただけで先にいた人の席がずれる。
+    /// 席がずれた人は座り直しに立ち上がるので、ラウンジ全体がその都度シャッフルされてしまう。
+    /// いったん座った席はその人が休憩を終えるまで手を付けず、空いた席だけを新しい人へ回す
+    private func assignRestSeats(to ids: [String]) {
+        restSeats = restSeats.filter { ids.contains($0.key) }
+
+        let capacity = layout.restSpotCount
+        guard capacity > 0 else { return }
+
+        var taken = Set(restSeats.values)
+        for id in ids where restSeats[id] == nil {
+            // 席が足りなければ番号を折り返す。`restSpot` 側で剰余を取るので相席になる
+            let free = (0..<capacity).first { !taken.contains($0) } ?? taken.count
+            restSeats[id] = free
+            taken.insert(free)
+        }
+    }
+
+    private func sendToLounge(id: String, island: Int, slot: Int, seatIndex: Int) {
+        guard let spot = layout.restSpot(index: seatIndex) else { return }
 
         let walker: PersonNode
-        if let existing = resting[seat.id] {
+        if let existing = resting[id] {
             walker = existing
-            // すでに同じソファへ向かっているなら歩き直させない
-            if let current = walker.userData?["sofa"] as? NSValue, current.pointValue == sofa { return }
-        } else if let coming = leavingLounge.removeValue(forKey: seat.id) {
+            // すでに同じ席へ向かっているなら歩き直させない
+            if let current = walker.userData?["seat"] as? NSValue, current.pointValue == spot { return }
+        } else if let coming = leavingLounge.removeValue(forKey: id) {
             // 戻る途中でまた休憩に入った。その場から向き直る
             walker = coming
-            resting[seat.id] = walker
+            resting[id] = walker
         } else {
             walker = PersonNode(kind: .agent)
             walker.setScale(1.2)
-            // 組み直しの置き直しなら、もう座っていたソファへ直接戻す。
+            // 組み直しの置き直しなら、もう座っていた席へ直接戻す。
             // 自席から歩かせると、部屋が組み変わるたびに休憩中の全員が往復する
             walker.position = isRestoringPlacement
-                ? sofa
+                ? spot
                 : layout.chairSpot(island: island, seat: slot)
             room.addChild(walker)
-            resting[seat.id] = walker
+            resting[id] = walker
         }
 
         if walker.userData == nil { walker.userData = NSMutableDictionary() }
-        walker.userData?["sofa"] = NSValue(point: sofa)
+        walker.userData?["seat"] = NSValue(point: spot)
 
         // すでに座面にいるなら歩くルートを組まない。
         // ルートは区画から扉を回って戻ってくる形なので、距離が 0 でも一周してしまう
-        guard hypot(walker.position.x - sofa.x, walker.position.y - sofa.y) >= 2 else {
+        guard hypot(walker.position.x - spot.x, walker.position.y - spot.y) >= 2 else {
             walker.stopBobbing()
             return
         }
 
-        let points = layout.loungeWaypoints(from: walker.position, island: island, sofaIndex: sofaIndex)
+        // ラウンジの中にいるなら席を移るだけ。自席からのルートを流すと、
+        // いったん部屋を出てスイートまで戻ってから帰ってくることになる
+        if layout.isInsideLounge(walker.position) {
+            walk(walker, along: [spot]) { [weak walker] in walker?.stopBobbing() }
+            return
+        }
+
+        let points = layout.loungeWaypoints(from: walker.position, island: island, seatIndex: seatIndex)
         walk(walker, along: points) { [weak walker] in
             walker?.stopBobbing()
         }
@@ -582,7 +615,7 @@ final class DeskScene: SKScene {
 
     private func returnFromLounge(id: String, walker: PersonNode) {
         resting.removeValue(forKey: id)
-        walker.userData?.removeObject(forKey: "sofa")
+        walker.userData?.removeObject(forKey: "seat")
 
         guard let home = homeSpot(of: id) else {
             walker.removeFromParent()

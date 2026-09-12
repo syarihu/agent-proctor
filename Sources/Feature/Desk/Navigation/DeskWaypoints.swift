@@ -218,21 +218,29 @@ struct DeskLayout {
 
     // MARK: - 共用ラウンジへの往復
 
-    /// ラウンジのソファの座面。番号が席の数を超えたら端から詰め直す
-    func sofaSpot(index: Int) -> CGPoint? {
-        guard let spots = plan.lounge?.sofaSpots, !spots.isEmpty else { return nil }
+    /// ラウンジに用意してある席の数
+    var restSpotCount: Int { plan.lounge?.seatSpots.count ?? 0 }
+
+    /// ラウンジの席。番号が席の数を超えたら端から詰め直す
+    func restSpot(index: Int) -> CGPoint? {
+        guard let spots = plan.lounge?.seatSpots, !spots.isEmpty else { return nil }
         return spots[index % spots.count]
+    }
+
+    /// その位置がラウンジの中か。中にいる人は席を移るだけで済ませる
+    func isInsideLounge(_ point: CGPoint) -> Bool {
+        plan.lounge?.frame.insetBy(dx: -14, dy: -14).contains(point) ?? false
     }
 
     /// 席から、区画の西通路と側面扉を抜けてラウンジのソファまでの歩行ルート。
     ///
     /// 北の正面玄関まで戻ってから南下すると、区画が下のほうにあるほど遠回りになる。
     /// 側面扉はそのために開けてある
-    func loungeWaypoints(from start: CGPoint, island: Int, sofaIndex: Int) -> [CGPoint] {
+    func loungeWaypoints(from start: CGPoint, island: Int, seatIndex: Int) -> [CGPoint] {
         guard let lounge = plan.lounge,
               let zone = plan.zone(island: island),
               let suite = plan.suite(island: island),
-              let sofa = sofaSpot(index: sofaIndex)
+              let sofa = restSpot(index: seatIndex)
         else { return [] }
 
         let doorY = sideDoorY(for: zone, in: suite)

@@ -155,9 +155,15 @@ final class OfficeLoungeNode: SKNode {
         cursor -= Self.gap + Self.barHeight
         addChild(drinkBar(width: width, y: cursor))
 
+        cursor -= Self.gap + OfficeMetrics.loungeTableRowHeight
+        addChild(tables(centers: lounge.tableCenters.map {
+            CGPoint(x: $0.x - lounge.frame.minX, y: $0.y - lounge.frame.minY)
+        }))
+
         cursor -= Self.gap + Self.sofaHeight
         addChild(sofa(width: width, y: cursor,
-                      spots: lounge.sofaSpots.map { $0.x - lounge.frame.minX }))
+                      spots: lounge.seatSpots.prefix(OfficeMetrics.loungeSofaSeats)
+                          .map { $0.x - lounge.frame.minX }))
 
         // 東側の出入口。ソファと同じ高さに開けて、入ってすぐ座れるようにする
         addChild(doorway(at: CGPoint(x: width, y: lounge.doorY - lounge.frame.minY)))
@@ -454,6 +460,54 @@ final class OfficeLoungeNode: SKNode {
             split.strokeColor = .clear
             split.zPosition = 2
             node.addChild(split)
+        }
+
+        return node
+    }
+
+    /// 丸テーブルと、それを囲む椅子。ソファ3席では4人目から座れない
+    private func tables(centers: [CGPoint]) -> SKNode {
+        let node = SKNode()
+        node.zPosition = Self.furnitureZ - Self.carpetZ
+
+        for center in centers {
+            // 椅子を先に描いて、天板を上に重ねる
+            for index in 0..<OfficeMetrics.loungeTableSeats {
+                let angle = CGFloat.pi / 2
+                    - CGFloat(index) * (.pi * 2 / CGFloat(OfficeMetrics.loungeTableSeats))
+                let seat = SKShapeNode(circleOfRadius: 7)
+                seat.position = CGPoint(
+                    x: center.x + cos(angle) * OfficeMetrics.loungeTableSeatRadius,
+                    y: center.y + sin(angle) * OfficeMetrics.loungeTableSeatRadius)
+                seat.fillColor = Self.sofaSeatColor
+                seat.strokeColor = Self.sofaColor
+                seat.lineWidth = 1.0
+                node.addChild(seat)
+            }
+
+            let shadow = SKShapeNode(circleOfRadius: OfficeMetrics.loungeTableRadius)
+            shadow.position = CGPoint(x: center.x + 1.5, y: center.y - 2.5)
+            shadow.fillColor = .black.withAlphaComponent(0.18)
+            shadow.strokeColor = .clear
+            shadow.zPosition = 1
+            node.addChild(shadow)
+
+            let top = SKShapeNode(circleOfRadius: OfficeMetrics.loungeTableRadius)
+            top.position = center
+            top.fillColor = Self.woodColor
+            top.strokeColor = Self.accentColor.withAlphaComponent(0.45)
+            top.lineWidth = 1.0
+            top.zPosition = 2
+            node.addChild(top)
+
+            // 天板の上のマグカップ
+            let mug = SKShapeNode(circleOfRadius: 3)
+            mug.position = CGPoint(x: center.x + 5, y: center.y + 3)
+            mug.fillColor = NSColor(white: 0.9, alpha: 0.95)
+            mug.strokeColor = NSColor(white: 0.55, alpha: 0.9)
+            mug.lineWidth = 0.6
+            mug.zPosition = 3
+            node.addChild(mug)
         }
 
         return node

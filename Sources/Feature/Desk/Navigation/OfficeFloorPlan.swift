@@ -72,6 +72,17 @@ enum OfficeMetrics {
     static let loungeHeaderHeight: CGFloat = 26
     static let loungeBarHeight: CGFloat = 26
     static let loungeSofaHeight: CGFloat = 40
+    /// ソファに並ぶ座面の数
+    static let loungeSofaSeats = 3
+
+    // 丸テーブル。ソファだけでは3人で埋まってしまい、4人目から席が回らない
+    static let loungeTableRowHeight: CGFloat = 78
+    static let loungeTableCount = 2
+    static let loungeTableRadius: CGFloat = 17
+    /// テーブルの中心から椅子までの距離
+    static let loungeTableSeatRadius: CGFloat = 27
+    /// テーブル1卓を囲む椅子の数
+    static let loungeTableSeats = 4
 
     /// 状態ディスプレイ1枚の高さ
     static let loungeDisplayHeight: CGFloat = 50
@@ -100,13 +111,19 @@ enum OfficeMetrics {
     /// ラウンジの高さ。中身を上から下へ積んだぶんだけ
     static var loungeHeight: CGFloat {
         loungePadding * 2
-            + loungeHeaderHeight + loungeBoardHeight + loungeBarHeight + loungeSofaHeight
-            + loungeGap * 3
+            + loungeHeaderHeight + loungeBoardHeight + loungeBarHeight
+            + loungeTableRowHeight + loungeSofaHeight
+            + loungeGap * 4
     }
 
     /// ラウンジの下端からソファの座面までの高さ
     static var loungeSofaOffset: CGFloat {
         loungePadding + loungeSofaHeight / 2
+    }
+
+    /// ラウンジの下端から丸テーブルの中心までの高さ
+    static var loungeTableOffset: CGFloat {
+        loungePadding + loungeSofaHeight + loungeGap + loungeTableRowHeight / 2
     }
     /// 部屋の外周に取る余白
     static let floorMargin: CGFloat = 32
@@ -177,8 +194,10 @@ struct OfficeFloorPlan {
         let frame: CGRect
         /// 東側の出入口の中心 Y。ソファと同じ高さに開けて、入ってすぐ座れるようにする
         let doorY: CGFloat
-        /// ソファの座面。休憩中のエージェントが座る位置
-        let sofaSpots: [CGPoint]
+        /// 休憩中のエージェントが座れる場所。ソファの座面が先、続いて丸テーブルの椅子
+        let seatSpots: [CGPoint]
+        /// 丸テーブルの中心
+        let tableCenters: [CGPoint]
     }
 
     let size: CGSize
@@ -443,13 +462,33 @@ extension OfficeFloorPlan {
                                y: first.frame.maxY - height,
                                width: OfficeMetrics.loungeWidth,
                                height: height)
+            // ソファの座面。詰めて座れるよう等間隔に割る
             let sofaY = frame.minY + OfficeMetrics.loungeSofaOffset
-            let sofaSpots = [
-                CGPoint(x: frame.midX - 34, y: sofaY),
-                CGPoint(x: frame.midX, y: sofaY),
-                CGPoint(x: frame.midX + 34, y: sofaY)
-            ]
-            lounge = Lounge(frame: frame, doorY: sofaY, sofaSpots: sofaSpots)
+            let sofaPitch: CGFloat = 34
+            let sofaSpread = sofaPitch * CGFloat(OfficeMetrics.loungeSofaSeats - 1)
+            var seatSpots = (0..<OfficeMetrics.loungeSofaSeats).map { index in
+                CGPoint(x: frame.midX - sofaSpread / 2 + sofaPitch * CGFloat(index), y: sofaY)
+            }
+
+            // 丸テーブル。ソファが埋まったらこちらへ座らせる
+            let tableY = frame.minY + OfficeMetrics.loungeTableOffset
+            let tablePitch: CGFloat = 124
+            let tableSpread = tablePitch * CGFloat(OfficeMetrics.loungeTableCount - 1)
+            let tableCenters = (0..<OfficeMetrics.loungeTableCount).map { index in
+                CGPoint(x: frame.midX - tableSpread / 2 + tablePitch * CGFloat(index), y: tableY)
+            }
+            for center in tableCenters {
+                // 卓を north / east / south / west の順に囲む
+                for index in 0..<OfficeMetrics.loungeTableSeats {
+                    let angle = CGFloat.pi / 2 - CGFloat(index) * (.pi * 2 / CGFloat(OfficeMetrics.loungeTableSeats))
+                    seatSpots.append(CGPoint(
+                        x: center.x + cos(angle) * OfficeMetrics.loungeTableSeatRadius,
+                        y: center.y + sin(angle) * OfficeMetrics.loungeTableSeatRadius))
+                }
+            }
+
+            lounge = Lounge(frame: frame, doorY: sofaY,
+                            seatSpots: seatSpots, tableCenters: tableCenters)
         }
 
         let centerX = suites.first?.frame.midX ?? roomWidth / 2
