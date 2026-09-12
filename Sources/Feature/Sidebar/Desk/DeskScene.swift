@@ -147,6 +147,8 @@ final class DeskScene: SKScene {
         }
 
         if !departedSeats.isEmpty || !departedRepos.isEmpty {
+            pendingArrivalSeats.subtract(departedSeats)
+            pendingArrivalRepos.subtract(departedRepos)
             animateDepartures(seatIds: departedSeats, repoNames: departedRepos)
         }
 
@@ -196,8 +198,6 @@ final class DeskScene: SKScene {
         returning.removeAll()
         arriving.removeAll()
         departing.removeAll()
-        pendingArrivalSeats.removeAll()
-        pendingArrivalRepos.removeAll()
         openDoorCount = 0
         activity = Array(repeating: 0, count: islands.count)
         builtSkeleton = skeleton(of: islands)
@@ -218,6 +218,9 @@ final class DeskScene: SKScene {
             for (slot, seat) in island.seats.enumerated() {
                 let seatNode = DeskFurnitureNode(at: layout.seatPoint(island: index, index: slot),
                                                  label: seat.name, isHub: false, seat: seat)
+                if pendingArrivalSeats.contains(seat.id) {
+                    seatNode.occupant.isHidden = true
+                }
                 room.addChild(seatNode)
             }
         }
@@ -283,7 +286,7 @@ final class DeskScene: SKScene {
 
     private func validateLayout() {
         guard size.height > 80 else { return }
-        guard departing.isEmpty else { return }
+        guard departing.isEmpty && arriving.isEmpty else { return }
         guard builtSkeleton == nil
                 || columns != builtColumns
                 || seatColumns != builtSeatColumns
