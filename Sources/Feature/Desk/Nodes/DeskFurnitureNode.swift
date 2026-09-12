@@ -23,6 +23,8 @@ final class DeskFurnitureNode: SKNode {
     let deskLabel: String
     let screen: SKShapeNode
     let occupant: PersonNode
+    /// 席が空いているときだけ出す、机の後ろに収まった椅子
+    let chair: SKNode
     let whiteboard: DeskWhiteboardNode
     var bubble: DeskWhiteboardNode { whiteboard }
     var paper: SKNode?
@@ -90,6 +92,49 @@ final class DeskFurnitureNode: SKNode {
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? NSColor(red: 0.95, green: 0.92, blue: 0.82, alpha: 0.98)
             : NSColor(red: 0.16, green: 0.14, blue: 0.12, alpha: 0.98)
+    }
+
+    // MARK: - 空席の椅子
+
+    static let chairSeatColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(white: 0.34, alpha: 0.95)
+            : NSColor(white: 0.62, alpha: 0.95)
+    }
+
+    static let chairBackColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(white: 0.44, alpha: 0.95)
+            : NSColor(white: 0.50, alpha: 0.95)
+    }
+
+    /// 上から見た事務椅子。背もたれを北（奥）、座面を手前に置く
+    static func createChairNode() -> SKNode {
+        let node = SKNode()
+
+        let seat = SKShapeNode(rect: CGRect(x: -9, y: -8, width: 18, height: 15), cornerRadius: 4)
+        seat.fillColor = chairSeatColor
+        seat.strokeColor = .clear
+        node.addChild(seat)
+
+        let back = SKShapeNode(rect: CGRect(x: -10, y: 5, width: 20, height: 5), cornerRadius: 2.5)
+        back.fillColor = chairBackColor
+        back.strokeColor = .clear
+        back.zPosition = 1
+        node.addChild(back)
+
+        // 5本脚のキャスターベース。座面から覗く足先だけを描く
+        for index in 0..<5 {
+            let angle = CGFloat(index) * (.pi * 2 / 5) - .pi / 2
+            let caster = SKShapeNode(circleOfRadius: 1.6)
+            caster.position = CGPoint(x: cos(angle) * 11, y: sin(angle) * 9 - 1)
+            caster.fillColor = chairBackColor
+            caster.strokeColor = .clear
+            caster.zPosition = -1
+            node.addChild(caster)
+        }
+
+        return node
     }
 
     // MARK: - 挙げた手テクスチャ
@@ -168,6 +213,13 @@ final class DeskFurnitureNode: SKNode {
         stackR.position = CGPoint(x: (width / 2 - 11), y: -6)
         stackR.zPosition = 3
 
+        // 空席のときに見える椅子。人がいる間は人物の下に完全に隠れるので出さない
+        chair = Self.createChairNode()
+        chair.name = "chair"
+        chair.position = CGPoint(x: 0, y: 30)
+        chair.zPosition = -21
+        chair.isHidden = true
+
         // 席の作業者（リポジトリ担当者は人間、セッション作業員はAIエージェント）
         occupant = PersonNode(kind: isHub ? .human : .agent)
         occupant.name = "occupant"
@@ -192,6 +244,7 @@ final class DeskFurnitureNode: SKNode {
         addChild(screen)
         addChild(stackL)
         addChild(stackR)
+        addChild(chair)
         addChild(occupant)
         addChild(whiteboard)
 
@@ -266,6 +319,8 @@ final class DeskFurnitureNode: SKNode {
             && !isAway
         occupant.isHidden = !seated
         if seated { occupant.setScale(1.2) }
+        // 席を外している間は椅子が机に収まって見える
+        chair.isHidden = seated || isMissing
 
         // 人の手が要るものだけ手を挙げる
         hand?.isHidden = !seat.needsPerson

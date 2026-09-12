@@ -85,6 +85,10 @@ final class DeskScene: SKScene {
     private var returning: [String: PersonNode] = [:]
     private var arriving: [String: PersonNode] = [:]
     private var departing: [String: PersonNode] = [:]
+    // 共用ラウンジで休憩中（または向かっている最中）のエージェント
+    private var resting: [String: PersonNode] = [:]
+    // ラウンジから自席へ戻っている最中のエージェント
+    private var leavingLounge: [String: PersonNode] = [:]
 
     // 扉の開閉要求カウンタ
     private var openDoorCount: Int = 0
@@ -207,6 +211,8 @@ final class DeskScene: SKScene {
         returning.removeAll()
         arriving.removeAll()
         departing.removeAll()
+        resting.removeAll()
+        leavingLounge.removeAll()
         openDoorCount = 0
         activity = Array(repeating: 0, count: islands.count)
         builtPlanKey = planKey
@@ -339,20 +345,30 @@ final class DeskScene: SKScene {
     // MARK: - 机の見た目更新
 
     private func refreshSeats() {
+        // 休憩の出入りを先に決める。あとで机を着替えさせるときに
+        // 「席を外している」判定へ反映する必要があるため
+        updateLounge()
+
         var queued: Set<String> = []
         for (index, island) in islands.enumerated() {
             for seat in island.seats {
                 guard let desk = room.childNode(withName: "seat:\(seat.id)") as? DeskFurnitureNode else { continue }
-                let isAway = visitors[seat.id] != nil
-                    || returning[seat.id] != nil
-                    || arriving[seat.id] != nil
-                    || departing[seat.id] != nil
-                    || pendingArrivalSeats.contains(seat.id)
-                desk.dress(as: seat, isAway: isAway)
+                desk.dress(as: seat, isAway: isAway(seat.id))
             }
             queued.formUnion(updateQueue(island: index))
         }
         dismissVisitors(keeping: queued)
+    }
+
+    /// その席の作業者がいま机を離れているか
+    private func isAway(_ id: String) -> Bool {
+        visitors[id] != nil
+            || returning[id] != nil
+            || arriving[id] != nil
+            || departing[id] != nil
+            || resting[id] != nil
+            || leavingLounge[id] != nil
+            || pendingArrivalSeats.contains(id)
     }
 
     private func homeSpot(of id: String) -> (island: Int, seat: Int, spot: CGPoint)? {
@@ -460,15 +476,112 @@ final class DeskScene: SKScene {
         guard let desk = room.childNode(withName: "seat:\(id)") as? DeskFurnitureNode else { return }
         for island in islands {
             if let seat = island.seats.first(where: { $0.id == id }) {
-                let isAway = visitors[id] != nil
-                    || returning[id] != nil
-                    || arriving[id] != nil
-                    || departing[id] != nil
-                    || pendingArrivalSeats.contains(id)
-                desk.dress(as: seat, isAway: isAway)
+                desk.dress(as: seat, isAway: isAway(id))
                 return
             }
         }
+    }
+
+    // MARK: - 共用ラウンジでの休憩
+
+    /// タスクを終えて確認も済んだエージェントをラウンジへ送り、
+    /// また動き出したエージェントを自席へ戻す。
+    ///
+    /// 送る相手を `seen`（完了かつ確認済み）に限るのは、`done` のあいだは
+    /// まだ手を挙げて人を待っているため。席を立つのは呼びかけが済んでから
+    private func updateLounge() {
+        guard layout.plan.lounge != nil else { return }
+
+        var onBreak: [String] = []
+        var stillResting: Set<String> = []
+        var sofaIndex = 0
+
+        for (index, island) in islands.enumerated() {
+            for (slot, seat) in island.seats.enumerated() where seat.status == TaskStatus.seen {
+                onBreak.append(seat.name)
+                stillResting.insert(seat.id)
+                sendToLounge(seat: seat, island: index, slot: slot, sofaIndex: sofaIndex)
+                sofaIndex += 1
+            }
+        }
+
+        for (id, walker) in resting where !stillResting.contains(id) {
+            returnFromLounge(id: id, walker: walker)
+        }
+
+        loungeNode?.setResting(onBreak)
+    }
+
+    private func sendToLounge(seat: DeskSeat, island: Int, slot: Int, sofaIndex: Int) {
+        guard let sofa = layout.sofaSpot(index: sofaIndex) else { return }
+
+        let walker: PersonNode
+        if let existing = resting[seat.id] {
+            walker = existing
+            // すでに同じソファへ向かっているなら歩き直させない
+            if let current = walker.userData?["sofa"] as? NSValue, current.pointValue == sofa { return }
+        } else if let coming = leavingLounge.removeValue(forKey: seat.id) {
+            // 戻る途中でまた休憩に入った。その場から向き直る
+            walker = coming
+            resting[seat.id] = walker
+        } else {
+            walker = PersonNode(kind: .agent)
+            walker.setScale(1.2)
+            walker.position = layout.chairSpot(island: island, seat: slot)
+            room.addChild(walker)
+            resting[seat.id] = walker
+        }
+
+        if walker.userData == nil { walker.userData = NSMutableDictionary() }
+        walker.userData?["sofa"] = NSValue(point: sofa)
+
+        let points = layout.loungeWaypoints(from: walker.position, island: island, sofaIndex: sofaIndex)
+        walk(walker, along: points) { [weak walker] in
+            walker?.stopBobbing()
+        }
+    }
+
+    private func returnFromLounge(id: String, walker: PersonNode) {
+        resting.removeValue(forKey: id)
+        walker.userData?.removeObject(forKey: "sofa")
+
+        guard let home = homeSpot(of: id) else {
+            walker.removeFromParent()
+            return
+        }
+        leavingLounge[id] = walker
+
+        let points = layout.returnFromLoungeWaypoints(from: walker.position,
+                                                      to: home.spot,
+                                                      island: home.island)
+        walk(walker, along: points) { [weak self, weak walker] in
+            walker?.stopBobbing()
+            walker?.removeFromParent()
+            self?.leavingLounge.removeValue(forKey: id)
+            self?.refreshSeatOccupant(id: id)
+        }
+    }
+
+    /// 折れ線に沿って歩かせる。距離から所要時間を出すので、遠いほどゆっくり着く
+    private func walk(_ walker: PersonNode, along points: [CGPoint], completion: @escaping () -> Void) {
+        walker.removeAction(forKey: "walk")
+        guard !points.isEmpty else {
+            completion()
+            return
+        }
+
+        var actions: [SKAction] = []
+        var from = walker.position
+        for point in points {
+            let distance = hypot(point.x - from.x, point.y - from.y)
+            guard distance > 1 else { continue }
+            actions.append(.move(to: point, duration: max(0.05, TimeInterval(distance / walkSpeed))))
+            from = point
+        }
+        actions.append(.run(completion))
+
+        walker.startBobbing()
+        walker.run(.sequence(actions), withKey: "walk")
     }
 
     // MARK: - 扉の開閉連動
