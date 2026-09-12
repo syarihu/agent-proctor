@@ -85,6 +85,8 @@ final class PersonNode: SKNode {
     let body: SKShapeNode
     let head: SKShapeNode
     let shadow: SKShapeNode
+    /// 飛行中に足元から出るロケットの噴射炎。止まっている間は隠しておく
+    let thruster: SKNode
 
     init(kind: PersonKind = .agent, tint: NSColor = .labelColor) {
         self.kind = kind
@@ -103,11 +105,18 @@ final class PersonNode: SKNode {
         shadow.strokeColor = .clear
         shadow.zPosition = -1
 
+        // 影（-1）より前、体（0）より後ろに置く。足元から噴いているように見せるため
+        thruster = Self.createThrusterNode()
+        thruster.position = CGPoint(x: 0, y: -1)
+        thruster.zPosition = -0.5
+        thruster.isHidden = true
+
         super.init()
 
         addChild(body)
         addChild(head)
         addChild(shadow)
+        addChild(thruster)
 
         switch kind {
         case .human:
@@ -212,16 +221,19 @@ final class PersonNode: SKNode {
         run(bobAction, withKey: "bob")
     }
 
-    /// 飛行時のふわふわした上下動を開始する。
+    /// 足元から噴射して飛び立つ。
     ///
-    /// 影を小さく薄くして、床から浮いていることを見せる。歩行のボブより周期を長く、
-    /// 振れ幅を大きくしてあり、同じ画面に歩く人と飛ぶエージェントが混ざっても区別が付く
+    /// 炎を出し、影を小さく薄くして床から浮いていることを見せる。
+    /// 上下動は歩行のボブより周期を長く振れ幅を大きくしてあり、
+    /// 同じ画面に歩く人と飛ぶエージェントが混ざっても区別が付く
     func startHovering() {
         shadow.removeAction(forKey: "lift")
         shadow.run(.group([
             .scale(to: 0.55, duration: 0.18),
             .fadeAlpha(to: 0.45, duration: 0.18)
         ]), withKey: "lift")
+
+        igniteThruster()
 
         if action(forKey: "bob") != nil { return }
         run(.repeatForever(.sequence([
@@ -232,8 +244,8 @@ final class PersonNode: SKNode {
 
     /// 上下動を止めて着地する。
     ///
-    /// 影を戻すのをここでまとめてやっているのは、歩き終わりも飛び終わりも
-    /// 呼ばれるのがこのメソッドだから。飛んだまま影が縮んだ状態で残るのを防ぐ
+    /// 炎と影を戻すのをここでまとめてやっているのは、歩き終わりも飛び終わりも
+    /// 呼ばれるのがこのメソッドだから。飛んだまま炎が出たり影が縮んだままになるのを防ぐ
     func stopBobbing() {
         removeAction(forKey: "bob")
         shadow.removeAction(forKey: "lift")
@@ -241,6 +253,82 @@ final class PersonNode: SKNode {
             .scale(to: 1.0, duration: 0.18),
             .fadeAlpha(to: 1.0, duration: 0.18)
         ]), withKey: "lift")
+        cutThruster()
+    }
+
+    /// 点火。ドンと吹き上がってから、ゆらぎの繰り返しに移る
+    private func igniteThruster() {
+        guard thruster.isHidden || thruster.action(forKey: "flicker") == nil else { return }
+
+        thruster.removeAllActions()
+        thruster.isHidden = false
+        thruster.alpha = 1
+        thruster.setScale(0.25)
+
+        thruster.run(.sequence([
+            .scale(to: 1.25, duration: 0.10),
+            .scale(to: 1.0, duration: 0.08),
+            .run { [weak self] in self?.flickerThruster() }
+        ]), withKey: "launch")
+    }
+
+    /// 炎のゆらぎ。縦に伸び縮みさせて燃えているように見せる
+    private func flickerThruster() {
+        thruster.run(.repeatForever(.sequence([
+            .group([.scaleY(to: 0.78, duration: 0.07), .fadeAlpha(to: 0.82, duration: 0.07)]),
+            .group([.scaleY(to: 1.16, duration: 0.09), .fadeAlpha(to: 1.0, duration: 0.09)])
+        ])), withKey: "flicker")
+    }
+
+    /// 消火。すぼめて消す
+    private func cutThruster() {
+        guard !thruster.isHidden else { return }
+        thruster.removeAllActions()
+        thruster.run(.sequence([
+            .group([.scale(to: 0.1, duration: 0.14), .fadeOut(withDuration: 0.14)]),
+            .hide()
+        ]))
+    }
+
+    // MARK: - 噴射炎
+
+    /// 下向きに伸びる噴射炎。外炎・内炎・ノズルの3枚で描く
+    private static func createThrusterNode() -> SKNode {
+        let node = SKNode()
+        node.name = "thruster"
+
+        let outer = SKShapeNode(path: flamePath(width: 10, length: 18))
+        outer.fillColor = NSColor(red: 1.0, green: 0.44, blue: 0.10, alpha: 0.92)
+        outer.strokeColor = .clear
+        node.addChild(outer)
+
+        let inner = SKShapeNode(path: flamePath(width: 5, length: 11))
+        inner.fillColor = NSColor(red: 1.0, green: 0.90, blue: 0.48, alpha: 0.96)
+        inner.strokeColor = .clear
+        inner.zPosition = 1
+        node.addChild(inner)
+
+        // 噴射口。炎の根元を締めて、体から直接火が出ているように見えるのを防ぐ
+        let nozzle = SKShapeNode(rect: CGRect(x: -4.5, y: -2, width: 9, height: 3.5), cornerRadius: 1.4)
+        nozzle.fillColor = NSColor(white: 0.38, alpha: 1.0)
+        nozzle.strokeColor = NSColor(white: 0.62, alpha: 0.9)
+        nozzle.lineWidth = 0.6
+        nozzle.zPosition = 2
+        node.addChild(nozzle)
+
+        return node
+    }
+
+    /// 根元の幅が `width`、原点から下へ `length` 伸びる炎の形
+    private static func flamePath(width: CGFloat, length: CGFloat) -> CGPath {
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: -width / 2, y: 0))
+        path.addQuadCurve(to: CGPoint(x: 0, y: -length),
+                          control: CGPoint(x: -width / 2, y: -length * 0.55))
+        path.addQuadCurve(to: CGPoint(x: width / 2, y: 0),
+                          control: CGPoint(x: width / 2, y: -length * 0.55))
+        path.closeSubpath()
+        return path
     }
 
     /// 着席時などの嬉しいリアクション（ピョンと少し跳ねるスケール変化）
