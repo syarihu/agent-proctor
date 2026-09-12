@@ -294,7 +294,7 @@ final class DeskScene: SKScene {
         }
     }
 
-    /// 組織ごとのスイート（壁・扉・組織銘板）を敷く
+    /// 組織ごとのスイート（壁・扉・組織銘板）と、その中のリポジトリ区画の仕切りを敷く
     private func buildSuites() {
         let plan = self.plan
         for suite in plan.suites {
@@ -302,6 +302,10 @@ final class DeskScene: SKScene {
                                        showsWalls: plan.style.showsWalls,
                                        showsSideDoors: plan.style.showsLounge)
             room.addChild(node)
+
+            for planter in suite.planters {
+                room.addChild(OfficePlanterNode(planter: planter))
+            }
         }
     }
 
