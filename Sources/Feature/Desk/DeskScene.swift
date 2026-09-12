@@ -54,8 +54,21 @@ final class DeskScene: SKScene {
         return max(minWidthForBoards, naturalWidth)
     }
 
+    private var partitionIndices: Set<Int> {
+        var indices = Set<Int>()
+        var prevOrg: String? = nil
+        for (index, island) in islands.enumerated() {
+            if let prev = prevOrg, prev != island.organizationKey {
+                indices.insert(index)
+            }
+            prevOrg = island.organizationKey
+        }
+        return indices
+    }
+
     private var roomHeight: CGFloat {
-        max(size.height, topMargin + bottomMargin + islandHeight * CGFloat(islandRows))
+        let extra = CGFloat(partitionIndices.count) * DeskLayout.partitionExtraSpacing
+        return max(size.height, topMargin + bottomMargin + islandHeight * CGFloat(islandRows) + extra)
     }
 
     var layout: DeskLayout {
@@ -65,7 +78,8 @@ final class DeskScene: SKScene {
             islandSpacing: islandSpacing,
             islandHeight: islandHeight,
             seatColumns: seatColumns,
-            columnPitch: columnPitch
+            columnPitch: columnPitch,
+            partitionBefore: partitionIndices
         )
     }
 
@@ -233,23 +247,34 @@ final class DeskScene: SKScene {
 
         // 異なる Organization の境界にローパーテーションを設置する
         var previousOrgKey: String? = nil
+        var previousOrgName: String? = nil
         for (index, island) in islands.enumerated() {
+            let currentOrgName = island.organizationName ?? Localized.text("app.group.no_organization")
             if let prevOrg = previousOrgKey, prevOrg != island.organizationKey {
-                let nextHub = layout.hubPoint(island: index)
-                let partitionY = layout.partitionY(nextHubY: nextHub.y)
+                let prevIndex = index - 1
+                let (startX, endX) = layout.partitionSpan(prevIsland: islands[prevIndex],
+                                                          nextIsland: island,
+                                                          prevIndex: prevIndex,
+                                                          nextIndex: index)
+                let partitionY = layout.partitionY(prevIndex: prevIndex,
+                                                   nextIndex: index,
+                                                   prevSeatCount: islands[prevIndex].seats.count)
                 let partition = OfficePartitionNode(
-                    orgName: island.organizationName ?? Localized.text("app.group.no_organization"),
-                    startX: layout.partitionStartX,
-                    endX: layout.partitionEndX
+                    upperOrgName: previousOrgName ?? Localized.text("app.group.no_organization"),
+                    lowerOrgName: currentOrgName,
+                    startX: startX,
+                    endX: endX
                 )
                 partition.position = CGPoint(x: 0, y: partitionY)
                 partition.zPosition = -partitionY
                 room.addChild(partition)
             }
             previousOrgKey = island.organizationKey
+            previousOrgName = currentOrgName
 
             let hubNode = DeskFurnitureNode(at: layout.hubPoint(island: index),
-                                             label: island.repo, isHub: true, seat: nil)
+                                             label: island.repo, isHub: true, seat: nil,
+                                             orgName: currentOrgName)
             if pendingArrivalRepos.contains(island.repo) {
                 hubNode.occupant.isHidden = true
             }
@@ -312,6 +337,15 @@ final class DeskScene: SKScene {
         let door = EntranceDoorNode(wallHeight: layout.wallHeight)
         door.position = layout.doorPosition
         room.addChild(door)
+
+        // 正面エントランス横に最上段 Organization の銘板を掲示する
+        if let topOrg = islands.first?.organizationName ?? (islands.isEmpty ? nil : Localized.text("app.group.no_organization")) {
+            let plaque = OfficePartitionNode.createEntrancePlaqueNode(orgName: topOrg)
+            plaque.position = CGPoint(x: layout.doorPosition.x + 48,
+                                      y: roomHeight - layout.wallHeight / 2 - 2)
+            plaque.zPosition = -9980
+            room.addChild(plaque)
+        }
 
         whiteboardNodes.removeAll()
         let effective = Self.effectiveSummaries(from: rateLimits)

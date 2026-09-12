@@ -6,7 +6,8 @@ import SpriteKit
 /// 異なる Organization 間の境界に設置されるオフィスローパーテーション（衝立）。
 ///
 /// 腰高〜胸高の半透明すりガラスと吸音クロスパネルのコンビネーション構造を持ち、
-/// 西側主通路（開口部）のポストには組織名を示すサインプレートが掲示される。
+/// 通路側のポストには、上側エリア（▲）と下側エリア（▼）の双方の組織名を明示した
+/// ディレクトリサインプレートが掲示される。
 /// 立った状態でのオフィス全体の見通しを保ちつつ、異なるチーム・組織間のエリアを明確に分ける。
 final class OfficePartitionNode: SKNode {
     // MARK: - カラー定義（Light / Dark 両対応）
@@ -65,10 +66,16 @@ final class OfficePartitionNode: SKNode {
             : NSColor(red: 0.30, green: 0.48, blue: 0.72, alpha: 0.85)
     }
 
-    static let signTextColor = NSColor(name: nil) { appearance in
+    static let upperTextColor = NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(red: 0.88, green: 0.92, blue: 0.98, alpha: 0.98)
-            : NSColor(red: 0.15, green: 0.25, blue: 0.42, alpha: 0.98)
+            ? NSColor(red: 0.50, green: 0.82, blue: 1.0, alpha: 0.98)
+            : NSColor(red: 0.08, green: 0.40, blue: 0.72, alpha: 0.98)
+    }
+
+    static let lowerTextColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 1.0, green: 0.76, blue: 0.38, alpha: 0.98)
+            : NSColor(red: 0.78, green: 0.42, blue: 0.05, alpha: 0.98)
     }
 
     // MARK: - 組織アイコンテクスチャ
@@ -89,11 +96,11 @@ final class OfficePartitionNode: SKNode {
 
     // MARK: - 初期化
 
-    init(orgName: String, startX: CGFloat, endX: CGFloat) {
+    init(upperOrgName: String, lowerOrgName: String, startX: CGFloat, endX: CGFloat) {
         super.init()
 
         let totalWidth = max(40, endX - startX)
-        name = "partition:\(orgName)"
+        name = "partition:\(upperOrgName)->\(lowerOrgName)"
 
         // 1. 床の接地影（パーテーションの存在感を床面に落とす）
         let shadow = SKShapeNode(rect: CGRect(x: startX - 2, y: -2, width: totalWidth + 4, height: 3),
@@ -207,8 +214,8 @@ final class OfficePartitionNode: SKNode {
             }
         }
 
-        // 4. 西側通路沿いのエントランス支柱サインプレート
-        let sign = buildSignNode(orgName: orgName, at: CGPoint(x: startX, y: 36))
+        // 4. 通路側のエントランス支柱サインプレート（仕切り前後の組織名を表示）
+        let sign = buildSignNode(upperOrgName: upperOrgName, lowerOrgName: lowerOrgName, at: CGPoint(x: startX, y: 36))
         sign.zPosition = 5
         addChild(sign)
     }
@@ -219,7 +226,7 @@ final class OfficePartitionNode: SKNode {
 
     // MARK: - サインプレート生成
 
-    private func buildSignNode(orgName: String, at position: CGPoint) -> SKNode {
+    private func buildSignNode(upperOrgName: String, lowerOrgName: String, at position: CGPoint) -> SKNode {
         let node = SKNode()
         node.position = position
 
@@ -229,37 +236,94 @@ final class OfficePartitionNode: SKNode {
         bracket.strokeColor = .clear
         node.addChild(bracket)
 
-        // プレートの幅を文字長に応じて計算
-        let displayText = SpeechBubbleNode.truncateScreenText(orgName, limit: 14)
-        let textWidth = CGFloat(displayText.count) * 6.8
-        let badgeWidth = max(56, min(140, textWidth + 30))
-        let badgeHeight: CGFloat = 17
+        let upperDisplay = SpeechBubbleNode.truncateScreenText(upperOrgName, limit: 12)
+        let lowerDisplay = SpeechBubbleNode.truncateScreenText(lowerOrgName, limit: 12)
+
+        let upperText = "▲ \(upperDisplay)"
+        let lowerText = "▼ \(lowerDisplay)"
+
+        let upperWidth = CGFloat(upperText.count) * 6.2
+        let lowerWidth = CGFloat(lowerText.count) * 6.2
+        let badgeWidth = max(110, upperWidth + lowerWidth + 30)
+        let badgeHeight: CGFloat = 18
 
         let badgeRect = CGRect(x: -2, y: 4, width: badgeWidth, height: badgeHeight)
-        let badge = SKShapeNode(rect: badgeRect, cornerRadius: 3.5)
+        let badge = SKShapeNode(rect: badgeRect, cornerRadius: 4.0)
         badge.fillColor = Self.signBgColor
         badge.strokeColor = Self.signBorderColor
         badge.lineWidth = 1.0
         node.addChild(badge)
 
-        var leftX: CGFloat = 4
+        var currentX: CGFloat = 6
 
-        // 組織ビルアイコン
+        // 上部組織ラベル（▲ Upper）
+        let upperLabel = SKLabelNode(fontNamed: "SFMono-Bold")
+        upperLabel.fontSize = 8.5
+        upperLabel.fontColor = Self.upperTextColor
+        upperLabel.horizontalAlignmentMode = .left
+        upperLabel.verticalAlignmentMode = .center
+        upperLabel.position = CGPoint(x: currentX, y: 4 + badgeHeight / 2)
+        upperLabel.text = upperText
+        node.addChild(upperLabel)
+        currentX += upperWidth + 6
+
+        // 境界の縦線
+        let divPath = CGMutablePath()
+        divPath.move(to: CGPoint(x: currentX, y: 7))
+        divPath.addLine(to: CGPoint(x: currentX, y: 4 + badgeHeight - 3))
+        let divider = SKShapeNode(path: divPath)
+        divider.strokeColor = .secondaryLabelColor.withAlphaComponent(0.35)
+        divider.lineWidth = 1.0
+        node.addChild(divider)
+        currentX += 7
+
+        // 下部組織ラベル（▼ Lower）
+        let lowerLabel = SKLabelNode(fontNamed: "SFMono-Bold")
+        lowerLabel.fontSize = 8.5
+        lowerLabel.fontColor = Self.lowerTextColor
+        lowerLabel.horizontalAlignmentMode = .left
+        lowerLabel.verticalAlignmentMode = .center
+        lowerLabel.position = CGPoint(x: currentX, y: 4 + badgeHeight / 2)
+        lowerLabel.text = lowerText
+        node.addChild(lowerLabel)
+
+        return node
+    }
+
+    // MARK: - 正面エントランス銘板生成
+
+    /// 北壁正面エントランス横に掲示する最上段組織のサインプレートノード
+    static func createEntrancePlaqueNode(orgName: String) -> SKNode {
+        let node = SKNode()
+        node.name = "entrancePlaque"
+
+        let displayText = SpeechBubbleNode.truncateScreenText(orgName, limit: 16)
+        let textWidth = CGFloat(displayText.count) * 6.5
+        let plaqueWidth = max(70, min(140, textWidth + 30))
+        let plaqueHeight: CGFloat = 18
+
+        let rect = CGRect(x: -plaqueWidth / 2, y: -plaqueHeight / 2, width: plaqueWidth, height: plaqueHeight)
+        let plaque = SKShapeNode(rect: rect, cornerRadius: 4.0)
+        plaque.fillColor = Self.signBgColor
+        plaque.strokeColor = Self.signBorderColor
+        plaque.lineWidth = 1.0
+        node.addChild(plaque)
+
+        var leftX: CGFloat = -plaqueWidth / 2 + 6
         if let texture = Self.orgIconTexture {
             let icon = SKSpriteNode(texture: texture)
             icon.size = CGSize(width: 11, height: 11)
-            icon.position = CGPoint(x: leftX + 5.5, y: 4 + badgeHeight / 2)
+            icon.position = CGPoint(x: leftX + 5.5, y: 0)
             node.addChild(icon)
             leftX += 14
         }
 
-        // 組織名テキスト
         let label = SKLabelNode(fontNamed: "SFMono-Bold")
-        label.fontSize = 9.0
-        label.fontColor = Self.signTextColor
+        label.fontSize = 8.5
+        label.fontColor = Self.upperTextColor
         label.horizontalAlignmentMode = .left
         label.verticalAlignmentMode = .center
-        label.position = CGPoint(x: leftX, y: 4 + badgeHeight / 2 - 0.5)
+        label.position = CGPoint(x: leftX, y: -0.5)
         label.text = displayText
         node.addChild(label)
 

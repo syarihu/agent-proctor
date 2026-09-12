@@ -118,7 +118,7 @@ final class DeskFurnitureNode: SKNode {
 
     // MARK: - 初期化
 
-    init(at point: CGPoint, label: String, isHub: Bool, seat: DeskSeat?) {
+    init(at point: CGPoint, label: String, isHub: Bool, seat: DeskSeat?, orgName: String? = nil) {
         self.isHub = isHub
         self.deskLabel = label
 
@@ -195,6 +195,18 @@ final class DeskFurnitureNode: SKNode {
         addChild(occupant)
         addChild(whiteboard)
 
+        // 卓上ネームプレート（セッション机はモデル名、ハブ机は所属Organizationを表示）
+        let nameplateNode = Self.createNameplateNode()
+        nameplateNode.position = CGPoint(x: 0, y: -2.5)
+        nameplateNode.zPosition = 8
+        nameplateNode.isHidden = true
+        addChild(nameplateNode)
+        self.nameplate = nameplateNode
+
+        if isHub, let orgName, !orgName.isEmpty {
+            updateNameplate(text: orgName)
+        }
+
         if seat != nil {
             // 連続帳票用紙
             let paperNode = Self.createPrintedPaperNode(width: 226, height: 60)
@@ -209,14 +221,6 @@ final class DeskFurnitureNode: SKNode {
             handNode.isHidden = true
             addChild(handNode)
             self.hand = handNode
-
-            // 卓上ネームプレート（エージェントのモデル名を表示）
-            let nameplateNode = Self.createNameplateNode()
-            nameplateNode.position = CGPoint(x: 0, y: -2.5)
-            nameplateNode.zPosition = 8
-            nameplateNode.isHidden = true
-            addChild(nameplateNode)
-            self.nameplate = nameplateNode
         }
     }
 
@@ -674,7 +678,8 @@ final class DeskFurnitureNode: SKNode {
 
         // 文字幅に応じてプレート幅を動的に設定（左右マージンと留め金具の余白を考慮）
         let measured = label.frame.width
-        let plateW = min(136, max(52, measured + 14))
+        let maxW: CGFloat = isHub ? (Self.hubDeskWidth - 12) : 136
+        let plateW = min(maxW, max(46, measured + 14))
         let plateH: CGFloat = 11.5
 
         let plateRect = CGRect(x: -plateW / 2, y: -plateH / 2, width: plateW, height: plateH)

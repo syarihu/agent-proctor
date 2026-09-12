@@ -23,6 +23,24 @@ struct DeskLayout {
     let hubDeskWidth: CGFloat = 104
     let hubRowSpacing: CGFloat = 145
     let rowSpacing: CGFloat = 185
+    static let partitionExtraSpacing: CGFloat = 80
+    let partitionBefore: Set<Int>
+
+    init(roomWidth: CGFloat,
+         roomHeight: CGFloat,
+         islandSpacing: CGFloat,
+         islandHeight: CGFloat,
+         seatColumns: Int,
+         columnPitch: CGFloat,
+         partitionBefore: Set<Int> = []) {
+        self.roomWidth = roomWidth
+        self.roomHeight = roomHeight
+        self.islandSpacing = islandSpacing
+        self.islandHeight = islandHeight
+        self.seatColumns = seatColumns
+        self.columnPitch = columnPitch
+        self.partitionBefore = partitionBefore
+    }
 
     // MARK: - 主要ポイント
 
@@ -84,8 +102,14 @@ struct DeskLayout {
         let column = CGFloat(island % columns)
         let row = CGFloat(island / columns)
         let spread = islandSpacing * CGFloat(columns - 1)
+        var extra: CGFloat = 0
+        for i in 0...island {
+            if partitionBefore.contains(i) {
+                extra += Self.partitionExtraSpacing
+            }
+        }
         return CGPoint(x: roomWidth / 2 - spread / 2 + islandSpacing * column,
-                       y: roomHeight - topMargin - islandHeight * row)
+                       y: roomHeight - topMargin - islandHeight * row - extra)
     }
 
     /// 各行において人間（中央の見出し机）に近い順に並べた列インデックスの配列。
@@ -129,31 +153,47 @@ struct DeskLayout {
 
     // MARK: - ローパーテーション座標計算
 
-    /// ローパーテーションの開始 X 座標（西側主通路の歩行空間を空けて配置する）
-    var partitionStartX: CGFloat {
+    /// 仕切りを挟む前後の島の実際の机の占有幅から、パーテーションの左右の X 座標を計算する。
+    /// 画面幅いっぱいに伸ばさず、実際の机の配置エリアに合わせた自然な幅に収める。
+    func partitionSpan(prevIsland: DeskIsland, nextIsland: DeskIsland, prevIndex: Int, nextIndex: Int) -> (startX: CGFloat, endX: CGFloat) {
         let hubX = roomWidth / 2
-        let spread = columnPitch * CGFloat(seatColumns - 1)
-        let col0X = hubX - spread / 2
-        let leftmostDeskEdge = col0X - deskWidth / 2
-        // 人やエージェントが歩く西側主通路（aisleX）を遮らないよう、最左列の机の左脇から開始する
-        return max(70, leftmostDeskEdge - 14)
-    }
+        var minDeskX = hubX - hubDeskWidth / 2
+        var maxDeskX = hubX + hubDeskWidth / 2
 
-    /// ローパーテーションの終了 X 座標（最右列の机の外側をカバーする）
-    var partitionEndX: CGFloat {
-        let hubX = roomWidth / 2
-        let spread = columnPitch * CGFloat(seatColumns - 1)
-        let rightColX = hubX + spread / 2
-        let rightmostDeskEdge = rightColX + deskWidth / 2
-        return min(roomWidth - 24, rightmostDeskEdge + 18)
+        for (slot, _) in prevIsland.seats.enumerated() {
+            let pt = seatPoint(island: prevIndex, index: slot)
+            minDeskX = min(minDeskX, pt.x - deskWidth / 2)
+            maxDeskX = max(maxDeskX, pt.x + deskWidth / 2)
+        }
+        for (slot, _) in nextIsland.seats.enumerated() {
+            let pt = seatPoint(island: nextIndex, index: slot)
+            minDeskX = min(minDeskX, pt.x - deskWidth / 2)
+            maxDeskX = max(maxDeskX, pt.x + deskWidth / 2)
+        }
+
+        // 机の占有幅に対して左右に 36pt の余白を取り、最小幅 360pt（モジュール約5枚分）を確保する
+        let contentWidth = maxDeskX - minDeskX
+        let targetWidth = max(360, contentWidth + 72)
+        let center = (minDeskX + maxDeskX) / 2
+        let startX = max(40, center - targetWidth / 2)
+        let endX = min(roomWidth - 40, center + targetWidth / 2)
+        return (startX, endX)
     }
 
     /// 異なる Organization 間のローパーテーションの Y 座標。
-    /// 前の島の最下段の机と、次の島のハブ机の間の中央に配置する
-    func partitionY(nextHubY: CGFloat) -> CGFloat {
-        // islandHeight の定義（+190）に基づき、前の島の最下段机底面と次の島ハブ occupant 上端の
-        // 正確な中間地点（nextHubY + 116.5）に配置することで、上下に均等な 61.5pt の通路幅を確保する
-        nextHubY + 116.5
+    /// 前の島の連続帳票用紙の最下端と、次の島のハブ机上端の中間地点に配置し、用紙との重なりを防ぐ
+    func partitionY(prevIndex: Int, nextIndex: Int, prevSeatCount: Int) -> CGFloat {
+        let prevHub = hubPoint(island: prevIndex)
+        let nextHub = hubPoint(island: nextIndex)
+        let seatRows = max(1, (prevSeatCount + seatColumns - 1) / seatColumns)
+        let lowestSeatY = prevSeatCount > 0
+            ? prevHub.y - hubRowSpacing - rowSpacing * CGFloat(seatRows - 1)
+            : prevHub.y
+        // 連続帳票用紙の最下端（12 + 4 + 60 = 76pt 下）
+        let paperBottomY = prevSeatCount > 0 ? lowestSeatY - 76 : prevHub.y - 12
+        // 次の島のハブ机の作業員・ホワイトボード上端（nextHub.y + 37）
+        let nextHubTopY = nextHub.y + 37
+        return (paperBottomY + nextHubTopY) / 2
     }
 
     // MARK: - 歩行ルート計算
