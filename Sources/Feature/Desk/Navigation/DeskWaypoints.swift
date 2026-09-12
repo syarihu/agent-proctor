@@ -28,9 +28,13 @@ struct DeskLayout {
     /// 正面エントランスの扉の位置（北壁の左寄り、レート上限ボードと並ぶ位置）
     var doorPosition: CGPoint {
         // 壁に掛かるボード（中央から左へ 100pt、幅 140pt）と干渉せず、
-        // 部屋の左端からも余白を保つ位置に開ける
-        let doorX = max(64, plan.contentCenterX - 215)
-        return CGPoint(x: doorX, y: roomHeight - wallHeight)
+        // 部屋の左端からも余白を保つ位置に開ける。
+        //
+        // さらに、南北の主通路より右には出さない。主通路はスイートの西側にあるので、
+        // 扉がそれより右にあると、入ってきた人がいったん左の通路まで戻ってから
+        // 右のスイートへ向かうことになり、玄関先で左右に往復して見える
+        let doorX = min(plan.mainAisleX, plan.contentCenterX - 215)
+        return CGPoint(x: max(64, doorX), y: roomHeight - wallHeight)
     }
 
     /// 正面エントランス手前の横通路の高さ (Y)
@@ -142,12 +146,17 @@ struct DeskLayout {
         points.append(CGPoint(x: aisleX, y: doorApproachY))
         points.append(CGPoint(x: suite.doorX, y: doorApproachY))
 
-        // 3. 扉をくぐり、スイートの西通路へ回り込む
+        // 3. 扉をくぐり、区画の並びの上を通る通路へ出る
         points.append(CGPoint(x: suite.doorX, y: suite.entryLaneY))
-        points.append(CGPoint(x: suite.aisleX, y: suite.entryLaneY))
 
-        // 4. 目的の区画の高さまで南下し、区画の西通路へ入る
-        points.append(CGPoint(x: suite.aisleX, y: zone.northLaneY))
+        // 4. 目的の区画の西通路へ。
+        //    行が下なら、いったんスイート西端の通路まで戻ってから南下する。
+        //    区画の間の横プランターは西端だけを空けてあり、他の場所では南北に抜けられない。
+        //    最初の行ならその必要は無いので、扉を入った通路のまま横へ進む
+        if abs(zone.northLaneY - suite.entryLaneY) >= 1 {
+            points.append(CGPoint(x: suite.aisleX, y: suite.entryLaneY))
+            points.append(CGPoint(x: suite.aisleX, y: zone.northLaneY))
+        }
         points.append(CGPoint(x: zone.westAisleX, y: zone.northLaneY))
 
         // 5. 席の背後の高さまで下り、机の後ろから着席する
@@ -182,15 +191,19 @@ struct DeskLayout {
         // 1. 椅子から後ろ（北）へ一歩下がり、背後の通路へ出る（机やモニタを突っ切らない）
         points.append(CGPoint(x: start.x, y: approachY))
 
-        // 2. 区画の西通路 → スイートの西通路 → 扉の正面、と来た道を戻る
+        // 2. 区画の西通路から扉の正面へ、来た道を戻る
         if let zone {
             points.append(CGPoint(x: zone.westAisleX, y: approachY))
             points.append(CGPoint(x: zone.westAisleX, y: zone.northLaneY))
-            points.append(CGPoint(x: suite.aisleX, y: zone.northLaneY))
+            // 下の行からは、西端の通路まで戻らないと北へ抜けられない
+            if abs(zone.northLaneY - suite.entryLaneY) >= 1 {
+                points.append(CGPoint(x: suite.aisleX, y: zone.northLaneY))
+                points.append(CGPoint(x: suite.aisleX, y: suite.entryLaneY))
+            }
         } else {
             points.append(CGPoint(x: suite.aisleX, y: approachY))
+            points.append(CGPoint(x: suite.aisleX, y: suite.entryLaneY))
         }
-        points.append(CGPoint(x: suite.aisleX, y: suite.entryLaneY))
         points.append(CGPoint(x: suite.doorX, y: suite.entryLaneY))
 
         // 3. 扉を出て主通路を北上し、正面エントランスへ
@@ -226,20 +239,32 @@ struct DeskLayout {
         let corridorX = plan.mainAisleX
         let approachY = start.y + 26
 
-        return Self.prune([
+        var points: [CGPoint] = [
             // 1. 椅子から後ろへ下がり、区画の西通路へ出る
             CGPoint(x: start.x, y: approachY),
-            CGPoint(x: zone.westAisleX, y: approachY),
-            // 2. 側面扉の高さまで移動して、スイートの外へ出る
-            CGPoint(x: zone.westAisleX, y: doorY),
+            CGPoint(x: zone.westAisleX, y: approachY)
+        ]
+
+        // 2. 区画が西端の列でなければ、いったん区画の北の通路を通って西端へ寄る。
+        //    側面扉の高さのまま真横に進むと、隣の区画の机とホワイトボードを突っ切ってしまう
+        if abs(zone.westAisleX - suite.aisleX) >= 1 {
+            points.append(CGPoint(x: zone.westAisleX, y: zone.northLaneY))
+            points.append(CGPoint(x: suite.aisleX, y: zone.northLaneY))
+        }
+
+        points += [
+            // 3. 側面扉の高さまで移動して、スイートの外へ出る
+            CGPoint(x: suite.aisleX, y: doorY),
             CGPoint(x: suite.frame.minX, y: doorY),
-            // 3. 通路へ出て、ラウンジの出入口の高さまで南北に移動する
+            // 4. 通路へ出て、ラウンジの出入口の高さまで南北に移動する
             CGPoint(x: corridorX, y: doorY),
             CGPoint(x: corridorX, y: lounge.doorY),
-            // 4. 扉をくぐるとそこがソファ
+            // 5. 扉をくぐるとそこがソファ
             CGPoint(x: lounge.frame.maxX, y: lounge.doorY),
             sofa
-        ], from: start)
+        ]
+
+        return Self.prune(points, from: start)
     }
 
     /// ラウンジのソファから自席へ戻る歩行ルート
@@ -253,17 +278,27 @@ struct DeskLayout {
         let corridorX = plan.mainAisleX
         let approachY = target.y + 26
 
-        return Self.prune([
-            // 来た道をそのまま戻る
+        // 来た道をそのまま戻る
+        var points: [CGPoint] = [
             CGPoint(x: lounge.frame.maxX, y: lounge.doorY),
             CGPoint(x: corridorX, y: lounge.doorY),
             CGPoint(x: corridorX, y: doorY),
             CGPoint(x: suite.frame.minX, y: doorY),
-            CGPoint(x: zone.westAisleX, y: doorY),
+            CGPoint(x: suite.aisleX, y: doorY)
+        ]
+
+        if abs(zone.westAisleX - suite.aisleX) >= 1 {
+            points.append(CGPoint(x: suite.aisleX, y: zone.northLaneY))
+            points.append(CGPoint(x: zone.westAisleX, y: zone.northLaneY))
+        }
+
+        points += [
             CGPoint(x: zone.westAisleX, y: approachY),
             CGPoint(x: target.x, y: approachY),
             target
-        ], from: start)
+        ]
+
+        return Self.prune(points, from: start)
     }
 
     /// スイートの扉の正面に立つ高さ。
