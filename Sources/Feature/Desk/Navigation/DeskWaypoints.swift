@@ -127,6 +127,35 @@ struct DeskLayout {
                        y: hub.y - 38 - CGFloat(slot) * 24)
     }
 
+    // MARK: - ローパーテーション座標計算
+
+    /// ローパーテーションの開始 X 座標（西側主通路の歩行空間を空けて配置する）
+    var partitionStartX: CGFloat {
+        let hubX = roomWidth / 2
+        let spread = columnPitch * CGFloat(seatColumns - 1)
+        let col0X = hubX - spread / 2
+        let leftmostDeskEdge = col0X - deskWidth / 2
+        // 人やエージェントが歩く西側主通路（aisleX）を遮らないよう、最左列の机の左脇から開始する
+        return max(70, leftmostDeskEdge - 14)
+    }
+
+    /// ローパーテーションの終了 X 座標（最右列の机の外側をカバーする）
+    var partitionEndX: CGFloat {
+        let hubX = roomWidth / 2
+        let spread = columnPitch * CGFloat(seatColumns - 1)
+        let rightColX = hubX + spread / 2
+        let rightmostDeskEdge = rightColX + deskWidth / 2
+        return min(roomWidth - 24, rightmostDeskEdge + 18)
+    }
+
+    /// 異なる Organization 間のローパーテーションの Y 座標。
+    /// 前の島の最下段の机と、次の島のハブ机の間の中央に配置する
+    func partitionY(nextHubY: CGFloat) -> CGFloat {
+        // islandHeight の定義（+190）に基づき、前の島の最下段机底面と次の島ハブ occupant 上端の
+        // 正確な中間地点（nextHubY + 116.5）に配置することで、上下に均等な 61.5pt の通路幅を確保する
+        nextHubY + 116.5
+    }
+
     // MARK: - 歩行ルート計算
 
     /// 正面エントランス扉から指定の机の前までの歩行ルート
@@ -142,8 +171,8 @@ struct DeskLayout {
         // 1. 扉の正面（上部横通路）へ出る
         points.append(doorFront)
 
-        if row == 0 {
-            // 最前列（Row 0）の席の背後は北壁との間の広い空間のため、上部横通路から直接自分の列へ進入できる
+        if island == 0 && row == 0 {
+            // 最前列（Island 0, Row 0）の席の背後は北壁との間の広い空間のため、上部横通路から直接自分の列へ進入できる
             if abs(doorFront.x - target.x) >= 4 {
                 points.append(CGPoint(x: target.x, y: topHallwayY))
             }
@@ -151,7 +180,7 @@ struct DeskLayout {
                 points.append(CGPoint(x: target.x, y: approachY))
             }
         } else {
-            // 後続列（Row 1 以降）へは、前列の机を横切らないよう西側の主通路を回り込んで進む
+            // 後続列（Row 1 以降）や後続の島へは、前列の机を横切らないよう西側の主通路（開口部）を回り込んで進む
             let aisleX = min(doorFront.x - 24, col0X - (deskWidth / 2 + 36))
             if abs(doorFront.x - aisleX) >= 4 {
                 points.append(CGPoint(x: aisleX, y: topHallwayY))

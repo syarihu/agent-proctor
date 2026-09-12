@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Model
 import SpriteKit
 
 // MARK: - 見取り図モデル
@@ -146,10 +147,22 @@ public enum DeskGesture {
 public struct DeskIsland: Equatable {
     public let repo: String
     public let seats: [DeskSeat]
+    public let origin: RepoOrigin?
 
-    public init(repo: String, seats: [DeskSeat]) {
+    public init(repo: String, seats: [DeskSeat], origin: RepoOrigin? = nil) {
         self.repo = repo
         self.seats = seats
+        self.origin = origin
+    }
+
+    /// Organization の識別キー（例: "github.com/syarihu"）
+    public var organizationKey: String {
+        origin?.groupKey ?? ""
+    }
+
+    /// Organization の表示名（例: "syarihu"）
+    public var organizationName: String? {
+        origin?.owner
     }
 }
 

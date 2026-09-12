@@ -17,12 +17,19 @@ public enum DeskIslands {
         showTabNumbers: Bool,
         tabNumbers: [String: Int]
     ) -> [DeskIsland] {
-        var order: [String] = []
+        var repoOrder: [String] = []
         var byRepo: [String: [DeskSeat]] = [:]
+        var originByRepo: [String: RepoOrigin] = [:]
+        var repoNameByRepo: [String: String] = [:]
+
         for task in tasks {
             if byRepo[task.repo] == nil {
                 byRepo[task.repo] = []
-                order.append(task.repo)
+                repoOrder.append(task.repo)
+                repoNameByRepo[task.repo] = task.repoName
+            }
+            if let origin = task.origin {
+                originByRepo[task.repo] = origin
             }
             let isCurrent: Bool = {
                 guard let focused = focusedSession, !focused.isEmpty else { return false }
@@ -50,9 +57,26 @@ public enum DeskIslands {
                          model: task.model,
                          agent: task.agentDisplayName))
         }
-        return order.map { repo in
-            DeskIsland(repo: tasks.first { $0.repo == repo }?.repoName ?? repo,
-                       seats: byRepo[repo] ?? [])
+
+        // Organization ごとに島をまとめて並べる。
+        // リポジトリが混在している場合でも同組織の机が隣接して1つのエリアを形成し、
+        // 組織間にローパーテーションを配置できるようにする。
+        var orgOrder: [String] = []
+        var reposByOrg: [String: [String]] = [:]
+        for repo in repoOrder {
+            let orgKey = originByRepo[repo]?.groupKey ?? ""
+            if reposByOrg[orgKey] == nil {
+                reposByOrg[orgKey] = []
+                orgOrder.append(orgKey)
+            }
+            reposByOrg[orgKey]?.append(repo)
+        }
+
+        let orderedRepos = orgOrder.flatMap { reposByOrg[$0] ?? [] }
+        return orderedRepos.map { repo in
+            DeskIsland(repo: repoNameByRepo[repo] ?? repo,
+                       seats: byRepo[repo] ?? [],
+                       origin: originByRepo[repo])
         }
     }
 

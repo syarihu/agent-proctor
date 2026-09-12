@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Model
+import Resources
 import SpriteKit
 
 /// 斜め上から見た事務所の SpriteKit シーン。
@@ -183,7 +184,7 @@ final class DeskScene: SKScene {
     }
 
     private func skeleton(of islands: [DeskIsland]) -> String {
-        islands.map { "\($0.repo)/\($0.seats.map(\.id).joined(separator: ","))" }
+        islands.map { "\($0.repo)/\($0.organizationKey)/\($0.seats.map(\.id).joined(separator: ","))" }
             .joined(separator: "|")
     }
 
@@ -230,7 +231,23 @@ final class DeskScene: SKScene {
 
         buildFloor()
 
+        // 異なる Organization の境界にローパーテーションを設置する
+        var previousOrgKey: String? = nil
         for (index, island) in islands.enumerated() {
+            if let prevOrg = previousOrgKey, prevOrg != island.organizationKey {
+                let nextHub = layout.hubPoint(island: index)
+                let partitionY = layout.partitionY(nextHubY: nextHub.y)
+                let partition = OfficePartitionNode(
+                    orgName: island.organizationName ?? Localized.text("app.group.no_organization"),
+                    startX: layout.partitionStartX,
+                    endX: layout.partitionEndX
+                )
+                partition.position = CGPoint(x: 0, y: partitionY)
+                partition.zPosition = -partitionY
+                room.addChild(partition)
+            }
+            previousOrgKey = island.organizationKey
+
             let hubNode = DeskFurnitureNode(at: layout.hubPoint(island: index),
                                              label: island.repo, isHub: true, seat: nil)
             if pendingArrivalRepos.contains(island.repo) {
@@ -508,7 +525,9 @@ final class DeskScene: SKScene {
             actions.append(.fadeIn(withDuration: 0.15))
             actions.append(.move(to: doorFront, duration: 0.25))
 
-            let aisleX = max(doorFront.x + 24, hub.x - (layout.hubDeskWidth / 2 + 36))
+            let aisleX = islandIndex == 0
+                ? max(doorFront.x + 24, hub.x - (layout.hubDeskWidth / 2 + 36))
+                : doorFront.x
             let approachY = hubChair.y + 26
             let points = [
                 doorFront,
