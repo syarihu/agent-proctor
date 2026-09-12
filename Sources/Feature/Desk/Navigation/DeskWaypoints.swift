@@ -203,6 +203,77 @@ struct DeskLayout {
         return Self.prune(points, from: start)
     }
 
+    // MARK: - 共用ラウンジへの往復
+
+    /// ラウンジのソファの座面。番号が席の数を超えたら端から詰め直す
+    func sofaSpot(index: Int) -> CGPoint? {
+        guard let spots = plan.lounge?.sofaSpots, !spots.isEmpty else { return nil }
+        return spots[index % spots.count]
+    }
+
+    /// 席から、区画の西通路と側面扉を抜けてラウンジのソファまでの歩行ルート。
+    ///
+    /// 北の正面玄関まで戻ってから南下すると、区画が下のほうにあるほど遠回りになる。
+    /// 側面扉はそのために開けてある
+    func loungeWaypoints(from start: CGPoint, island: Int, sofaIndex: Int) -> [CGPoint] {
+        guard let lounge = plan.lounge,
+              let zone = plan.zone(island: island),
+              let suite = plan.suite(island: island),
+              let sofa = sofaSpot(index: sofaIndex)
+        else { return [] }
+
+        let doorY = sideDoorY(for: zone, in: suite)
+        let corridorX = plan.mainAisleX
+        let approachY = start.y + 26
+
+        return Self.prune([
+            // 1. 椅子から後ろへ下がり、区画の西通路へ出る
+            CGPoint(x: start.x, y: approachY),
+            CGPoint(x: zone.westAisleX, y: approachY),
+            // 2. 側面扉の高さまで移動して、スイートの外へ出る
+            CGPoint(x: zone.westAisleX, y: doorY),
+            CGPoint(x: suite.frame.minX, y: doorY),
+            // 3. 通路を渡ってラウンジへ入る
+            CGPoint(x: corridorX, y: doorY),
+            CGPoint(x: lounge.frame.maxX - 16, y: doorY),
+            // 4. ソファの背後まで下りて腰かける
+            CGPoint(x: lounge.frame.maxX - 16, y: sofa.y + 28),
+            CGPoint(x: sofa.x, y: sofa.y + 28),
+            sofa
+        ], from: start)
+    }
+
+    /// ラウンジのソファから自席へ戻る歩行ルート
+    func returnFromLoungeWaypoints(from start: CGPoint, to target: CGPoint, island: Int) -> [CGPoint] {
+        guard let lounge = plan.lounge,
+              let zone = plan.zone(island: island),
+              let suite = plan.suite(island: island)
+        else { return [target] }
+
+        let doorY = sideDoorY(for: zone, in: suite)
+        let corridorX = plan.mainAisleX
+        let approachY = target.y + 26
+
+        return Self.prune([
+            CGPoint(x: start.x, y: start.y + 28),
+            CGPoint(x: lounge.frame.maxX - 16, y: start.y + 28),
+            CGPoint(x: lounge.frame.maxX - 16, y: doorY),
+            CGPoint(x: corridorX, y: doorY),
+            CGPoint(x: suite.frame.minX, y: doorY),
+            CGPoint(x: zone.westAisleX, y: doorY),
+            CGPoint(x: zone.westAisleX, y: approachY),
+            CGPoint(x: target.x, y: approachY),
+            target
+        ], from: start)
+    }
+
+    /// 区画の行に対応する側面扉の高さ。扉は行ごとに開いているので一番近いものを選ぶ
+    private func sideDoorY(for zone: OfficeFloorPlan.RepoZone,
+                           in suite: OfficeFloorPlan.Suite) -> CGFloat {
+        suite.sideDoorYs.min { abs($0 - zone.frame.midY) < abs($1 - zone.frame.midY) }
+            ?? zone.frame.midY
+    }
+
     /// 待機列へ向かう／待機列から席へ戻るための歩行ルート
     func queueWaypoints(from start: CGPoint, to target: CGPoint, island: Int, seatIndex: Int) -> [CGPoint] {
         guard hypot(start.x - target.x, start.y - target.y) >= 2 else { return [] }
