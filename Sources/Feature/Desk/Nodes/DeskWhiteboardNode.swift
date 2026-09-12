@@ -14,7 +14,9 @@ final class DeskWhiteboardNode: SKNode {
 
     // 板面と装飾
     let board: SKShapeNode
-    let label: SKLabelNode
+    let label1: SKLabelNode
+    let label2: SKLabelNode
+    var label: SKLabelNode { label1 }
     let statusBar: SKShapeNode
     let statusMagnet: SKShapeNode
 
@@ -26,18 +28,17 @@ final class DeskWhiteboardNode: SKNode {
     init(isHub: Bool, initialText: String) {
         self.isHub = isHub
 
-        // 机幅（通常席184pt、hub104pt）や列間ピッチ（242pt）に干渉せず、人物の頭上に文字が綺麗に収まるよう寸法を調整する
-        let width: CGFloat = isHub ? 176 : 196
-        let height: CGFloat = isHub ? 38 : 36
-        let centerY: CGFloat = isHub ? 82 : 80
-        self.boardWidth = isHub ? 154 : 174
+        // 机幅（通常席184pt、hub104pt）や列間ピッチ（242pt）に干渉せず、
+        // かつタスク名が2行に渡ってもゆったり収まるよう、板面の高さを従来の1.5倍（約54pt）に拡大
+        let width: CGFloat = isHub ? 180 : 196
+        let height: CGFloat = isHub ? 56 : 54
+        let boardBottomY: CGFloat = 58
+        let centerY: CGFloat = boardBottomY + height / 2
+        self.boardWidth = isHub ? 158 : 174
         self.boardHeight = height
         self.boardCenterY = centerY
 
-        let fontSize: CGFloat = isHub ? 12.5 : 11.2
-        let limit = isHub ? 22 : 28
-
-        // 板面本体
+        // 板面本体（アルミ外枠＋光沢ホーロー白板）
         let bw = self.boardWidth
         let bh = height
         let boardRect = CGRect(x: -bw / 2, y: centerY - bh / 2, width: bw, height: bh)
@@ -65,21 +66,24 @@ final class DeskWhiteboardNode: SKNode {
         statusMagnet.lineWidth = 0.5
         statusMagnet.zPosition = 6
 
-        // 板書テキスト（タスク名・リポジトリ名）
-        label = SKLabelNode(fontNamed: "SFMono-Bold")
-        label.name = "whiteboardLabel"
-        label.fontSize = fontSize
-        label.fontColor = Self.markerInkColor(isHub: isHub)
-        label.horizontalAlignmentMode = .center
-        label.verticalAlignmentMode = .center
-        label.position = CGPoint(x: 0, y: centerY)
-        label.zPosition = 6
-        label.text = Self.truncateScreenText(initialText, limit: limit)
+        // 板書テキスト（1行目・2行目）
+        label1 = SKLabelNode(fontNamed: "SFMono-Bold")
+        label1.name = "whiteboardLabel1"
+        label1.fontColor = Self.markerInkColor(isHub: isHub)
+        label1.horizontalAlignmentMode = .center
+        label1.verticalAlignmentMode = .center
+        label1.zPosition = 6
+
+        label2 = SKLabelNode(fontNamed: "SFMono-Bold")
+        label2.name = "whiteboardLabel2"
+        label2.fontColor = Self.markerInkColor(isHub: isHub)
+        label2.horizontalAlignmentMode = .center
+        label2.verticalAlignmentMode = .center
+        label2.zPosition = 6
 
         super.init()
         name = "deskWhiteboard"
-        // 作業員の背後（椅子・人物の後ろ側）に自立させるため、座席作業員 (-20) より背面に配置する。
-        // これにより作業員の頭部や肩が自然にホワイトボード下端のトレイや支柱の前に重なり、2.5D的な奥行きが生まれる
+        // 作業員の背後（椅子・人物の後ろ側）に自立させるため、座席作業員 (-20) より背面に配置する
         zPosition = -22
 
         // MARK: 1. 自立スタンド（T字脚・キャスター車輪・床の影）
@@ -143,14 +147,7 @@ final class DeskWhiteboardNode: SKNode {
             addChild(knobPin)
         }
 
-        // 左右の支柱を繋ぐ下部補強クロスバー
-        let crossbar = SKShapeNode(rect: CGRect(x: -legX, y: 36, width: legX * 2, height: 2.2),
-                                   cornerRadius: 0.6)
-        crossbar.fillColor = Self.metalFrameColor
-        crossbar.strokeColor = Self.metalStrokeColor
-        crossbar.lineWidth = 0.5
-        crossbar.zPosition = 2
-        addChild(crossbar)
+        // 下部補強クロスバーは作業員（エージェント）の身体と重なって視認性を損ねるため設けない
 
         // MARK: 2. ホワイトボード本体とステータス表示
         addChild(board)
@@ -192,7 +189,9 @@ final class DeskWhiteboardNode: SKNode {
         }
 
         // MARK: 4. 板書テキスト
-        addChild(label)
+        addChild(label1)
+        addChild(label2)
+        applyText(initialText)
 
         // MARK: 5. マグネット式タブ番号バッジ（⌘1など）
         if !isHub {
@@ -233,11 +232,31 @@ final class DeskWhiteboardNode: SKNode {
 
     // MARK: - 状態更新
 
+    /// テキストを1行または2行に整形して配置する
+    private func applyText(_ text: String) {
+        let lines = Self.formatWhiteboardLines(text, limitPerLine: isHub ? 20 : 23)
+        if lines.count == 1 {
+            label1.text = lines[0]
+            label1.position = CGPoint(x: 0, y: boardCenterY)
+            label1.fontSize = isHub ? 12.5 : 11.2
+            label2.text = nil
+            label2.isHidden = true
+        } else {
+            label1.text = lines[0]
+            label1.position = CGPoint(x: 0, y: boardCenterY + 7.5)
+            label1.fontSize = isHub ? 11.0 : 10.2
+            label2.text = lines[1]
+            label2.position = CGPoint(x: 0, y: boardCenterY - 7.5)
+            label2.fontSize = isHub ? 11.0 : 10.2
+            label2.isHidden = false
+        }
+        label1.fontColor = Self.markerInkColor(isHub: isHub)
+        label2.fontColor = Self.markerInkColor(isHub: isHub)
+    }
+
     /// テキスト・枠線色・アクティブ状態・タブ番号を更新する
     func update(text: String, isCurrent: Bool, tabNumber: Int?, strokeColor: NSColor) {
-        let limit = isHub ? 22 : 28
-        label.text = Self.truncateScreenText(text, limit: limit)
-        label.fontColor = Self.markerInkColor(isHub: isHub)
+        applyText(text)
 
         // ステータスカラー帯とマグネットの更新（タスク状態を視覚的に通知）
         if isHub {
@@ -319,7 +338,60 @@ final class DeskWhiteboardNode: SKNode {
         }
     }
 
-    /// 画面幅に収まるよう文字数を切り詰める
+    /// 1行に収まらない場合に自然な区切りで2行に分割する
+    static func formatWhiteboardLines(_ text: String, limitPerLine: Int = 23) -> [String] {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count <= limitPerLine {
+            return [trimmed]
+        }
+
+        // 2行に分割する最適な分割点を探す
+        let targetSplit = min(limitPerLine, max(8, trimmed.count / 2 + 2))
+        let chars = Array(trimmed)
+
+        // 1. 空白文字での分割を優先探索
+        var bestIndex: Int?
+        var minDistance = Int.max
+        for i in 6...min(limitPerLine, chars.count - 4) {
+            if chars[i] == " " || chars[i] == "\t" {
+                let dist = abs(i - targetSplit)
+                if dist < minDistance {
+                    minDistance = dist
+                    bestIndex = i
+                }
+            }
+        }
+
+        // 2. 空白がなければ区切り記号（/、-、_、:、・、など）を探す
+        if bestIndex == nil {
+            let delimiters: Set<Character> = ["/", "-", "_", ":", "：", "・", "、", "。", " ", "　"]
+            for i in 6...min(limitPerLine, chars.count - 3) {
+                if delimiters.contains(chars[i]) {
+                    let dist = abs(i - targetSplit)
+                    if dist < minDistance {
+                        minDistance = dist
+                        // 区切り記号を行末に残すため i + 1 で分割
+                        bestIndex = i + 1
+                    }
+                }
+            }
+        }
+
+        // 3. 区切りがなければ limitPerLine または targetSplit で分割
+        let splitAt = bestIndex ?? min(limitPerLine, targetSplit)
+
+        let line1 = String(chars[0..<splitAt]).trimmingCharacters(in: .whitespaces)
+        var line2 = String(chars[splitAt..<chars.count]).trimmingCharacters(in: .whitespaces)
+
+        // 2行目が長すぎる場合は末尾を省略
+        if line2.count > limitPerLine {
+            line2 = String(line2.prefix(limitPerLine - 1)) + "…"
+        }
+
+        return [line1, line2]
+    }
+
+    /// 画面幅に収まるよう文字数を切り詰める（単一行切り詰め用互換関数）
     static func truncateScreenText(_ text: String, limit: Int) -> String {
         if text.count <= limit { return text }
         return String(text.prefix(limit - 1)) + "…"

@@ -176,7 +176,9 @@ final class DeskFurnitureNode: SKNode {
         occupant.zPosition = -20
 
         // 机背後の自立型ホワイトボード（タスク内容またはリポジトリ名を表示）
+        // 作業員の頭部や身体に隠れず、机の右側から自然に見通せるよう少し右寄りに配置する
         whiteboard = DeskWhiteboardNode(isHub: isHub, initialText: label)
+        whiteboard.position = CGPoint(x: isHub ? 12 : 18, y: 0)
 
         super.init()
 
