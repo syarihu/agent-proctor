@@ -18,30 +18,46 @@ final class DeskScene: SKScene {
 
     // MARK: - 寸法とレイアウト
 
+    private let deskWidth: CGFloat = 184
+    private let hubDeskWidth: CGFloat = 104
+    private let deskDepth: CGFloat = 24
     private let walkSpeed: CGFloat = 80
     private var columns: Int { 1 }
     private var islandRows: Int { max(1, (islands.count + columns - 1) / columns) }
     private var seatColumns: Int { max(1, min(2, Int(size.width / 245))) }
     private var columnPitch: CGFloat { max(242, (size.width - 24) / CGFloat(seatColumns)) }
 
+    private var islandWidth: CGFloat {
+        deskWidth + columnPitch * CGFloat(seatColumns - 1)
+    }
+    private let hubRowSpacing: CGFloat = 145
+    private let rowSpacing: CGFloat = 185
+    private var islandSpacing: CGFloat { max(300, islandWidth + 110) }
+    private let sideMargin: CGFloat = 180
+    private let topMargin: CGFloat = 125
+    private let bottomMargin: CGFloat = 60
+
     private var islandHeight: CGFloat {
-        let maxSeatsInIsland = islands.map(\.seats.count).max() ?? 0
-        let seatRows = max(1, (maxSeatsInIsland + seatColumns - 1) / seatColumns)
-        return 58 + 78 * CGFloat(seatRows - 1) + 160
+        let seatRows = islands.map {
+            ($0.seats.count + seatColumns - 1) / seatColumns
+        }.max() ?? 1
+        return hubRowSpacing + rowSpacing * CGFloat(max(0, seatRows - 1)) + 190
     }
 
     private var roomWidth: CGFloat {
-        max(size.width, 184 + columnPitch * CGFloat(seatColumns - 1) + 48)
+        let naturalWidth = islandWidth + sideMargin * 2
+        return max(size.width + 300, max(580, naturalWidth))
     }
 
     private var roomHeight: CGFloat {
-        max(size.height, 125 + 80 + islandHeight * CGFloat(islandRows))
+        max(size.height, topMargin + bottomMargin + islandHeight * CGFloat(islandRows))
     }
 
     var layout: DeskLayout {
         DeskLayout(
             roomWidth: roomWidth,
             roomHeight: roomHeight,
+            islandSpacing: islandSpacing,
             islandHeight: islandHeight,
             seatColumns: seatColumns,
             columnPitch: columnPitch

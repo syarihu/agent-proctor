@@ -10,17 +10,17 @@ struct DeskLayout {
     let roomHeight: CGFloat
     let wallHeight: CGFloat = 32
     let topMargin: CGFloat = 125
-    let bottomMargin: CGFloat = 80
-    let islandSpacing: CGFloat = 160
+    let bottomMargin: CGFloat = 60
+    let islandSpacing: CGFloat
     let islandHeight: CGFloat
     let columns: Int = 1
     let seatColumns: Int
     let columnPitch: CGFloat
     let deskWidth: CGFloat = 184
-    let deskDepth: CGFloat = 32
+    let deskDepth: CGFloat = 24
     let hubDeskWidth: CGFloat = 104
-    let hubRowSpacing: CGFloat = 58
-    let rowSpacing: CGFloat = 78
+    let hubRowSpacing: CGFloat = 145
+    let rowSpacing: CGFloat = 185
 
     // MARK: - 主要ポイント
 

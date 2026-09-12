@@ -11,11 +11,11 @@ final class DeskFurnitureNode: SKNode {
     // MARK: - 寸法定数
 
     static let deskWidth: CGFloat = 184
-    static let deskDepth: CGFloat = 32
+    static let deskDepth: CGFloat = 24
     static let hubDeskWidth: CGFloat = 104
-    static let maxSheetsPerSide = 12
-    static let sheetWidth: CGFloat = 14
-    static let sheetHeight: CGFloat = 1.8
+    static let maxSheetsPerSide = 6
+    static let sheetWidth: CGFloat = 18
+    static let sheetHeight: CGFloat = 5
 
     // MARK: - プロパティ
 
@@ -476,14 +476,16 @@ final class DeskFurnitureNode: SKNode {
         paper.name = "printedPaper"
 
         let hw = width / 2
-        let topY = -DeskFurnitureNode.deskDepth / 2 - 9
+        let topY: CGFloat = -DeskFurnitureNode.deskDepth / 2 - 4
         let bottomY = topY - height
 
-        let bg = SKShapeNode(rect: CGRect(x: -hw, y: bottomY, width: width, height: height))
+        let bg = SKShapeNode(rect: CGRect(x: -hw, y: bottomY, width: width, height: height),
+                             cornerRadius: 2.5)
+        bg.name = "paperBg"
         bg.fillColor = NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                ? NSColor(red: 0.11, green: 0.14, blue: 0.18, alpha: 0.95)
-                : NSColor(red: 0.97, green: 0.97, blue: 0.95, alpha: 0.98)
+                ? NSColor(red: 0.08, green: 0.11, blue: 0.16, alpha: 0.96)
+                : NSColor(red: 0.96, green: 0.96, blue: 0.93, alpha: 0.96)
         }
         bg.strokeColor = .secondaryLabelColor.withAlphaComponent(0.35)
         bg.lineWidth = 0.8
