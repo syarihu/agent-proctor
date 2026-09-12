@@ -25,9 +25,8 @@ struct DeskView: View {
         // シーンが出ないまま view の地色 (白) が出る。アプリを立ち上げ直した直後は
         // サイドバーがまだ「見えている」と分かっていないので、必ずそこに落ちる。
         // 2fps なら常駐していても負荷はほぼ無く、描かれないことも無い
-        SpriteView(scene: box.scene,
-                   preferredFramesPerSecond: running ? 60 : 2,
-                   options: [.allowsTransparency])
+        DeskSKContainerView(scene: box.scene, running: running)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
                 box.scene.onOpen = onOpen
                 box.scene.apply(islands: islands)
@@ -41,6 +40,58 @@ struct DeskView: View {
                 guard running else { return }
                 box.scene.apply(islands: islands)
             }
+    }
+}
+
+/// SpriteKit の SKView を SwiftUI から扱い、スクロールやピンチをシーンへ届けるためのラッパー。
+///
+/// SwiftUI の `SpriteView` は AppKit の `scrollWheel` や `magnify` をシーンへ中継しない。
+/// パンやズームの操作を `DeskScene` で受けるために、自前の `SKView` サブクラスを
+/// `NSViewRepresentable` で包んで配置する
+private struct DeskSKContainerView: NSViewRepresentable {
+    let scene: DeskScene
+    let running: Bool
+
+    func makeNSView(context: Context) -> DeskSKView {
+        let view = DeskSKView()
+        view.allowsTransparency = true
+        view.preferredFramesPerSecond = running ? 60 : 2
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        view.setContentHuggingPriority(.defaultLow, for: .vertical)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        view.presentScene(scene)
+        return view
+    }
+
+    func updateNSView(_ view: DeskSKView, context: Context) {
+        view.preferredFramesPerSecond = running ? 60 : 2
+        if view.scene !== scene {
+            view.presentScene(scene)
+        }
+    }
+}
+
+/// スクロールやトラックパッドのピンチ操作を `DeskScene` に流し込む `SKView`。
+///
+/// マウスクリックやドラッグは標準の `SKView` が自動的にシーンの `mouseDown` や
+/// `mouseDragged` に中継してくれるが、`scrollWheel` と `magnify` は
+/// デフォルトでは中継されないため、ここで明示的にシーンへ渡す
+private final class DeskSKView: SKView {
+    override func scrollWheel(with event: NSEvent) {
+        if let scene = scene as? DeskScene {
+            scene.scrollWheel(with: event)
+        } else {
+            super.scrollWheel(with: event)
+        }
+    }
+
+    override func magnify(with event: NSEvent) {
+        if let scene = scene as? DeskScene {
+            scene.magnify(with: event)
+        } else {
+            super.magnify(with: event)
+        }
     }
 }
 
@@ -151,8 +202,11 @@ final class DeskScene: SKScene {
     /// セッション机の段と段の縦の間隔。
     /// 上の用紙と下の吹き出しが重ならず、程よく詰まった間隔にする
     private let rowSpacing: CGFloat = 185
-    /// 島と島の横の間隔。島の幅に通路を足したもの
-    private var islandSpacing: CGFloat { islandWidth + 90 }
+    /// 島と島の横の間隔。島の幅に通路を足したもの。
+    /// 2列の島の間をエージェントが歩き、思考雲同士が重ならないよう 300pt 確保する
+    private var islandSpacing: CGFloat { max(300, islandWidth + 110) }
+    /// 部屋の左右の余白。机や思考雲が壁に密着せず、通路として歩ける幅を持たせる
+    private let sideMargin: CGFloat = 180
     /// 部屋の上の余白。hub の吹き出しが奥の壁に食い込まない高さ
     private let topMargin: CGFloat = 125
     private let bottomMargin: CGFloat = 60
@@ -223,6 +277,26 @@ final class DeskScene: SKScene {
     private let dwell: TimeInterval = 8
     /// 乗り換えに要る差。1.4 倍以上忙しくないと、カメラは動かない
     private let switchMargin: Double = 1.4
+
+    // MARK: カメラとズーム状態
+
+    /// 現在のカメラズーム率（1.0 が等倍、0.45 が最大拡大、2.4 が最大縮小）
+    private var currentZoom: CGFloat = 1.0
+    private var targetZoom: CGFloat = 1.0
+    private let minZoom: CGFloat = 0.45
+    private let maxZoom: CGFloat = 2.4
+
+    /// ユーザーによる手動操作（ドラッグ移動またはスクロール/ピンチズーム）中かどうか
+    private var isUserControlling = false
+    private var lastUserControlTime: TimeInterval = 0
+    /// 前回自動追従したアクティブタブの座標。タブが切り替わったら手動操作を解除する
+    private var lastFollowedCurrentPoint: CGPoint?
+
+    /// マウスドラッグによるパン移動の状態
+    private var dragStartInWindow: CGPoint?
+    private var dragStartFocus: CGPoint?
+    private var isDragging = false
+    private var clickedSeatId: String?
 
     override func didMove(to view: SKView) {
         if eye.parent == nil {
@@ -304,9 +378,10 @@ final class DeskScene: SKScene {
 
     // MARK: - 座席の割り当て
 
-    /// 横に何島並べられるか。広げれば増え、狭ければ1島ずつ縦に積む
+    /// 横に並べる島の列数。
+    /// サイドバーでの視認性と上下スクロールの操作性を保つため、島（リポジトリ）は縦1列に積む
     private var columns: Int {
-        max(1, Int(size.width / islandSpacing))
+        1
     }
 
     private var islandRows: Int {
@@ -322,8 +397,12 @@ final class DeskScene: SKScene {
         return hubRowSpacing + rowSpacing * CGFloat(max(0, seatRows - 1)) + 190
     }
 
+    /// 部屋の横幅。
+    /// サイドバーの幅そのままにすると左右に全くパンできず、ズームアウトした時も
+    /// 細長い短冊状になってしまうため、島を中央に置きつつ左右に通路の余白を十分に確保する
     private var roomWidth: CGFloat {
-        max(size.width, islandSpacing * CGFloat(columns))
+        let naturalWidth = islandWidth + sideMargin * 2
+        return max(size.width + 300, max(580, naturalWidth))
     }
 
     private var roomHeight: CGFloat {
@@ -382,9 +461,17 @@ final class DeskScene: SKScene {
         }
         refreshSeats()
 
+        if isDragging {
+            NSCursor.pop()
+            isDragging = false
+        }
+        dragStartInWindow = nil
+        dragStartFocus = nil
+        clickedSeatId = nil
+
         focusedIsland = min(focusedIsland, max(0, islands.count - 1))
         focus = hubPoint(island: focusedIsland)
-        eye.position = clampCamera(focus)
+        eye.position = clampCamera(focus, zoom: currentZoom)
     }
 
     private func buildFloor() {
@@ -1680,7 +1767,7 @@ final class DeskScene: SKScene {
 
     /// 正面エントランスの扉の位置（奥壁の左上。中央の hub や吹き出しに被らない場所）
     private var doorPosition: CGPoint {
-        CGPoint(x: 38, y: roomHeight - wallHeight)
+        CGPoint(x: 54, y: roomHeight - wallHeight)
     }
 
     /// 正面エントランスの扉ノード（両開きドア、上部に緑の誘導灯、手前にマット）
@@ -1776,11 +1863,11 @@ final class DeskScene: SKScene {
 
     /// 正面エントランス扉から指定の机の前までの歩行ルート
     private func arrivalWaypoints(to target: CGPoint, island: Int, seatIndex: Int) -> [CGPoint] {
-        let doorFront = CGPoint(x: doorPosition.x, y: doorPosition.y - 16)
+        let topHallwayY = roomHeight - wallHeight - 16
+        let doorFront = CGPoint(x: doorPosition.x, y: topHallwayY)
         let hub = hubPoint(island: island)
         let spread = columnPitch * CGFloat(seatColumns - 1)
         let col0X = hub.x - spread / 2
-        let hubFrontY = hub.y - 35
         let column = seatIndex % seatColumns
 
         let aisleX: CGFloat
@@ -1790,40 +1877,26 @@ final class DeskScene: SKScene {
             let rightColX = leftColX + columnPitch
             aisleX = (leftColX + rightColX) / 2
         } else {
-            aisleX = max(12, min(col0X - 125, target.x - 16))
+            // 机（幅184）や思考雲（幅210/222）と干渉しないよう、机の左側を通る南北の主通路
+            aisleX = max(doorPosition.x + 30, min(col0X - 125, target.x - 16))
         }
-
-        let hubCornerX = max(doorPosition.x, min(hub.x - 110, target.x))
-        let topHallwayY = min(roomHeight - wallHeight - 16, hub.y + 40)
 
         var points: [CGPoint] = []
 
-        // 1. 扉の前から上部横通路へ
-        if abs(doorFront.y - topHallwayY) >= 4 {
-            points.append(CGPoint(x: doorFront.x, y: topHallwayY))
+        // 1. 扉の正面（上部横通路）へ出る
+        points.append(doorFront)
+
+        // 2. 上部横通路を通って、机の左側の南北主通路 (aisleX) の入口へ進む
+        if abs(doorFront.x - aisleX) >= 4 {
+            points.append(CGPoint(x: aisleX, y: topHallwayY))
         }
 
-        // 2. 上部横通路を島の脇 (hubCornerX) まで歩く
-        if abs(doorFront.x - hubCornerX) >= 4 {
-            points.append(CGPoint(x: hubCornerX, y: topHallwayY))
-        }
-
-        // 3. 島の脇を通って hub の手前まで下りる
-        if abs(topHallwayY - hubFrontY) >= 4 {
-            points.append(CGPoint(x: hubCornerX, y: hubFrontY))
-        }
-
-        // 4. hub の手前を通って机の縦通路へ入る
-        if abs(hubCornerX - aisleX) >= 4 {
-            points.append(CGPoint(x: aisleX, y: hubFrontY))
-        }
-
-        // 5. 縦通路を自分の席の段まで進む
-        if abs(hubFrontY - target.y) >= 4 {
+        // 3. 南北主通路を自分の席の段まで進む
+        if abs(topHallwayY - target.y) >= 4 {
             points.append(CGPoint(x: aisleX, y: target.y))
         }
 
-        // 6. 自分の席の前に入る
+        // 4. 自分の席（椅子の位置）に入る
         if abs(aisleX - target.x) >= 4 {
             points.append(target)
         }
@@ -1839,8 +1912,9 @@ final class DeskScene: SKScene {
         // 扉を開く
         animateDoor(open: true)
 
+        let topHallwayY = roomHeight - wallHeight - 16
         let doorSpawn = CGPoint(x: doorPosition.x, y: doorPosition.y + 6)
-        let doorFront = CGPoint(x: doorPosition.x, y: doorPosition.y - 16)
+        let doorFront = CGPoint(x: doorPosition.x, y: topHallwayY)
 
         var delay: TimeInterval = 0.0
 
@@ -1864,10 +1938,11 @@ final class DeskScene: SKScene {
             actions.append(.move(to: doorFront, duration: 0.25))
 
             // 扉から hub 机の椅子へのルート
-            let topHallwayY = min(roomHeight - wallHeight - 16, hub.y + 40)
+            let aisleX = max(doorPosition.x + 30, hub.x - 125)
             let points = [
-                CGPoint(x: doorFront.x, y: topHallwayY),
-                CGPoint(x: hub.x, y: topHallwayY),
+                doorFront,
+                CGPoint(x: aisleX, y: topHallwayY),
+                CGPoint(x: aisleX, y: hubChair.y),
                 hubChair
             ]
             var from = doorFront
@@ -2001,6 +2076,7 @@ final class DeskScene: SKScene {
     private func validateLayout() {
         guard size.height > 80 else { return }
         guard builtSkeleton == nil
+                || columns != builtColumns
                 || seatColumns != builtSeatColumns
                 || abs(roomWidth - builtRoom.width) > 1
                 || abs(roomHeight - builtRoom.height) > 1
@@ -2024,13 +2100,39 @@ final class DeskScene: SKScene {
     /// **要確認が最優先。** 手を挙げている人が画面外にいる状態は、このツールの
     /// 存在意義そのものを壊すので、忙しさより先に見る。
     /// 要確認が無いときだけ、一番稼働の多い島に張り付く。
-    /// 乗り換えは僅差で起こさない (`switchMargin` と `dwell` の両方を満たしたときだけ)
+    /// 乗り換えは僅差で起こさない (`switchMargin` と `dwell` の両方を満たしたときだけ)。
+    /// また、ユーザーが手動でドラッグやズーム操作をしている間は自動移動を控え、
+    /// 意図しないカメラ移動で視界を見失わないようにする
     private func reconsiderFocus(at now: TimeInterval) {
         if let calling = firstNeedingPerson() {
             focus = calling.point
             focusedIsland = calling.island
             switchedAt = now
+            isUserControlling = false
             return
+        }
+
+        // 人間がいま見ているタブがあれば、その机にカメラを寄せる
+        if let current = firstCurrentSeat() {
+            // もし人間がタブを明示的に切り替えたら、手動操作を即座に解除してその机へ寄せる
+            if lastFollowedCurrentPoint != current.point {
+                lastFollowedCurrentPoint = current.point
+                isUserControlling = false
+                focusedIsland = current.island
+                focus = current.point
+                switchedAt = now
+                return
+            }
+        }
+
+        // ユーザーが手動でパンやズームを操作している最中は、勝手にカメラを動かさない。
+        // 最後の操作から 6 秒間何もなければ自動追従を再開する
+        if isUserControlling {
+            if now - lastUserControlTime >= 6.0 {
+                isUserControlling = false
+            } else {
+                return
+            }
         }
 
         // 新しく入室してきた人が歩いていれば、その人をカメラで追う
@@ -2090,7 +2192,12 @@ final class DeskScene: SKScene {
     /// 打ち切ることになり、カメラが小刻みに向きを変える。少しずつ寄せると
     /// 遅れて付いていく形になり、見ていて落ち着く
     private func easeCamera(by delta: TimeInterval) {
-        let target = clampCamera(focus)
+        if abs(targetZoom - currentZoom) > 0.001 {
+            let zoomRatio = 1 - pow(0.05, delta)
+            currentZoom += (targetZoom - currentZoom) * zoomRatio
+            eye.setScale(currentZoom)
+        }
+        let target = clampCamera(focus, zoom: currentZoom)
         // 1秒でおよそ 92% 詰める速さ。フレーム間隔に依らず同じ寄り方になる
         let ratio = 1 - pow(0.08, delta)
         eye.position = CGPoint(x: eye.position.x + (target.x - eye.position.x) * ratio,
@@ -2098,14 +2205,17 @@ final class DeskScene: SKScene {
     }
 
     /// カメラが部屋の外を映さないように可動範囲を切る。
-    /// ビューポートが部屋より広い軸は寄せようがないので、部屋の中央に置く
-    private func clampCamera(_ point: CGPoint) -> CGPoint {
+    /// ズーム率に応じた表示領域を計算し、部屋より広くなった軸は部屋の中央に置く
+    private func clampCamera(_ point: CGPoint, zoom: CGFloat) -> CGPoint {
+        guard size.width > 0, size.height > 0 else { return point }
+        let viewW = size.width * zoom
+        let viewH = size.height * zoom
         func fit(_ value: CGFloat, room: CGFloat, view: CGFloat) -> CGFloat {
             guard room > view else { return room / 2 }
             return min(max(value, view / 2), room - view / 2)
         }
-        return CGPoint(x: fit(point.x, room: roomWidth, view: size.width),
-                       y: fit(point.y, room: roomHeight, view: size.height))
+        return CGPoint(x: fit(point.x, room: roomWidth, view: viewW),
+                       y: fit(point.y, room: roomHeight, view: viewH))
     }
 
     // MARK: - 画面外の要確認
@@ -2124,6 +2234,9 @@ final class DeskScene: SKScene {
         let halfW = size.width / 2
         let halfH = size.height / 2
         let inset: CGFloat = 9
+        // カメラの拡大縮小に応じた画面外判定を行うため、現在のズーム率で可視範囲を求める
+        let sceneHalfW = halfW * currentZoom
+        let sceneHalfH = halfH * currentZoom
 
         var drawn = 0
         for (index, island) in islands.enumerated() {
@@ -2133,12 +2246,17 @@ final class DeskScene: SKScene {
                 let dx = point.x - eye.position.x
                 let dy = point.y - eye.position.y
                 // 画面に入っているものには印を出さない。本人が見えているのだから
-                guard abs(dx) > halfW - inset || abs(dy) > halfH - inset else { continue }
+                guard abs(dx) > sceneHalfW - inset * currentZoom
+                        || abs(dy) > sceneHalfH - inset * currentZoom else { continue }
 
+                // マーカーは eye (カメラノード) の子として画面固定座標系に配置するため、
+                // シーン上のオフセットを zoom で割って HUD 上のピクセル位置に揃える
+                let hudX = dx / currentZoom
+                let hudY = dy / currentZoom
                 let marker = DeskScene.handMark()
                 marker.position = CGPoint(
-                    x: min(max(dx, -halfW + inset), halfW - inset),
-                    y: min(max(dy, -halfH + inset), halfH - inset))
+                    x: min(max(hudX, -halfW + inset), halfW - inset),
+                    y: min(max(hudY, -halfH + inset), halfH - inset))
                 marker.zPosition = 10000
                 markers.addChild(marker)
                 drawn += 1
@@ -2146,20 +2264,140 @@ final class DeskScene: SKScene {
         }
     }
 
-    // MARK: - クリック
+    // MARK: - 操作とイベント (パン・ズーム・クリック)
 
-    /// 机を押したらそのタブを開く。一覧の行クリックと同じ相手を呼ぶ
-    override func mouseDown(with event: NSEvent) {
-        let point = event.location(in: self)
+    /// 指定した座標にある机の席 ID を探す
+    private func seatId(at point: CGPoint) -> String? {
         for node in nodes(at: point) {
             var current: SKNode? = node
             while let candidate = current {
                 if let name = candidate.name, name.hasPrefix("seat:") {
-                    onOpen?(String(name.dropFirst("seat:".count)))
-                    return
+                    return String(name.dropFirst("seat:".count))
                 }
                 current = candidate.parent
             }
         }
+        return nil
+    }
+
+    /// ユーザーによる手動操作があったことを記録し、自動追従を一時停止する
+    private func userInteracted() {
+        isUserControlling = true
+        lastUserControlTime = lastUpdate > 0 ? lastUpdate : CACurrentMediaTime()
+    }
+
+    /// 指定したシーン座標（カーソル位置など）を中心にカメラを拡大・縮小する
+    private func applyZoom(factor: CGFloat, anchorInScene: CGPoint) {
+        userInteracted()
+        let newZoom = min(max(currentZoom * factor, minZoom), maxZoom)
+        guard abs(newZoom - currentZoom) > 0.0001 else { return }
+
+        // カーソルが指しているシーンの点をズーム後も同じ画面位置に留めるため、
+        // ズーム比率 (newZoom / currentZoom) を掛けてカメラ位置を補正する
+        let zoomRatio = newZoom / currentZoom
+        let newFocus = CGPoint(
+            x: anchorInScene.x - (anchorInScene.x - focus.x) * zoomRatio,
+            y: anchorInScene.y - (anchorInScene.y - focus.y) * zoomRatio
+        )
+        currentZoom = newZoom
+        targetZoom = newZoom
+        eye.setScale(currentZoom)
+        focus = clampCamera(newFocus, zoom: currentZoom)
+        eye.position = focus
+    }
+
+    /// クリック開始。ダブルクリックならズームリセット、単一クリックならドラッグ開始または机の選択準備
+    override func mouseDown(with event: NSEvent) {
+        let point = event.location(in: self)
+        let clickedSeat = seatId(at: point)
+
+        if event.clickCount == 2 {
+            if let clickedSeat {
+                onOpen?(clickedSeat)
+            } else {
+                // 背景をダブルクリックした場合は等倍 (1.0) に戻し、自動追従を即座に再開する
+                targetZoom = 1.0
+                isUserControlling = false
+                lastFollowedCurrentPoint = nil
+            }
+            return
+        }
+
+        dragStartInWindow = event.locationInWindow
+        dragStartFocus = focus
+        isDragging = false
+        clickedSeatId = clickedSeat
+    }
+
+    /// マウスドラッグでカメラを直接パン移動する
+    override func mouseDragged(with event: NSEvent) {
+        guard let startInWindow = dragStartInWindow,
+              let startFocus = dragStartFocus else { return }
+        let currentInWindow = event.locationInWindow
+        let dx = currentInWindow.x - startInWindow.x
+        let dy = currentInWindow.y - startInWindow.y
+        let distance = hypot(dx, dy)
+
+        // わずかな手ブレでクリックをドラッグと誤認しないよう、4pt 以上動いてからドラッグとみなす
+        if !isDragging && distance > 4 {
+            isDragging = true
+            NSCursor.closedHand.push()
+        }
+
+        guard isDragging else { return }
+        userInteracted()
+
+        // 掴んだ床がそのままマウスカーソルに追従するよう、画面の移動量にズーム率を掛けてカメラを逆方向に送る
+        let newFocus = CGPoint(
+            x: startFocus.x - dx * currentZoom,
+            y: startFocus.y - dy * currentZoom
+        )
+        focus = clampCamera(newFocus, zoom: currentZoom)
+        eye.position = focus
+    }
+
+    /// マウス離脱。ドラッグ中ならカーソルを戻し、机の単一クリックだった場合はそのタスクを開く
+    override func mouseUp(with event: NSEvent) {
+        if isDragging {
+            NSCursor.pop()
+            isDragging = false
+        } else if let seatId = clickedSeatId {
+            onOpen?(seatId)
+        }
+        dragStartInWindow = nil
+        dragStartFocus = nil
+        clickedSeatId = nil
+    }
+
+    /// スクロールホイールおよびトラックパッドの2本指スワイプによるパン・ズーム操作
+    override func scrollWheel(with event: NSEvent) {
+        if event.modifierFlags.contains(.command) {
+            // ⌘ + スクロール: マウスカーソル位置を中心に拡大縮小する
+            let deltaY = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.deltaY * 10
+            guard abs(deltaY) > 0.01 else { return }
+            let factor = pow(1.003, -deltaY)
+            let anchor = event.location(in: self)
+            applyZoom(factor: factor, anchorInScene: anchor)
+        } else {
+            // 通常のスクロール: トラックパッドの2本指スワイプやマウスホイールで部屋をパン移動する
+            let deltaX = event.hasPreciseScrollingDeltas ? event.scrollingDeltaX : event.deltaX * 20
+            let deltaY = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.deltaY * 20
+            guard abs(deltaX) > 0.1 || abs(deltaY) > 0.1 else { return }
+            userInteracted()
+            let newFocus = CGPoint(
+                x: focus.x - deltaX * currentZoom,
+                y: focus.y - deltaY * currentZoom
+            )
+            focus = clampCamera(newFocus, zoom: currentZoom)
+            eye.position = focus
+        }
+    }
+
+    /// トラックパッドのピンチジェスチャによる拡大縮小
+    override func magnify(with event: NSEvent) {
+        // magnification は前フレームからの増分。正（広げる）ならズームイン（zoom縮小）、負ならズームアウト
+        let factor = 1.0 / (1.0 + event.magnification)
+        let anchor = event.location(in: self)
+        applyZoom(factor: factor, anchorInScene: anchor)
     }
 }
