@@ -55,7 +55,10 @@ public enum DeskIslands {
                          isCurrent: isCurrent,
                          tabNumber: tabNum,
                          model: task.model,
-                         agent: task.agentDisplayName))
+                         agent: task.agentDisplayName,
+                         // 一覧の要確認行と同じ優先順位。承認待ちの要求を先に、
+                         // 無ければ終わったときの締めを出す
+                         request: task.currentRequest ?? task.currentSummary))
         }
 
         // Organization ごとに島をまとめて並べる。

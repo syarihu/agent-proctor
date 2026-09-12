@@ -118,6 +118,17 @@ final class OfficeLoungeNode: SKNode {
     private var counters: [Board: SKLabelNode] = [:]
     /// 各ディスプレイの画面。件数が 0 のときは暗く落とす
     private var panels: [Board: SKShapeNode] = [:]
+    /// 確認待ちディスプレイの明細行（1行目: 何を待たせているか／2行目: 待っている内容）
+    private var detailTitles: [SKLabelNode] = []
+    private var detailBodies: [SKLabelNode] = []
+
+    /// 確認待ちの明細1件
+    struct Attention {
+        let name: String
+        let repo: String
+        /// 待っている内容。承認要求または締めのメッセージ
+        let request: String?
+    }
 
     // MARK: - 初期化
 
@@ -151,7 +162,7 @@ final class OfficeLoungeNode: SKNode {
         // 東側の出入口。ソファと同じ高さに開けて、入ってすぐ座れるようにする
         addChild(doorway(at: CGPoint(x: width, y: lounge.doorY - lounge.frame.minY)))
 
-        setCounts([:])
+        setCounts([:], attention: [])
     }
 
     required init?(coder aDecoder: NSCoder) {
@@ -160,8 +171,8 @@ final class OfficeLoungeNode: SKNode {
 
     // MARK: - 状態の反映
 
-    /// 状態ごとの件数をディスプレイに出す
-    func setCounts(_ counts: [Board: Int]) {
+    /// 状態ごとの件数と、確認待ちの明細をディスプレイに出す
+    func setCounts(_ counts: [Board: Int], attention: [Attention]) {
         for board in Board.allCases {
             let count = counts[board] ?? 0
             counters[board]?.text = "\(count)"
@@ -177,6 +188,39 @@ final class OfficeLoungeNode: SKNode {
                 ? board.tint.withAlphaComponent(0.75)
                 : Self.boardInkColor.withAlphaComponent(0.25)
         }
+
+        // 枠に収まらないぶんは最終行を「あと N 件」に使う
+        let capacity = detailTitles.count
+        let overflows = attention.count > capacity
+        let shown = overflows ? Array(attention.prefix(capacity - 1)) : attention
+        let tint = Board.needsPerson.tint
+
+        for index in 0..<capacity {
+            let title = detailTitles[index]
+            let body = detailBodies[index]
+
+            if index < shown.count {
+                let entry = shown[index]
+                title.text = Self.truncate("\(entry.name)  \(entry.repo)", limit: 30)
+                title.fontColor = Self.boardInkColor
+                body.text = entry.request.map { Self.truncate($0, limit: 36) } ?? ""
+                body.fontColor = tint.withAlphaComponent(0.85)
+            } else if overflows && index == capacity - 1 {
+                title.text = "+\(attention.count - shown.count)"
+                title.fontColor = Self.boardInkColor.withAlphaComponent(0.7)
+                body.text = ""
+            } else {
+                title.text = ""
+                body.text = ""
+            }
+        }
+    }
+
+    /// 画面幅に収まらない文字を後ろから詰める
+    private static func truncate(_ text: String, limit: Int) -> String {
+        let flat = text.replacingOccurrences(of: "\n", with: " ")
+        guard flat.count > limit else { return flat }
+        return String(flat.prefix(limit - 1)) + "…"
     }
 
     // MARK: - 部品
@@ -216,19 +260,26 @@ final class OfficeLoungeNode: SKNode {
         return node
     }
 
-    /// 状態ごとの巨大ディスプレイ。壁掛けモニタを縦に3枚並べたつもりで描く
+    /// 状態ごとの巨大ディスプレイ。壁掛けモニタを縦に3枚並べたつもりで描く。
+    ///
+    /// 確認待ちだけは見出しの下に明細を抱えて背が高い。数だけ出しても
+    /// 「何を待たせているのか」が分からず、結局セッションを開いて回ることになるため
     private func displays(width: CGFloat, y: CGFloat) -> SKNode {
         let node = SKNode()
         node.position = CGPoint(x: 12, y: y)
         node.zPosition = Self.furnitureZ - Self.carpetZ
 
         let panelWidth = width - 24
+        var top = Self.boardHeight
 
-        for (index, board) in Board.allCases.enumerated() {
-            // 上から順に並べる。`Board.allCases` の並びがそのまま表示順になる
-            let top = Self.boardHeight - CGFloat(index) * (Self.displayHeight + Self.displayGap)
-            let rect = CGRect(x: 0, y: top - Self.displayHeight,
-                              width: panelWidth, height: Self.displayHeight)
+        for board in Board.allCases {
+            let panelHeight = board == .needsPerson
+                ? OfficeMetrics.loungeAttentionDisplayHeight
+                : Self.displayHeight
+            let rect = CGRect(x: 0, y: top - panelHeight, width: panelWidth, height: panelHeight)
+            // 見出し（状態名と件数）は、明細があっても画面の上端に固定する
+            let headRect = CGRect(x: rect.minX, y: rect.maxY - Self.displayHeight,
+                                  width: panelWidth, height: Self.displayHeight)
 
             // 画面の外枠（ベゼル）
             let bezel = SKShapeNode(rect: rect.insetBy(dx: -1.5, dy: -1.5), cornerRadius: 5)
@@ -243,8 +294,8 @@ final class OfficeLoungeNode: SKNode {
             panels[board] = panel
 
             // 左端の状態色のバー。数字を読まなくても色で区別が付く
-            let stripe = SKShapeNode(rect: CGRect(x: rect.minX + 6, y: rect.minY + 8,
-                                                  width: 4, height: rect.height - 16),
+            let stripe = SKShapeNode(rect: CGRect(x: headRect.minX + 6, y: headRect.minY + 8,
+                                                  width: 4, height: Self.displayHeight - 16),
                                      cornerRadius: 2)
             stripe.fillColor = board.tint
             stripe.strokeColor = .clear
@@ -257,7 +308,7 @@ final class OfficeLoungeNode: SKNode {
             title.fontColor = Self.boardInkColor
             title.horizontalAlignmentMode = .left
             title.verticalAlignmentMode = .center
-            title.position = CGPoint(x: rect.minX + 18, y: rect.midY)
+            title.position = CGPoint(x: headRect.minX + 18, y: headRect.midY)
             title.zPosition = 2
             node.addChild(title)
 
@@ -266,13 +317,54 @@ final class OfficeLoungeNode: SKNode {
             counter.fontSize = 26
             counter.horizontalAlignmentMode = .right
             counter.verticalAlignmentMode = .center
-            counter.position = CGPoint(x: rect.maxX - 14, y: rect.midY - 1)
+            counter.position = CGPoint(x: headRect.maxX - 14, y: headRect.midY - 1)
             counter.zPosition = 2
             node.addChild(counter)
             counters[board] = counter
+
+            if board == .needsPerson {
+                addDetailRows(to: node, under: headRect, bottom: rect.minY)
+            }
+
+            top -= panelHeight + Self.displayGap
         }
 
         return node
+    }
+
+    /// 確認待ちディスプレイの明細行。見出しとの間に区切り線を1本引く
+    private func addDetailRows(to node: SKNode, under headRect: CGRect, bottom: CGFloat) {
+        let divider = SKShapeNode(rect: CGRect(x: headRect.minX + 8, y: headRect.minY - 1,
+                                               width: headRect.width - 16, height: 1))
+        divider.fillColor = Self.boardInkColor.withAlphaComponent(0.18)
+        divider.strokeColor = .clear
+        divider.zPosition = 2
+        node.addChild(divider)
+
+        let rowHeight = OfficeMetrics.loungeDetailRowHeight
+        for index in 0..<OfficeMetrics.loungeDetailRows {
+            let rowTop = headRect.minY - 4 - rowHeight * CGFloat(index)
+
+            let title = SKLabelNode(text: "")
+            title.fontName = "Menlo-Bold"
+            title.fontSize = 9
+            title.horizontalAlignmentMode = .left
+            title.verticalAlignmentMode = .center
+            title.position = CGPoint(x: headRect.minX + 12, y: rowTop - 8)
+            title.zPosition = 2
+            node.addChild(title)
+            detailTitles.append(title)
+
+            let body = SKLabelNode(text: "")
+            body.fontName = "Menlo"
+            body.fontSize = 8
+            body.horizontalAlignmentMode = .left
+            body.verticalAlignmentMode = .center
+            body.position = CGPoint(x: headRect.minX + 18, y: rowTop - 19)
+            body.zPosition = 2
+            node.addChild(body)
+            detailBodies.append(body)
+        }
     }
 
     /// 給茶機とエスプレッソマシンが載ったカウンター
