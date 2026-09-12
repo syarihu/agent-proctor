@@ -73,16 +73,28 @@ enum OfficeMetrics {
     static let loungeBarHeight: CGFloat = 26
     static let loungeSofaHeight: CGFloat = 40
     /// ソファに並ぶ座面の数
-    static let loungeSofaSeats = 3
+    static let loungeSofaSeats = 4
 
-    // 丸テーブル。ソファだけでは3人で埋まってしまい、4人目から席が回らない
+    // 丸テーブル。ソファだけでは席がすぐ埋まって相席になるので、卓を並べて 20 席にする
     static let loungeTableRowHeight: CGFloat = 78
-    static let loungeTableCount = 2
+    static let loungeTableColumns = 2
+    static let loungeTableRows = 2
     static let loungeTableRadius: CGFloat = 17
     /// テーブルの中心から椅子までの距離
     static let loungeTableSeatRadius: CGFloat = 27
     /// テーブル1卓を囲む椅子の数
     static let loungeTableSeats = 4
+
+    /// 丸テーブルの並びが占める高さ
+    static var loungeTableAreaHeight: CGFloat {
+        loungeTableRowHeight * CGFloat(loungeTableRows)
+            + loungeGap * CGFloat(loungeTableRows - 1)
+    }
+
+    /// ラウンジに用意してある席の総数
+    static var loungeSeatCount: Int {
+        loungeSofaSeats + loungeTableColumns * loungeTableRows * loungeTableSeats
+    }
 
     /// 状態ディスプレイ1枚の高さ
     static let loungeDisplayHeight: CGFloat = 50
@@ -112,7 +124,7 @@ enum OfficeMetrics {
     static var loungeHeight: CGFloat {
         loungePadding * 2
             + loungeHeaderHeight + loungeBoardHeight + loungeBarHeight
-            + loungeTableRowHeight + loungeSofaHeight
+            + loungeTableAreaHeight + loungeSofaHeight
             + loungeGap * 4
     }
 
@@ -121,9 +133,11 @@ enum OfficeMetrics {
         loungePadding + loungeSofaHeight / 2
     }
 
-    /// ラウンジの下端から丸テーブルの中心までの高さ
-    static var loungeTableOffset: CGFloat {
-        loungePadding + loungeSofaHeight + loungeGap + loungeTableRowHeight / 2
+    /// ラウンジの下端から丸テーブルの中心までの高さ。行はソファに近いほうから 0
+    static func loungeTableOffset(row: Int) -> CGFloat {
+        loungePadding + loungeSofaHeight + loungeGap
+            + loungeTableRowHeight / 2
+            + (loungeTableRowHeight + loungeGap) * CGFloat(row)
     }
     /// 部屋の外周に取る余白
     static let floorMargin: CGFloat = 32
@@ -341,8 +355,11 @@ extension OfficeFloorPlan {
         let northBand = OfficeMetrics.wallHeight + OfficeMetrics.topHallway
         let suitesHeight = suiteHeights.reduce(0, +)
             + OfficeMetrics.centralCorridor * CGFloat(max(0, suiteHeights.count - 1))
+        // ラウンジはスイートの上端に揃えて下へ伸びるので、スイートより背が高いことがある。
+        // 床の高さをスイートだけで決めると、そのぶんが部屋の外にはみ出す
+        let loungeSpace = style.showsLounge ? OfficeMetrics.loungeHeight : 0
         let roomHeight = max(viewport.height,
-                             northBand + suitesHeight + OfficeMetrics.bottomMargin)
+                             northBand + max(suitesHeight, loungeSpace) + OfficeMetrics.bottomMargin)
 
         // スイートを北から順に積む。中身の幅が部屋より狭いときは、
         // ラウンジの右側の残りに対して中央に寄せる
@@ -470,12 +487,18 @@ extension OfficeFloorPlan {
                 CGPoint(x: frame.midX - sofaSpread / 2 + sofaPitch * CGFloat(index), y: sofaY)
             }
 
-            // 丸テーブル。ソファが埋まったらこちらへ座らせる
-            let tableY = frame.minY + OfficeMetrics.loungeTableOffset
+            // 丸テーブル。ソファが埋まったらこちらへ座らせる。
+            // ソファに近い行・左の卓から順に埋まるよう、下の行から並べる
             let tablePitch: CGFloat = 124
-            let tableSpread = tablePitch * CGFloat(OfficeMetrics.loungeTableCount - 1)
-            let tableCenters = (0..<OfficeMetrics.loungeTableCount).map { index in
-                CGPoint(x: frame.midX - tableSpread / 2 + tablePitch * CGFloat(index), y: tableY)
+            let tableSpread = tablePitch * CGFloat(OfficeMetrics.loungeTableColumns - 1)
+            var tableCenters: [CGPoint] = []
+            for row in 0..<OfficeMetrics.loungeTableRows {
+                let tableY = frame.minY + OfficeMetrics.loungeTableOffset(row: row)
+                for column in 0..<OfficeMetrics.loungeTableColumns {
+                    tableCenters.append(CGPoint(
+                        x: frame.midX - tableSpread / 2 + tablePitch * CGFloat(column),
+                        y: tableY))
+                }
             }
             for center in tableCenters {
                 // 卓を north / east / south / west の順に囲む

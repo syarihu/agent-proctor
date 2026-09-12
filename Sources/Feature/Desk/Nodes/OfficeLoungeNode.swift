@@ -155,7 +155,7 @@ final class OfficeLoungeNode: SKNode {
         cursor -= Self.gap + Self.barHeight
         addChild(drinkBar(width: width, y: cursor))
 
-        cursor -= Self.gap + OfficeMetrics.loungeTableRowHeight
+        cursor -= Self.gap + OfficeMetrics.loungeTableAreaHeight
         addChild(tables(centers: lounge.tableCenters.map {
             CGPoint(x: $0.x - lounge.frame.minX, y: $0.y - lounge.frame.minY)
         }))
