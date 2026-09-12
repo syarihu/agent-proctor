@@ -76,6 +76,7 @@ final class DeskScene: SKScene {
     private var islands: [DeskIsland] = []
     private var rateLimits: [AgentQuotaSummary] = []
     private var whiteboardNodes: [WhiteboardNode] = []
+    private weak var loungeNode: OfficeLoungeNode?
     private var activity: [Double] = []
     private var lastUpdate: TimeInterval = 0
 
@@ -306,6 +307,14 @@ final class DeskScene: SKScene {
             for planter in suite.planters {
                 room.addChild(OfficePlanterNode(planter: planter))
             }
+        }
+
+        if let lounge = plan.lounge {
+            let node = OfficeLoungeNode(lounge: lounge)
+            room.addChild(node)
+            loungeNode = node
+        } else {
+            loungeNode = nil
         }
     }
 

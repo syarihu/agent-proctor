@@ -104,6 +104,9 @@
 
 /* オフィスウィンドウ */
 "app.office.window_title" = "オフィス";
+"app.office.lounge.title" = "共用ラウンジ";
+"app.office.lounge.resting" = "休憩中";
+"app.office.lounge.all_at_desk" = "全員が自席で作業中";
 
 /* 設定画面 */
 "app.settings.window_title" = "Agent Proctor の設定";
