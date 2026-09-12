@@ -70,14 +70,14 @@ final class DeskWhiteboardNode: SKNode {
         label1 = SKLabelNode(fontNamed: "SFMono-Bold")
         label1.name = "whiteboardLabel1"
         label1.fontColor = Self.markerInkColor(isHub: isHub)
-        label1.horizontalAlignmentMode = .center
+        label1.horizontalAlignmentMode = .left
         label1.verticalAlignmentMode = .center
         label1.zPosition = 6
 
         label2 = SKLabelNode(fontNamed: "SFMono-Bold")
         label2.name = "whiteboardLabel2"
         label2.fontColor = Self.markerInkColor(isHub: isHub)
-        label2.horizontalAlignmentMode = .center
+        label2.horizontalAlignmentMode = .left
         label2.verticalAlignmentMode = .center
         label2.zPosition = 6
 
@@ -232,21 +232,22 @@ final class DeskWhiteboardNode: SKNode {
 
     // MARK: - 状態更新
 
-    /// テキストを1行または2行に整形して配置する
+    /// テキストを1行または2行に整形して配置する（ホワイトボードへの板書らしく左寄せで配置）
     private func applyText(_ text: String) {
         let lines = Self.formatWhiteboardLines(text, limitPerLine: isHub ? 20 : 23)
+        let textLeft = -boardWidth / 2 + 12
         if lines.count == 1 {
             label1.text = lines[0]
-            label1.position = CGPoint(x: 0, y: boardCenterY)
+            label1.position = CGPoint(x: textLeft, y: boardCenterY)
             label1.fontSize = isHub ? 12.5 : 11.2
             label2.text = nil
             label2.isHidden = true
         } else {
             label1.text = lines[0]
-            label1.position = CGPoint(x: 0, y: boardCenterY + 7.5)
+            label1.position = CGPoint(x: textLeft, y: boardCenterY + 7.5)
             label1.fontSize = isHub ? 11.0 : 10.2
             label2.text = lines[1]
-            label2.position = CGPoint(x: 0, y: boardCenterY - 7.5)
+            label2.position = CGPoint(x: textLeft, y: boardCenterY - 7.5)
             label2.fontSize = isHub ? 11.0 : 10.2
             label2.isHidden = false
         }
