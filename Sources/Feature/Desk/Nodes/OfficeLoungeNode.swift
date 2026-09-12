@@ -19,14 +19,14 @@ final class OfficeLoungeNode: SKNode {
 
     // MARK: - 寸法
 
-    /// 案内板の帯の高さ
-    private static let headerHeight: CGFloat = 30
-    /// 休憩者ボードの高さ
-    private static let boardHeight: CGFloat = 96
-    /// ドリンクバーの高さ
-    private static let barHeight: CGFloat = 26
-    /// ソファの高さ
-    private static let sofaHeight: CGFloat = 40
+    // 間取りが同じ数値でラウンジの高さを出しているので、必ず `OfficeMetrics` を引く。
+    // ここで別の値を持つと、箱の高さと中身の積み上げがずれる
+    private static let padding = OfficeMetrics.loungePadding
+    private static let gap = OfficeMetrics.loungeGap
+    private static let headerHeight = OfficeMetrics.loungeHeaderHeight
+    private static let boardHeight = OfficeMetrics.loungeBoardHeight
+    private static let barHeight = OfficeMetrics.loungeBarHeight
+    private static let sofaHeight = OfficeMetrics.loungeSofaHeight
 
     // MARK: - 色
 
@@ -103,24 +103,23 @@ final class OfficeLoungeNode: SKNode {
 
         addChild(carpet(width: width, height: height))
 
-        // 上から順に積む
-        var cursor = height
+        // 上端から順に積む。箱の高さは `OfficeMetrics.loungeHeight` がこれと同じ順で出している
+        var cursor = height - Self.padding
         cursor -= Self.headerHeight
         addChild(header(width: width, y: cursor))
 
-        cursor -= 10 + Self.boardHeight
+        cursor -= Self.gap + Self.boardHeight
         addChild(board(width: width, y: cursor))
 
-        cursor -= 10 + Self.barHeight
+        cursor -= Self.gap + Self.barHeight
         addChild(drinkBar(width: width, y: cursor))
 
-        // ソファは下端に寄せる
-        addChild(sofa(width: width, y: 30, spots: lounge.sofaSpots.map { $0.x - lounge.frame.minX }))
+        cursor -= Self.gap + Self.sofaHeight
+        addChild(sofa(width: width, y: cursor,
+                      spots: lounge.sofaSpots.map { $0.x - lounge.frame.minX }))
 
-        // 東側の出入口。スイートの側面扉と向かい合う
-        for doorY in lounge.doorYs {
-            addChild(doorway(at: CGPoint(x: width, y: doorY - lounge.frame.minY)))
-        }
+        // 東側の出入口。ソファと同じ高さに開けて、入ってすぐ座れるようにする
+        addChild(doorway(at: CGPoint(x: width, y: lounge.doorY - lounge.frame.minY)))
 
         setResting([])
     }

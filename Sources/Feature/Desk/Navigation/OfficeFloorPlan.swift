@@ -64,6 +64,27 @@ enum OfficeMetrics {
     static let loungeWidth: CGFloat = 200
     /// ラウンジとスイートの間の縦通路
     static let loungeCorridor: CGFloat = 48
+
+    // ラウンジの中身。スイートの高さに合わせて伸ばすと、床が縦に長いときに
+    // ソファだけが遠くの下端に取り残される。中身ぶんの高さに詰めて上端に揃える
+    static let loungePadding: CGFloat = 10
+    static let loungeGap: CGFloat = 8
+    static let loungeHeaderHeight: CGFloat = 26
+    static let loungeBoardHeight: CGFloat = 88
+    static let loungeBarHeight: CGFloat = 26
+    static let loungeSofaHeight: CGFloat = 40
+
+    /// ラウンジの高さ。中身を上から下へ積んだぶんだけ
+    static var loungeHeight: CGFloat {
+        loungePadding * 2
+            + loungeHeaderHeight + loungeBoardHeight + loungeBarHeight + loungeSofaHeight
+            + loungeGap * 3
+    }
+
+    /// ラウンジの下端からソファの座面までの高さ
+    static var loungeSofaOffset: CGFloat {
+        loungePadding + loungeSofaHeight / 2
+    }
     /// 部屋の外周に取る余白
     static let floorMargin: CGFloat = 32
     /// 北壁の高さ
@@ -131,8 +152,8 @@ struct OfficeFloorPlan {
     /// 西側の共用ラウンジ
     struct Lounge {
         let frame: CGRect
-        /// 東側の出入口の中心 Y。スイートの側面扉と向かい合う
-        let doorYs: [CGFloat]
+        /// 東側の出入口の中心 Y。ソファと同じ高さに開けて、入ってすぐ座れるようにする
+        let doorY: CGFloat
         /// ソファの座面。休憩中のエージェントが座る位置
         let sofaSpots: [CGPoint]
     }
@@ -287,7 +308,6 @@ extension OfficeFloorPlan {
         var cursorY = roomHeight - northBand
         var suites: [Suite] = []
         var zonesByIsland: [Int: RepoZone] = [:]
-        var loungeDoorYs: [CGFloat] = []
 
         for (groupIndex, group) in groups.enumerated() {
             let suiteHeight = suiteHeights[groupIndex]
@@ -370,7 +390,6 @@ extension OfficeFloorPlan {
                 if style.showsLounge {
                     let doorCenterY = rowTop - rowHeight / 2
                     sideDoorYs.append(doorCenterY)
-                    loungeDoorYs.append(doorCenterY)
                 }
 
                 rowTop -= rowHeight + OfficeMetrics.horizontalPlanterGap
@@ -391,21 +410,23 @@ extension OfficeFloorPlan {
             cursorY = suiteFrame.minY - OfficeMetrics.centralCorridor
         }
 
-        // 西側の共用ラウンジ。スイート群の縦の範囲に合わせて伸ばす
+        // 西側の共用ラウンジ。中身ぶんの高さに詰めて、一番北のスイートと上端を揃える。
+        // スイートの縦の範囲いっぱいに伸ばすと、リポジトリが増えて床が縦に長くなるほど
+        // ソファが遠くの下端へ離れていってしまう
         var lounge: Lounge?
-        if style.showsLounge, let first = suites.first, let last = suites.last {
+        if style.showsLounge, let first = suites.first {
+            let height = OfficeMetrics.loungeHeight
             let frame = CGRect(x: OfficeMetrics.floorMargin,
-                               y: last.frame.minY,
+                               y: first.frame.maxY - height,
                                width: OfficeMetrics.loungeWidth,
-                               height: first.frame.maxY - last.frame.minY)
-            // ソファは下端に吸着させる。部屋が縦に伸びても休憩スペースが間延びしない
-            let sofaY = frame.minY + 52
+                               height: height)
+            let sofaY = frame.minY + OfficeMetrics.loungeSofaOffset
             let sofaSpots = [
                 CGPoint(x: frame.midX - 34, y: sofaY),
                 CGPoint(x: frame.midX, y: sofaY),
                 CGPoint(x: frame.midX + 34, y: sofaY)
             ]
-            lounge = Lounge(frame: frame, doorYs: loungeDoorYs, sofaSpots: sofaSpots)
+            lounge = Lounge(frame: frame, doorY: sofaY, sofaSpots: sofaSpots)
         }
 
         let centerX = suites.first?.frame.midX ?? roomWidth / 2

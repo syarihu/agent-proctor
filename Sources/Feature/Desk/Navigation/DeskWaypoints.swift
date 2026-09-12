@@ -233,12 +233,11 @@ struct DeskLayout {
             // 2. 側面扉の高さまで移動して、スイートの外へ出る
             CGPoint(x: zone.westAisleX, y: doorY),
             CGPoint(x: suite.frame.minX, y: doorY),
-            // 3. 通路を渡ってラウンジへ入る
+            // 3. 通路へ出て、ラウンジの出入口の高さまで南北に移動する
             CGPoint(x: corridorX, y: doorY),
-            CGPoint(x: lounge.frame.maxX - 16, y: doorY),
-            // 4. ソファの背後まで下りて腰かける
-            CGPoint(x: lounge.frame.maxX - 16, y: sofa.y + 28),
-            CGPoint(x: sofa.x, y: sofa.y + 28),
+            CGPoint(x: corridorX, y: lounge.doorY),
+            // 4. 扉をくぐるとそこがソファ
+            CGPoint(x: lounge.frame.maxX, y: lounge.doorY),
             sofa
         ], from: start)
     }
@@ -255,9 +254,9 @@ struct DeskLayout {
         let approachY = target.y + 26
 
         return Self.prune([
-            CGPoint(x: start.x, y: start.y + 28),
-            CGPoint(x: lounge.frame.maxX - 16, y: start.y + 28),
-            CGPoint(x: lounge.frame.maxX - 16, y: doorY),
+            // 来た道をそのまま戻る
+            CGPoint(x: lounge.frame.maxX, y: lounge.doorY),
+            CGPoint(x: corridorX, y: lounge.doorY),
             CGPoint(x: corridorX, y: doorY),
             CGPoint(x: suite.frame.minX, y: doorY),
             CGPoint(x: zone.westAisleX, y: doorY),
