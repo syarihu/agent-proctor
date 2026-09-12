@@ -105,12 +105,20 @@ final class DeskScene: SKScene {
 
     // MARK: - ライフサイクル
 
+    /// ズーム倍率等の状態永続化キー（オフィスウィンドウで使用）
+    var persistenceKey: String? {
+        didSet {
+            loadSavedZoom()
+        }
+    }
+
     override func didMove(to view: SKView) {
         if eye.parent == nil {
             addChild(eye)
             camera = eye
             eye.addChild(markers)
         }
+        loadSavedZoom()
         rebuildIfNeeded()
     }
 
@@ -251,6 +259,7 @@ final class DeskScene: SKScene {
 
         cameraManager.focusedIsland = min(cameraManager.focusedIsland, max(0, islands.count - 1))
         cameraManager.focus = layout.hubPoint(island: cameraManager.focusedIsland)
+        eye.setScale(cameraManager.currentZoom)
         eye.position = cameraManager.clampCamera(cameraManager.focus, zoom: cameraManager.currentZoom, roomWidth: roomWidth, roomHeight: roomHeight, viewSize: size)
     }
 
@@ -850,6 +859,27 @@ final class DeskScene: SKScene {
         cameraManager.lastUserControlTime = lastUpdate > 0 ? lastUpdate : CACurrentMediaTime()
     }
 
+    private func loadSavedZoom() {
+        guard let key = persistenceKey else { return }
+        let userDefaultsKey = "\(key).zoom"
+        if let savedObj = UserDefaults.standard.object(forKey: userDefaultsKey) as? Double {
+            let saved = CGFloat(savedObj)
+            let clamped = min(max(saved, cameraManager.minZoom), cameraManager.maxZoom)
+            cameraManager.currentZoom = clamped
+            cameraManager.targetZoom = clamped
+            eye.setScale(clamped)
+            if size.width > 0 && size.height > 0 {
+                cameraManager.focus = cameraManager.clampCamera(cameraManager.focus, zoom: clamped, roomWidth: roomWidth, roomHeight: roomHeight, viewSize: size)
+                eye.position = cameraManager.focus
+            }
+        }
+    }
+
+    private func saveCurrentZoom() {
+        guard let key = persistenceKey else { return }
+        UserDefaults.standard.set(Double(cameraManager.targetZoom), forKey: "\(key).zoom")
+    }
+
     private func applyZoom(factor: CGFloat, anchorInScene: CGPoint) {
         userInteracted()
         let newZoom = min(max(cameraManager.currentZoom * factor, cameraManager.minZoom), cameraManager.maxZoom)
@@ -865,6 +895,7 @@ final class DeskScene: SKScene {
         eye.setScale(cameraManager.currentZoom)
         cameraManager.focus = cameraManager.clampCamera(newFocus, zoom: cameraManager.currentZoom, roomWidth: roomWidth, roomHeight: roomHeight, viewSize: size)
         eye.position = cameraManager.focus
+        saveCurrentZoom()
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -894,6 +925,7 @@ final class DeskScene: SKScene {
                 cameraManager.targetZoom = 1.0
                 cameraManager.isUserControlling = false
                 cameraManager.lastFollowedCurrentPoint = nil
+                saveCurrentZoom()
             }
             return
         }

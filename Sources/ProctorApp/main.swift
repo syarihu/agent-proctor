@@ -93,6 +93,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.updateActivationPolicy()
         }
 
+        // 前回アプリ終了時にオフィスウィンドウが表示されていた場合は自動的に再表示する
+        if OfficeWindow.wasOpenOnQuit {
+            officeWindow.show()
+        }
+
         notices = NoticeSettings()
         notifier = Notifier()
         notifier.onOpen = { [weak self] id in self?.open(taskID: id) }
@@ -133,6 +138,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 終了時に iTerm2 のウィンドウ幅を元の状態に復元する（willTerminate では通信が間に合わない場合があるためここで実行）
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        OfficeWindow.isTerminating = true
+        OfficeWindow.setOpenState(officeWindow?.isVisible ?? false)
         sidebar?.restoreRoom()
         return .terminateNow
     }

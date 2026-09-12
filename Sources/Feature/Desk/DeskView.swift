@@ -13,16 +13,20 @@ public struct DeskView: View {
     public let rateLimits: [AgentQuotaSummary]
     /// サイドバーまたはオフィス窓が見えているか。隠れているあいだはコマ数を落とす
     public let running: Bool
+    /// ズーム倍率等の状態永続化キー（オフィスウィンドウのみ保存し、サイドバーと分離する）
+    public let persistenceKey: String?
     /// 机をクリックしたときに開くセッション。一覧の行クリックと同じ相手を渡す
     public var onOpen: (String) -> Void
 
     public init(islands: [DeskIsland],
                 rateLimits: [AgentQuotaSummary] = [],
                 running: Bool,
+                persistenceKey: String? = nil,
                 onOpen: @escaping (String) -> Void) {
         self.islands = islands
         self.rateLimits = rateLimits
         self.running = running
+        self.persistenceKey = persistenceKey
         self.onOpen = onOpen
     }
 
@@ -39,6 +43,7 @@ public struct DeskView: View {
         DeskSKContainerView(scene: box.scene, running: running)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
+                box.scene.persistenceKey = persistenceKey
                 box.scene.onOpen = onOpen
                 box.scene.apply(islands: islands, rateLimits: rateLimits)
             }

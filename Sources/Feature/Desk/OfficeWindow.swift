@@ -10,6 +10,21 @@ import SwiftUI
 /// 閉じた際に他に開いているウィンドウが無ければ .accessory に戻す。
 @MainActor
 public final class OfficeWindow {
+    /// アプリ終了処理中フラグ。通常クローズと終了時クローズを区別する
+    public static var isTerminating = false
+    private static let openStateKey = "OfficeWindow.isOpen"
+    private static let frameAutosaveName = "OfficeWindow"
+
+    /// 前回終了時にオフィスウィンドウが開いていたかどうか
+    public static var wasOpenOnQuit: Bool {
+        UserDefaults.standard.bool(forKey: openStateKey)
+    }
+
+    /// ウィンドウ開閉状態の保存
+    public static func setOpenState(_ open: Bool) {
+        UserDefaults.standard.set(open, forKey: openStateKey)
+    }
+
     private var window: NSWindow?
     private let store: TaskStore
     private let appearance: Appearance
@@ -34,7 +49,7 @@ public final class OfficeWindow {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
-        window?.center()
+        Self.setOpenState(true)
         onVisibilityChange?(true)
     }
 
@@ -44,17 +59,30 @@ public final class OfficeWindow {
         let window = NSWindow(contentViewController: hosting)
         window.title = Localized.text("app.office.window_title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.setContentSize(NSSize(width: 960, height: 600))
         window.minSize = NSSize(width: 580, height: 400)
         window.isReleasedWhenClosed = false
         window.delegate = delegateProxy
+
+        // 保存されたウィンドウサイズ・位置があれば復元し、無ければ既定の 960x600 で画面中央に配置する
+        if !window.setFrameUsingName(Self.frameAutosaveName) {
+            window.setContentSize(NSSize(width: 960, height: 600))
+            window.center()
+        }
+        window.setFrameAutosaveName(Self.frameAutosaveName)
+
         return window
     }
 
     private lazy var delegateProxy = WindowDelegateProxy(
         onClose: { [weak self] in
-            self?.onVisibilityChange?(false)
-            self?.onClose?()
+            guard let self else { return }
+            self.window?.saveFrame(usingName: Self.frameAutosaveName)
+            // アプリ終了に伴うクローズでなければ、次回自動起動フラグを落とす
+            if !Self.isTerminating {
+                Self.setOpenState(false)
+            }
+            self.onVisibilityChange?(false)
+            self.onClose?()
         },
         onVisibilityChange: { [weak self] visible in
             self?.onVisibilityChange?(visible)
@@ -89,6 +117,7 @@ private struct OfficeView: View {
         DeskView(islands: deskIslands,
                  rateLimits: store.rateLimitSummaries,
                  running: store.collecting,
+                 persistenceKey: "OfficeWindow",
                  onOpen: onOpen)
             .background(Color(nsColor: .windowBackgroundColor))
     }
