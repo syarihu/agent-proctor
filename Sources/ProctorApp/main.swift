@@ -172,7 +172,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             if let session = task.itermSession {
                 if ItermBridge.focus(sessionID: session) {
-                    ItermBridge.revealHotkeyWindow()
                     return
                 }
             }
