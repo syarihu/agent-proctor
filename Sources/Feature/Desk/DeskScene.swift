@@ -99,6 +99,8 @@ final class DeskScene: SKScene {
     private var knownSeatIds: Set<String> = []
     private var knownRepos: Set<String> = []
     private var hasInitializedArrivals = false
+    /// 部屋を組み直した直後の反映かどうか。歩かせずに目的地へ置き直す
+    private var isRestoringPlacement = false
     private let createdAt = Date()
 
     // MARK: - ライフサイクル
@@ -241,7 +243,13 @@ final class DeskScene: SKScene {
                 room.addChild(seatNode)
             }
         }
+
+        // 組み直しで人のノードは作り直しになる。そのまま普段の反映を通すと、
+        // すでに待機列やソファに着いていた人まで自席から歩き直すことになるので、
+        // この1回だけは目的地に置き直すだけにする
+        isRestoringPlacement = true
         refreshSeats()
+        isRestoringPlacement = false
 
         if cameraManager.isDragging {
             NSCursor.pop()
@@ -388,7 +396,10 @@ final class DeskScene: SKScene {
         var standing = Set<String>()
 
         for (seatIndex, seat) in island.seats.enumerated()
-        where seat.status == TaskStatus.waiting {
+        where seat.status == TaskStatus.waiting
+            // まだ入口から歩いてきている最中の人は席にも着いていない。
+            // ここで待機列にも立たせると、同じ人が2人に見える
+            && !pendingArrivalSeats.contains(seat.id) {
             standing.insert(seat.id)
             let target = layout.queuePoint(island: index, slot: slot)
             slot += 1
@@ -402,7 +413,11 @@ final class DeskScene: SKScene {
             } else {
                 visitor = PersonNode(kind: .agent)
                 visitor.setScale(1.2)
-                visitor.position = layout.chairSpot(island: index, seat: seatIndex)
+                // 組み直しの置き直しなら、もう並んでいた場所からやり直す。
+                // 自席から出発させると、部屋が組み変わるたびに全員が席を立つ
+                visitor.position = isRestoringPlacement
+                    ? target
+                    : layout.chairSpot(island: index, seat: seatIndex)
                 room.addChild(visitor)
                 visitors[seat.id] = visitor
             }
@@ -508,8 +523,10 @@ final class DeskScene: SKScene {
                 }
 
                 // ソファへ送るのは `seen` だけ。ディスプレイの「休憩中」は
-                // サイドバーの完了の箱と同じ範囲なので、こちらより広い
-                guard seat.status == TaskStatus.seen else { continue }
+                // サイドバーの完了の箱と同じ範囲なので、こちらより広い。
+                // 入口から歩いてきている最中の人は、着席してから改めて送る
+                guard seat.status == TaskStatus.seen,
+                      !pendingArrivalSeats.contains(seat.id) else { continue }
                 stillResting.insert(seat.id)
                 sendToLounge(seat: seat, island: index, slot: slot, sofaIndex: sofaIndex)
                 sofaIndex += 1
@@ -538,13 +555,24 @@ final class DeskScene: SKScene {
         } else {
             walker = PersonNode(kind: .agent)
             walker.setScale(1.2)
-            walker.position = layout.chairSpot(island: island, seat: slot)
+            // 組み直しの置き直しなら、もう座っていたソファへ直接戻す。
+            // 自席から歩かせると、部屋が組み変わるたびに休憩中の全員が往復する
+            walker.position = isRestoringPlacement
+                ? sofa
+                : layout.chairSpot(island: island, seat: slot)
             room.addChild(walker)
             resting[seat.id] = walker
         }
 
         if walker.userData == nil { walker.userData = NSMutableDictionary() }
         walker.userData?["sofa"] = NSValue(point: sofa)
+
+        // すでに座面にいるなら歩くルートを組まない。
+        // ルートは区画から扉を回って戻ってくる形なので、距離が 0 でも一周してしまう
+        guard hypot(walker.position.x - sofa.x, walker.position.y - sofa.y) >= 2 else {
+            walker.stopBobbing()
+            return
+        }
 
         let points = layout.loungeWaypoints(from: walker.position, island: island, sofaIndex: sofaIndex)
         walk(walker, along: points) { [weak walker] in
