@@ -23,7 +23,8 @@ final class DeskFurnitureNode: SKNode {
     let deskLabel: String
     let screen: SKShapeNode
     let occupant: PersonNode
-    let bubble: SpeechBubbleNode
+    let whiteboard: DeskWhiteboardNode
+    var bubble: DeskWhiteboardNode { whiteboard }
     var paper: SKNode?
     var hand: SKNode?
     var nameplate: SKNode?
@@ -174,8 +175,8 @@ final class DeskFurnitureNode: SKNode {
         occupant.position = CGPoint(x: 0, y: 30)
         occupant.zPosition = -20
 
-        // 思考雲吹き出し
-        bubble = SpeechBubbleNode(isHub: isHub, initialText: label)
+        // 机背後の自立型ホワイトボード（タスク内容またはリポジトリ名を表示）
+        whiteboard = DeskWhiteboardNode(isHub: isHub, initialText: label)
 
         super.init()
 
@@ -190,7 +191,7 @@ final class DeskFurnitureNode: SKNode {
         addChild(stackL)
         addChild(stackR)
         addChild(occupant)
-        addChild(bubble)
+        addChild(whiteboard)
 
         if seat != nil {
             // 連続帳票用紙
@@ -243,7 +244,7 @@ final class DeskFurnitureNode: SKNode {
         userData?["dressed"] = signature
 
         let isMissing = seat.status == TaskStatus.missing
-        bubble.isHidden = isMissing
+        whiteboard.isHidden = isMissing
         paper?.isHidden = isMissing
 
         // 卓上ネームプレートの表示更新
@@ -327,7 +328,7 @@ final class DeskFurnitureNode: SKNode {
             strokeColor = .secondaryLabelColor.withAlphaComponent(0.35)
         }
 
-        bubble.update(text: seat.name, isCurrent: seat.isCurrent, tabNumber: seat.tabNumber, strokeColor: strokeColor)
+        whiteboard.update(text: seat.name, isCurrent: seat.isCurrent, tabNumber: seat.tabNumber, strokeColor: strokeColor)
         alpha = seat.status == TaskStatus.missing ? 0.45 : 1
     }
 
