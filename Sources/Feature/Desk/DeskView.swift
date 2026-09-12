@@ -8,18 +8,24 @@ import SwiftUI
 /// 机に天板と前面の2枚を描くこと、手前のものほど後に描くこと、
 /// 人が上下にも歩くこと、の3つで奥行きを出している。
 /// 部屋はビューポートより広いことがあり、そのぶんはカメラで送る。
-struct DeskView: View {
-    let islands: [DeskIsland]
-    /// サイドバーが見えているか。隠れているあいだはコマ数を落とす
-    let running: Bool
+public struct DeskView: View {
+    public let islands: [DeskIsland]
+    /// サイドバーまたはオフィス窓が見えているか。隠れているあいだはコマ数を落とす
+    public let running: Bool
     /// 机をクリックしたときに開くセッション。一覧の行クリックと同じ相手を渡す
-    var onOpen: (String) -> Void
+    public var onOpen: (String) -> Void
+
+    public init(islands: [DeskIsland], running: Bool, onOpen: @escaping (String) -> Void) {
+        self.islands = islands
+        self.running = running
+        self.onOpen = onOpen
+    }
 
     /// SwiftUI の再描画のたびにシーンが作り直されると、歩いている途中の人が
     /// 毎回入口に戻ってしまう。参照を1つ持ち続けるために箱に入れる
     @StateObject private var box = SceneBox()
 
-    var body: some View {
+    public var body: some View {
         // **止めるのではなくコマ数を落とす。**
         // `isPaused` で止めると、一度も描かないうちに止まった場合に
         // シーンが出ないまま view の地色 (白) が出る。アプリを立ち上げ直した直後は

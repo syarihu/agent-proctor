@@ -96,10 +96,14 @@
 "setup.all.summary" = "every wiring guide at once";
 
 /* メニューバー。押したら何が起きるかを書く (macOS の流儀) */
+"app.menu.open_office" = "Open Office…";
 "app.menu.show_sidebar" = "Show Sidebar";
 "app.menu.hide_sidebar" = "Hide Sidebar";
 "app.menu.settings" = "Settings…";
 "app.menu.quit" = "Quit Agent Proctor";
+
+/* オフィスウィンドウ */
+"app.office.window_title" = "Office";
 
 /* 設定画面 */
 "app.settings.window_title" = "Agent Proctor Settings";

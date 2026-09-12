@@ -379,6 +379,53 @@ public enum ItermBridge {
         !NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).isEmpty
     }
 
+    /// iTerm2 の hotkey window を前面に表示する。
+    ///
+    /// 既存の hotkey window があればそれを表示（reveal）し、未作成の場合は proctor プロファイルでの作成を試みる。
+    @discardableResult
+    public static func revealHotkeyWindow() -> Bool {
+        let source = """
+        tell application "iTerm2"
+            repeat with w in windows
+                if is hotkey window of w then
+                    tell w to reveal hotkey window
+                    return "ok"
+                end if
+            end repeat
+            try
+                create hotkey window with profile "proctor"
+                return "ok"
+            on error
+                try
+                    create hotkey window with profile "Hotkey Window"
+                    return "ok"
+                end try
+            end try
+            return "notfound"
+        end tell
+        """
+        guard execute(source)?.hasPrefix("ok") == true else { return false }
+        activateIterm()
+        return true
+    }
+
+    /// iTerm2 の hotkey window を隠す。
+    @discardableResult
+    public static func hideHotkeyWindow() -> Bool {
+        let source = """
+        tell application "iTerm2"
+            repeat with w in windows
+                if is hotkey window of w then
+                    tell w to hide hotkey window
+                    return "ok"
+                end if
+            end repeat
+            return "notfound"
+        end tell
+        """
+        return execute(source, interactive: false)?.hasPrefix("ok") == true
+    }
+
     // MARK: -
 
     /// シェルの引数として安全に解釈されるようシングルクォートでエスケープする。

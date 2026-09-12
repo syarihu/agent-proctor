@@ -118,12 +118,23 @@ let package = Package(
             path: "Sources/Feature/MenuBar",
             swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(
-            name: "FeatureSidebar",
+            name: "FeatureDesk",
             dependencies: [
                 "Model", "Utility", "Resources",
                 "DesignSystem", "AppState",
                 "UseCaseTask",
                 "ItermBridge"
+            ],
+            path: "Sources/Feature/Desk",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "FeatureSidebar",
+            dependencies: [
+                "Model", "Utility", "Resources",
+                "DesignSystem", "AppState",
+                "UseCaseTask",
+                "ItermBridge",
+                "FeatureDesk"
             ],
             path: "Sources/Feature/Sidebar",
             swiftSettings: [.swiftLanguageMode(.v5)]),
@@ -147,7 +158,7 @@ let package = Package(
                 "RepositoryLedger", "RepositoryGit", "RepositoryGitHub",
                 "UseCaseTask", "UseCaseSession", "UseCaseWorktree", "UseCaseNotice",
                 "DesignSystem", "ItermBridge", "AppState",
-                "FeatureSettings", "FeatureMenuBar", "FeatureSidebar"
+                "FeatureSettings", "FeatureMenuBar", "FeatureSidebar", "FeatureDesk"
             ],
             swiftSettings: [.swiftLanguageMode(.v5)]),
     ]

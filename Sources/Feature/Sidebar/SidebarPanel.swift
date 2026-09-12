@@ -144,6 +144,13 @@ public final class SidebarPanel: NSObject {
         NSWorkspace.shared.notificationCenter.addObserver(
             self, selector: #selector(appActivated),
             name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        // アプリ内のウィンドウ（オフィス窓・設定窓等）とのフォーカス移動時にレベルを追従させる
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowFocusChanged),
+            name: NSWindow.didBecomeKeyNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowFocusChanged),
+            name: NSWindow.didResignKeyNotification, object: nil)
 
         refreshBackground()
         updateLevel()
@@ -166,16 +173,30 @@ public final class SidebarPanel: NSObject {
         wakeUp()
     }
 
-    /// 前面アプリケーションに応じてパネルのウィンドウレベル（level）を更新する。
+    @objc private func windowFocusChanged() {
+        updateLevel()
+    }
+
+    /// 前面アプリケーションおよび前面ウィンドウに応じてパネルのウィンドウレベル（level）を更新する。
     ///
-    /// iTerm2 または本アプリがアクティブな場合は端末の前面に表示するため .floating に設定し、
-    /// 他のアプリがアクティブになった場合は作業の妨げにならないよう .normal に下げて背面に潜らせる。
+    /// iTerm2 がアクティブな場合は端末の前面に表示するため .floating に設定し、
+    /// 本アプリの別ウィンドウ（オフィス窓など）や他のアプリがアクティブな場合は
+    /// 作業の妨げにならないよう .normal に下げて背面に潜らせる。
     private func updateLevel() {
         // 前面アプリの特定に失敗した場合はちらつき防止のためレベル変更を行わない
         guard let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         else { return }
-        let alongsideTerminal = front == ItermBridge.bundleID
-            || front == Bundle.main.bundleIdentifier
+        let alongsideTerminal: Bool
+        if front == ItermBridge.bundleID {
+            alongsideTerminal = true
+        } else if front == Bundle.main.bundleIdentifier {
+            // アプリ内の別ウィンドウ（オフィス窓など）にフォーカスがある間は、
+            // サイドバーが浮き続けて邪魔にならないよう通常のレベルに下げる。
+            let otherWindowActive = NSApp.windows.contains { $0 != panel && $0.isVisible && $0.isKeyWindow }
+            alongsideTerminal = !otherWindowActive
+        } else {
+            alongsideTerminal = false
+        }
         panel.level = alongsideTerminal ? .floating : .normal
     }
 

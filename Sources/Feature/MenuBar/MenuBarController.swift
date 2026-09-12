@@ -17,6 +17,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     /// サイドバーが非表示状態かどうか（メニュー文言の切り替え用）
     public var isSidebarHidden: (() -> Bool)?
     public var onOpenTask: ((String) -> Void)?
+    public var onOpenOffice: (() -> Void)?
     public var onOpenSettings: (() -> Void)?
 
     public init(store: TaskStore) {
@@ -95,6 +96,11 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+        let office = NSMenuItem(title: Localized.text("app.menu.open_office"),
+                                action: #selector(openOffice), keyEquivalent: "o")
+        office.target = self
+        menu.addItem(office)
+
         let hidden = isSidebarHidden?() ?? false
         let toggle = NSMenuItem(
             title: Localized.text(hidden ? "app.menu.show_sidebar" : "app.menu.hide_sidebar"),
@@ -119,6 +125,8 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         guard let id = sender.representedObject as? String else { return }
         onOpenTask?(id)
     }
+
+    @objc private func openOffice() { onOpenOffice?() }
 
     @objc private func toggleSidebar() { onToggleSidebar?() }
 

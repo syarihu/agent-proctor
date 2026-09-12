@@ -24,7 +24,7 @@ final class DeskScene: SKScene {
     private let walkSpeed: CGFloat = 80
     private var columns: Int { 1 }
     private var islandRows: Int { max(1, (islands.count + columns - 1) / columns) }
-    private var seatColumns: Int { max(1, min(2, Int(size.width / 245))) }
+    private var seatColumns: Int { max(1, min(6, Int(size.width / 245))) }
     private var columnPitch: CGFloat { max(242, (size.width - 24) / CGFloat(seatColumns)) }
 
     private var islandWidth: CGFloat {
@@ -46,7 +46,7 @@ final class DeskScene: SKScene {
 
     private var roomWidth: CGFloat {
         let naturalWidth = islandWidth + sideMargin * 2
-        return max(size.width + 300, max(580, naturalWidth))
+        return max(580, naturalWidth)
     }
 
     private var roomHeight: CGFloat {

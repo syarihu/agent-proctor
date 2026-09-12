@@ -1,6 +1,7 @@
 import AppKit
 import AppState
 import DesignSystem
+import FeatureDesk
 import Model
 import Resources
 import SwiftUI
@@ -195,35 +196,9 @@ public struct TaskListView: View {
 
     /// 俯瞰に出す島。リポジトリごとに1島、その中に台帳のセッションを並べる。
     ///
-    /// 並び順は一覧と揃える (`store.tasks` の順)。同じ台帳を見ているのに
-    /// 見せ方を変えた途端に順番が変わると、切り替えた先で目的のものを探し直すことになる
+    /// 並び順は一覧と揃える (`store.tasks` の順)。オフィス窓側と同一の共通ビルダーを使用する。
     private var deskIslands: [DeskIsland] {
-        var order: [String] = []
-        var byRepo: [String: [DeskSeat]] = [:]
-        for task in store.tasks {
-            if byRepo[task.repo] == nil {
-                byRepo[task.repo] = []
-                order.append(task.repo)
-            }
-            byRepo[task.repo]?.append(
-                DeskSeat(id: task.id,
-                         name: task.displayName,
-                         status: task.displayStatus,
-                         needsPerson: TaskStatus.needsPerson(status: task.status,
-                                                             seenAt: task.seenAt),
-                         contextPercent: task.contextPercent,
-                         subagents: task.subagents,
-                         helpers: task.currentSubagents.map {
-                             DeskHelper(id: $0.id, name: $0.name, activity: $0.activity)
-                         },
-                         activity: task.currentActivity,
-                         isCurrent: isCurrent(task),
-                         tabNumber: tabNumber(task)))
-        }
-        return order.map { repo in
-            DeskIsland(repo: store.tasks.first { $0.repo == repo }?.repoName ?? repo,
-                       seats: byRepo[repo] ?? [])
-        }
+        DeskIslands.build(store: store, appearance: appearance)
     }
 
     private var rateLimitSummaries: [AgentQuotaSummary] {

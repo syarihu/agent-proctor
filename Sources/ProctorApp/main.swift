@@ -2,6 +2,7 @@ import AppKit
 import AppState
 import Combine
 import DesignSystem
+import FeatureDesk
 import FeatureMenuBar
 import FeatureSettings
 import FeatureSidebar
@@ -20,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var store: TaskStore!
     private var appearance: Appearance!
     private var sidebar: SidebarPanel!
+    private var officeWindow: OfficeWindow!
     private var menuBar: MenuBarController!
     private var folding: GroupFolding!
     private var avatars: OrgAvatarStore!
@@ -76,10 +78,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }, onClearAttention: { [weak self] tasks in
                 self?.store.clearAttention(ids: tasks.map(\.id))
             }))
-        sidebar.onVisibilityChange = { [weak self] visible in
-            // サイドバー非表示時は不要な git および GitHub API への問い合わせを抑制する
-            self?.store.setCollecting(visible)
-            self?.pullRequests.setEnabled(visible)
+        sidebar.onVisibilityChange = { [weak self] _ in
+            self?.updateCollectingState()
+        }
+
+        officeWindow = OfficeWindow(
+            store: store, appearance: appearance,
+            onOpen: { [weak self] id in
+                self?.open(taskID: id)
+            })
+        officeWindow.onVisibilityChange = { [weak self] _ in
+            self?.updateCollectingState()
+        }
+        officeWindow.onClose = { [weak self] in
+            self?.updateActivationPolicy()
         }
 
         notices = NoticeSettings()
@@ -91,8 +103,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         settings = SettingsWindow(appearance: appearance, notices: notices,
                                   notifier: notifier)
+        settings.onClose = { [weak self] in
+            self?.updateActivationPolicy()
+        }
 
         menuBar = MenuBarController(store: store)
+        menuBar.onOpenOffice = { [weak self] in self?.officeWindow.show() }
         menuBar.onToggleSidebar = { [weak self] in self?.sidebar.toggle() }
         menuBar.isSidebarHidden = { [weak self] in self?.sidebar.userHidden ?? false }
         menuBar.onOpenTask = { [weak self] id in self?.open(taskID: id) }
@@ -122,6 +138,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateNow
     }
 
+    /// いずれかのウィンドウ（サイドバーまたはオフィス窓）が表示されているかを監視し、データ収集の稼働状態を切り替える
+    private func updateCollectingState() {
+        let anyVisible = (sidebar?.isShowing ?? false) || (officeWindow?.isVisible ?? false)
+        store.setCollecting(anyVisible)
+        pullRequests.setEnabled(anyVisible)
+    }
+
+    /// 通常ウィンドウがすべて閉じられた場合に activationPolicy を .accessory に戻す
+    private func updateActivationPolicy() {
+        let anyRegular = (settings?.isVisible ?? false) || (officeWindow?.isVisible ?? false)
+        if !anyRegular {
+            NSApp.setActivationPolicy(.accessory)
+        }
+    }
+
+    private func showOpenFailedAlert(displayName: String) {
+        let alert = NSAlert()
+        alert.messageText = Localized.text("app.alert.open_failed.title", displayName)
+        alert.informativeText = Localized.text("app.alert.open_failed.body")
+        alert.alertStyle = .warning
+        alert.runModal()
+    }
+
     /// タスクに対応するタブまたは新規タブで attach を開く
     private func open(taskID: String) {
         // 押下時点の最新の itermSession を参照するため TaskStore の台帳レコードを直接参照する
@@ -131,17 +170,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             await ItermBridge.settlePermission()
 
-            if let session = task.itermSession, ItermBridge.focus(sessionID: session) {
+            if let session = task.itermSession {
+                if ItermBridge.focus(sessionID: session) {
+                    ItermBridge.revealHotkeyWindow()
+                    return
+                }
+            }
+            // hotkey window がある場合は表示して attach コマンドを実行する
+            if ItermBridge.revealHotkeyWindow() {
+                if !ItermBridge.openTab(runningCommand: "proctor attach \(task.id)") {
+                    showOpenFailedAlert(displayName: task.displayName)
+                }
                 return
             }
-            // 起動失敗時は警告ダイアログを表示する
+            // hotkey window が使えない場合は通常の新規タブで attach を開く
             if !ItermBridge.openTab(runningCommand: "proctor attach \(task.id)") {
-                let alert = NSAlert()
-                alert.messageText = Localized.text("app.alert.open_failed.title",
-                                                   task.displayName)
-                alert.informativeText = Localized.text("app.alert.open_failed.body")
-                alert.alertStyle = .warning
-                alert.runModal()
+                showOpenFailedAlert(displayName: task.displayName)
             }
         }
     }

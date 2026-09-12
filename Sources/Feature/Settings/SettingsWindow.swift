@@ -14,6 +14,9 @@ public final class SettingsWindow {
     private let notices: NoticeSettings
     private let notifier: NotificationPermissionAuthorizer
 
+    public var isVisible: Bool { window?.isVisible ?? false }
+    public var onClose: (() -> Void)?
+
     public init(appearance: Appearance, notices: NoticeSettings,
                 notifier: NotificationPermissionAuthorizer) {
         self.appearance = appearance
@@ -43,9 +46,13 @@ public final class SettingsWindow {
         return window
     }
 
-    /// ウィンドウクローズ時に activationPolicy を .accessory に戻す
-    private lazy var closeWatcher = CloseWatcher {
-        NSApp.setActivationPolicy(.accessory)
+    /// ウィンドウクローズ時の処理
+    private lazy var closeWatcher = CloseWatcher { [weak self] in
+        if let onClose = self?.onClose {
+            onClose()
+        } else {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 
     private final class CloseWatcher: NSObject, NSWindowDelegate {

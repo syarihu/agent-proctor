@@ -5,43 +5,64 @@ import SpriteKit
 // MARK: - 見取り図モデル
 
 /// 机1つ。台帳の1セッションに対応する
-struct DeskSeat: Equatable {
+public struct DeskSeat: Equatable {
     /// `CollectedTask.id`。クリックで開く相手
-    let id: String
-    let name: String
+    public let id: String
+    public let name: String
     /// `CollectedTask.displayStatus`
-    let status: String
+    public let status: String
     /// 人の手が要るか (`TaskStatus.needsPerson`)。カメラがここを最優先で映す
-    let needsPerson: Bool
-    let contextPercent: Int?
+    public let needsPerson: Bool
+    public let contextPercent: Int?
     /// 走っているサブエージェントの数。
     /// `agent_id` を送ってこないエージェントでは中身が空でも数だけ入る
-    let subagents: Int
+    public let subagents: Int
     /// 中身が分かるサブエージェント。分かるなら1体ずつ仕草を付けられる
-    let helpers: [DeskHelper]
+    public let helpers: [DeskHelper]
     /// いま触っているツール ("Edit: TaskStore.swift" など)。動いている間だけ入る。
     /// 何をしているかで仕草を変えるために使う
-    let activity: String?
+    public let activity: String?
     /// 現在 iTerm2 で人間が見ているタブかどうか
-    let isCurrent: Bool
+    public let isCurrent: Bool
     /// 対応するタブ番号（⌘1 など）
-    let tabNumber: Int?
+    public let tabNumber: Int?
+
+    public init(id: String, name: String, status: String, needsPerson: Bool,
+                contextPercent: Int?, subagents: Int, helpers: [DeskHelper],
+                activity: String?, isCurrent: Bool, tabNumber: Int?) {
+        self.id = id
+        self.name = name
+        self.status = status
+        self.needsPerson = needsPerson
+        self.contextPercent = contextPercent
+        self.subagents = subagents
+        self.helpers = helpers
+        self.activity = activity
+        self.isCurrent = isCurrent
+        self.tabNumber = tabNumber
+    }
 }
 
 /// 机まわりの手伝い1人。台帳のサブエージェント1体に対応する
-struct DeskHelper: Equatable {
-    let id: String
+public struct DeskHelper: Equatable {
+    public let id: String
     /// エージェント種別 ("Explore" など)
-    let name: String
+    public let name: String
     /// いま触っているツール。親と同じ形式なので、同じ判定で仕草を決められる
-    let activity: String?
+    public let activity: String?
+
+    public init(id: String, name: String, activity: String?) {
+        self.id = id
+        self.name = name
+        self.activity = activity
+    }
 }
 
 /// 机の人の仕草。`activity` の頭 ("Edit: …" の Edit) から決める。
 ///
 /// ツール名をそのまま出す代わりに、体の動きで言う。
 /// 文字は小さくて読めないが、動きの違いは離れていても分かる
-enum DeskGesture {
+public enum DeskGesture {
     /// 書いている (Edit / Write)
     case typing
     /// 読んでいる・探している (Read / Grep / Glob)
@@ -55,7 +76,7 @@ enum DeskGesture {
     ///
     /// 知らないツールは書いていることにする。一番多いのがそれで、
     /// 外したときの見え方も一番おとなしい
-    static func from(activity: String?) -> DeskGesture {
+    public static func from(activity: String?) -> DeskGesture {
         let tool = activity?.split(separator: ":").first
             .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
         switch tool {
@@ -76,9 +97,14 @@ enum DeskGesture {
 ///
 /// adjutant を繋いだら hub は本物の hub セッションになる。
 /// いまはリポジトリの名札で、座っている人はいない
-struct DeskIsland: Equatable {
-    let repo: String
-    let seats: [DeskSeat]
+public struct DeskIsland: Equatable {
+    public let repo: String
+    public let seats: [DeskSeat]
+
+    public init(repo: String, seats: [DeskSeat]) {
+        self.repo = repo
+        self.seats = seats
+    }
 }
 
 /// 画面外からの呼び出し吹き出しの向き
