@@ -34,7 +34,8 @@ final class DeskScene: SKScene {
     private let rowSpacing: CGFloat = 185
     private var islandSpacing: CGFloat { max(300, islandWidth + 110) }
     private let sideMargin: CGFloat = 180
-    private let topMargin: CGFloat = 125
+    // 壁高（80pt）の導入に伴い、北壁・通路・人間の思考雲が干渉しないよう上部マージンを拡大する
+    private let topMargin: CGFloat = 210
     private let bottomMargin: CGFloat = 60
 
     private var islandHeight: CGFloat {
@@ -46,7 +47,10 @@ final class DeskScene: SKScene {
 
     private var roomWidth: CGFloat {
         let naturalWidth = islandWidth + sideMargin * 2
-        return max(580, naturalWidth)
+        let boardCount = max(2, rateLimits.count)
+        // 3枚以上のボードが壁に並ぶ場合、端が見切れないよう部屋の最小幅を確保する
+        let minWidthForBoards: CGFloat = boardCount >= 3 ? CGFloat(boardCount - 1) * 155 + 460 : 580
+        return max(minWidthForBoards, naturalWidth)
     }
 
     private var roomHeight: CGFloat {
@@ -74,10 +78,11 @@ final class DeskScene: SKScene {
     private var builtSkeleton: String?
     private var builtColumns = 0
     private var builtSeatColumns = 0
+    private var builtWhiteboardKeys: [String] = []
 
     private var islands: [DeskIsland] = []
     private var rateLimits: [AgentQuotaSummary] = []
-    private weak var whiteboardNode: WhiteboardNode?
+    private var whiteboardNodes: [WhiteboardNode] = []
     private var activity: [Double] = []
     private var lastUpdate: TimeInterval = 0
 
@@ -134,7 +139,7 @@ final class DeskScene: SKScene {
             }
             if !rebuildIfNeeded() {
                 refreshSeats()
-                whiteboardNode?.update(summaries: rateLimits)
+                refreshWhiteboards()
             }
             return
         }
@@ -161,7 +166,7 @@ final class DeskScene: SKScene {
         let rebuilt = rebuildIfNeeded()
         if !rebuilt {
             refreshSeats()
-            whiteboardNode?.update(summaries: rateLimits)
+            refreshWhiteboards()
         }
 
         if !newSeats.isEmpty || !newRepos.isEmpty {
@@ -182,11 +187,13 @@ final class DeskScene: SKScene {
         // 退室中・入室中のエージェントがいる間は部屋の組み直しを保留し、歩き終わるまで待つ
         guard departing.isEmpty && arriving.isEmpty else { return false }
         let wanted = CGSize(width: roomWidth, height: roomHeight)
+        let wantedKeys = Self.effectiveSummaries(from: rateLimits).map(\.key)
         guard skeleton(of: islands) != builtSkeleton
                 || columns != builtColumns
                 || seatColumns != builtSeatColumns
                 || abs(wanted.width - builtRoom.width) > 1
                 || abs(wanted.height - builtRoom.height) > 1
+                || wantedKeys != builtWhiteboardKeys
         else { return false }
         rebuild()
         return true
@@ -211,6 +218,7 @@ final class DeskScene: SKScene {
         builtColumns = columns
         builtSeatColumns = seatColumns
         builtRoom = CGSize(width: roomWidth, height: roomHeight)
+        builtWhiteboardKeys = Self.effectiveSummaries(from: rateLimits).map(\.key)
 
         buildFloor()
 
@@ -279,10 +287,15 @@ final class DeskScene: SKScene {
         door.position = layout.doorPosition
         room.addChild(door)
 
-        let whiteboard = WhiteboardNode(summaries: rateLimits)
-        whiteboard.position = layout.whiteboardPosition
-        room.addChild(whiteboard)
-        self.whiteboardNode = whiteboard
+        whiteboardNodes.removeAll()
+        let effective = Self.effectiveSummaries(from: rateLimits)
+        let positions = layout.whiteboardPositions(count: effective.count)
+        for (i, summary) in effective.enumerated() {
+            let whiteboard = WhiteboardNode(summary: summary)
+            whiteboard.position = positions[i]
+            room.addChild(whiteboard)
+            whiteboardNodes.append(whiteboard)
+        }
     }
 
     private func hairline(from: CGPoint, to: CGPoint) -> SKShapeNode {
@@ -790,15 +803,46 @@ final class DeskScene: SKScene {
         return nil
     }
 
-    private func isWhiteboard(at point: CGPoint) -> Bool {
+    private func whiteboardNode(at point: CGPoint) -> WhiteboardNode? {
         for node in nodes(at: point) {
             var current: SKNode? = node
             while let candidate = current {
-                if candidate.name == "whiteboard" { return true }
+                if let wb = candidate as? WhiteboardNode { return wb }
                 current = candidate.parent
             }
         }
-        return false
+        return nil
+    }
+
+    private func refreshWhiteboards() {
+        let effective = Self.effectiveSummaries(from: rateLimits)
+        if effective.map(\.key) == whiteboardNodes.map(\.summary.key) {
+            for (i, summary) in effective.enumerated() {
+                whiteboardNodes[i].update(summary: summary)
+            }
+        } else {
+            rebuildIfNeeded()
+        }
+    }
+
+    /// 各ツールのホワイトボード表示用サマリー一覧。
+    /// Claude Code と Antigravity は常に初期表示スロットを用意し、台帳到着前でも壁面にスタンバイさせる。
+    static func effectiveSummaries(from summaries: [AgentQuotaSummary]) -> [AgentQuotaSummary] {
+        var result: [AgentQuotaSummary] = []
+        let defaultAgents = ["claude", "agy"]
+        for agent in defaultAgents {
+            if let existing = summaries.first(where: { $0.agent == agent }) {
+                result.append(existing)
+            } else {
+                result.append(AgentQuotaSummary(agent: agent, rateLimits: AgentRateLimits()))
+            }
+        }
+        for s in summaries {
+            if !result.contains(where: { $0.key == s.key }) {
+                result.append(s)
+            }
+        }
+        return result
     }
 
     private func userInteracted() {
@@ -826,11 +870,19 @@ final class DeskScene: SKScene {
     override func mouseDown(with event: NSEvent) {
         let point = event.location(in: self)
 
-        if isWhiteboard(at: point) {
-            whiteboardNode?.toggleDetail()
+        if let clicked = whiteboardNode(at: point) {
+            for wb in whiteboardNodes {
+                if wb === clicked {
+                    wb.toggleDetail()
+                } else {
+                    wb.closeDetail()
+                }
+            }
             return
         } else {
-            whiteboardNode?.closeDetail()
+            for wb in whiteboardNodes {
+                wb.closeDetail()
+            }
         }
 
         let clickedSeat = seatId(at: point)

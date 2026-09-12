@@ -8,8 +8,10 @@ import Foundation
 struct DeskLayout {
     let roomWidth: CGFloat
     let roomHeight: CGFloat
-    let wallHeight: CGFloat = 32
-    let topMargin: CGFloat = 125
+    let wallHeight: CGFloat = 80
+    // 壁（80pt）と上部通路（20pt）、および人間の思考雲（高さ約34pt＋頭上余白）が
+    // 互いに干渉せず、人物の背後にゆったりとした北壁空間を確保するために 210pt を確保する
+    let topMargin: CGFloat = 210
     let bottomMargin: CGFloat = 60
     let islandSpacing: CGFloat
     let islandHeight: CGFloat
@@ -24,19 +26,18 @@ struct DeskLayout {
 
     // MARK: - 主要ポイント
 
-    /// 正面エントランスの扉の位置（奥壁の人間より少し左、思考雲で隠れない位置）
+    /// 正面エントランスの扉の位置（奥壁の左寄り、ホワイトボードと並ぶ位置）
     var doorPosition: CGPoint {
         let hubX = roomWidth / 2
-        // 人間の思考雲（幅210、左右に約105pt）と重ならず、かつ人間から離れすぎない左隣に配置する。
-        // 扉枠の幅は48pt（左右24pt）あるため、hubX - 160 とすることで雲の左端との間に約30ptの隙間を確保する。
-        // 最小部屋幅（580pt）でも左壁（x=0）から十分に離れた位置（最小130pt）になる。
-        let doorX = max(54, hubX - 160)
+        // 人間の左側に配置するホワイトボード（幅140、hubX - 100）と干渉せず、
+        // 部屋の左端からも適度な余白（最小64pt）を保つために hubX - 215 に配置する
+        let doorX = max(64, hubX - 215)
         return CGPoint(x: doorX, y: roomHeight - wallHeight)
     }
 
     /// 正面エントランス手前の横通路の高さ (Y)
     var topHallwayY: CGFloat {
-        roomHeight - wallHeight - 16
+        roomHeight - wallHeight - 20
     }
 
     /// 正面エントランス扉の真正面
@@ -46,16 +47,34 @@ struct DeskLayout {
 
     /// 正面エントランス扉の中（スポーン／消失位置）
     var doorSpawn: CGPoint {
-        CGPoint(x: doorPosition.x, y: doorPosition.y + 6)
+        CGPoint(x: doorPosition.x, y: doorPosition.y + 12)
     }
 
-    /// 正面エントランスの扉と対になるホワイトボードの位置（奥壁の人間より少し右）
-    var whiteboardPosition: CGPoint {
+    /// ツール別ホワイトボードの配置位置一覧。
+    /// 正面エントランス扉（hubX - 215）の右側、および人間（hubX）を挟む形でツールごとに並べる。
+    func whiteboardPositions(count: Int) -> [CGPoint] {
+        guard count > 0 else { return [] }
         let hubX = roomWidth / 2
-        // 人間の思考雲（幅210、左右に約105pt）と重ならず、扉（hubX - 160）と対称的に配置する。
-        // ホワイトボード幅は112pt（左右56pt）あるため、hubX + 175 で雲の右端との間に約13ptの隙間を確保する。
-        let boardX = hubX + 175
-        return CGPoint(x: boardX, y: roomHeight - wallHeight - 12)
+        // 壁面中央（全高80pt）の高さに掛け金具とともに配置する
+        let boardY = roomHeight - wallHeight / 2 - 2
+
+        if count == 1 {
+            return [CGPoint(x: hubX + 105, y: boardY)]
+        }
+
+        var points: [CGPoint] = []
+        // 1枚目（Claude）: 人間の左側（扉 hubX - 215 と 人間 hubX の中間）
+        points.append(CGPoint(x: hubX - 100, y: boardY))
+
+        // 2枚目（Antigravity）: 人間の右側
+        points.append(CGPoint(x: hubX + 100, y: boardY))
+
+        // 3枚目以降（Codex や複数アカウント）: 右側へ順に展開
+        for i in 2..<count {
+            let x = hubX + 100 + CGFloat(i - 1) * 155
+            points.append(CGPoint(x: x, y: boardY))
+        }
+        return points
     }
 
     // MARK: - 机と椅子の座標計算
