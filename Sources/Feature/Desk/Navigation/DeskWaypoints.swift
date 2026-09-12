@@ -55,12 +55,29 @@ struct DeskLayout {
                        y: roomHeight - topMargin - islandHeight * row)
     }
 
-    /// 島の中の机の位置。上の段から、左から順に詰めていく
+    /// 各行において人間（中央の見出し机）に近い順に並べた列インデックスの配列。
+    /// ウィンドウを大きくした際も、中央の人間の目の前から左右交互に外側へと席を埋めていく。
+    static func columnOrder(seatColumns: Int) -> [Int] {
+        guard seatColumns > 1 else { return [0] }
+        let center = CGFloat(seatColumns - 1) / 2.0
+        return (0..<seatColumns).sorted { a, b in
+            let distA = abs(CGFloat(a) - center)
+            let distB = abs(CGFloat(b) - center)
+            if abs(distA - distB) < 0.001 {
+                // 距離が同じ（左右対称）の場合は、左側から順に配置する
+                return a < b
+            }
+            return distA < distB
+        }
+    }
+
+    /// 島の中の机の位置。上の段から、人間（中央の hub 机）に近い列から順に配置していく
     func seatPoint(island: Int, index: Int) -> CGPoint {
         let hub = hubPoint(island: island)
         let spread = columnPitch * CGFloat(seatColumns - 1)
         let row = index / seatColumns
-        return CGPoint(x: hub.x - spread / 2 + columnPitch * CGFloat(index % seatColumns),
+        let col = Self.columnOrder(seatColumns: seatColumns)[index % seatColumns]
+        return CGPoint(x: hub.x - spread / 2 + columnPitch * CGFloat(col),
                        y: hub.y - hubRowSpacing - rowSpacing * CGFloat(row))
     }
 
