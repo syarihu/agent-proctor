@@ -26,10 +26,15 @@ public struct DeskSeat: Equatable {
     public let isCurrent: Bool
     /// 対応するタブ番号（⌘1 など）
     public let tabNumber: Int?
+    /// エージェントのモデル名（"Opus 5"、"Gemini 3.8 Flash" など）
+    public let model: String?
+    /// エージェント表示名（モデル名がない場合のフォールバック等に使用）
+    public let agent: String?
 
     public init(id: String, name: String, status: String, needsPerson: Bool,
                 contextPercent: Int?, subagents: Int, helpers: [DeskHelper],
-                activity: String?, isCurrent: Bool, tabNumber: Int?) {
+                activity: String?, isCurrent: Bool, tabNumber: Int?,
+                model: String? = nil, agent: String? = nil) {
         self.id = id
         self.name = name
         self.status = status
@@ -40,6 +45,47 @@ public struct DeskSeat: Equatable {
         self.activity = activity
         self.isCurrent = isCurrent
         self.tabNumber = tabNumber
+        self.model = model
+        self.agent = agent
+    }
+
+    /// 卓上ネームプレートに表示する名称
+    public var nameplateText: String? {
+        if let model, !model.isEmpty {
+            return Self.formatModelName(model)
+        }
+        return agent
+    }
+
+    /// モデル名をネームプレート向けに整形する
+    public static func formatModelName(_ raw: String) -> String {
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 日付サフィックス（例: -20250219）を取り除く
+        if let range = text.range(of: #"-\d{8}$"#, options: .regularExpression) {
+            text.removeSubrange(range)
+        }
+        let lower = text.lowercased()
+        switch lower {
+        case "claude-3-7-sonnet": return "Claude 3.7 Sonnet"
+        case "claude-3-5-sonnet": return "Claude 3.5 Sonnet"
+        case "claude-3-5-haiku": return "Claude 3.5 Haiku"
+        case "claude-3-opus": return "Claude 3 Opus"
+        case "sonnet": return "Sonnet"
+        case "opus": return "Opus"
+        case "haiku": return "Haiku"
+        case "gemini-2.5-pro": return "Gemini 2.5 Pro"
+        case "gemini-2.5-flash": return "Gemini 2.5 Flash"
+        case "gemini-1.5-pro": return "Gemini 1.5 Pro"
+        case "gemini-1.5-flash": return "Gemini 1.5 Flash"
+        case "gpt-4o": return "GPT-4o"
+        case "gpt-4o-mini": return "GPT-4o mini"
+        case "o1": return "o1"
+        case "o1-mini": return "o1-mini"
+        case "o1-preview": return "o1-preview"
+        case "o3-mini": return "o3-mini"
+        default:
+            return text
+        }
     }
 }
 

@@ -26,6 +26,7 @@ final class DeskFurnitureNode: SKNode {
     let bubble: SpeechBubbleNode
     var paper: SKNode?
     var hand: SKNode?
+    var nameplate: SKNode?
     let stackL: SKNode
     let stackR: SKNode
 
@@ -60,6 +61,34 @@ final class DeskFurnitureNode: SKNode {
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? NSColor(white: 0.70, alpha: 0.85)
             : NSColor(white: 0.35, alpha: 0.9)
+    }
+
+    // MARK: - 卓上ネームプレート色定数
+
+    static let nameplateStandColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.10, green: 0.09, blue: 0.07, alpha: 0.95)
+            : NSColor(red: 0.38, green: 0.30, blue: 0.14, alpha: 0.95)
+    }
+    static let nameplateFillColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.14, green: 0.15, blue: 0.19, alpha: 0.98)
+            : NSColor(red: 0.97, green: 0.96, blue: 0.92, alpha: 0.98)
+    }
+    static let nameplateBorderColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.76, green: 0.62, blue: 0.32, alpha: 0.85)
+            : NSColor(red: 0.65, green: 0.50, blue: 0.20, alpha: 0.85)
+    }
+    static let nameplatePinColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.85, green: 0.72, blue: 0.40, alpha: 0.9)
+            : NSColor(red: 0.55, green: 0.42, blue: 0.18, alpha: 0.9)
+    }
+    static let nameplateTextColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.95, green: 0.92, blue: 0.82, alpha: 0.98)
+            : NSColor(red: 0.16, green: 0.14, blue: 0.12, alpha: 0.98)
     }
 
     // MARK: - 挙げた手テクスチャ
@@ -177,6 +206,14 @@ final class DeskFurnitureNode: SKNode {
             handNode.isHidden = true
             addChild(handNode)
             self.hand = handNode
+
+            // 卓上ネームプレート（エージェントのモデル名を表示）
+            let nameplateNode = Self.createNameplateNode()
+            nameplateNode.position = CGPoint(x: 0, y: -2.5)
+            nameplateNode.zPosition = 8
+            nameplateNode.isHidden = true
+            addChild(nameplateNode)
+            self.nameplate = nameplateNode
         }
     }
 
@@ -191,7 +228,7 @@ final class DeskFurnitureNode: SKNode {
         let move = DeskGesture.from(activity: seat.activity)
         let crew = seat.helpers.map { "\($0.id):\($0.activity ?? "-")" }.joined(separator: ",")
         let signature = """
-            \(seat.status)/\(seat.needsPerson)/\(seat.subagents)/\(move)/\(crew)/\(isAway)/\(seat.activity ?? "-")/\(seat.isCurrent)/\(seat.tabNumber ?? -1)
+            \(seat.status)/\(seat.needsPerson)/\(seat.subagents)/\(move)/\(crew)/\(isAway)/\(seat.activity ?? "-")/\(seat.isCurrent)/\(seat.tabNumber ?? -1)/\(seat.model ?? "-")/\(seat.agent ?? "-")
             """
         if userData == nil { userData = NSMutableDictionary() }
         let unchanged = userData?["dressed"] as? String == signature
@@ -208,6 +245,13 @@ final class DeskFurnitureNode: SKNode {
         let isMissing = seat.status == TaskStatus.missing
         bubble.isHidden = isMissing
         paper?.isHidden = isMissing
+
+        // 卓上ネームプレートの表示更新
+        if isMissing {
+            nameplate?.isHidden = true
+        } else {
+            updateNameplate(text: seat.nameplateText)
+        }
 
         // 席に人がいるかどうか
         let seated = !isMissing
@@ -553,5 +597,95 @@ final class DeskFurnitureNode: SKNode {
 
         paper.zPosition = 10
         return paper
+    }
+
+    // MARK: - 卓上ネームプレート
+
+    static func createNameplateNode() -> SKNode {
+        let node = SKNode()
+        node.name = "nameplate"
+
+        // 三角台座の底面・影
+        let stand = SKShapeNode()
+        stand.name = "nameplateStand"
+        stand.fillColor = nameplateStandColor
+        stand.strokeColor = .clear
+        stand.zPosition = 1
+        node.addChild(stand)
+
+        // プレート板面（真鍮・アクリル調）
+        let plate = SKShapeNode()
+        plate.name = "nameplatePlate"
+        plate.fillColor = nameplateFillColor
+        plate.strokeColor = nameplateBorderColor
+        plate.lineWidth = 0.8
+        plate.zPosition = 2
+        node.addChild(plate)
+
+        // 左右の飾り留め金具（真鍮ピン）
+        let pinL = SKShapeNode(circleOfRadius: 0.8)
+        pinL.name = "nameplatePinL"
+        pinL.fillColor = nameplatePinColor
+        pinL.strokeColor = .clear
+        pinL.zPosition = 3
+        node.addChild(pinL)
+
+        let pinR = SKShapeNode(circleOfRadius: 0.8)
+        pinR.name = "nameplatePinR"
+        pinR.fillColor = nameplatePinColor
+        pinR.strokeColor = .clear
+        pinR.zPosition = 3
+        node.addChild(pinR)
+
+        // モデル名ラベル
+        let label = SKLabelNode(fontNamed: "SFMono-Bold")
+        label.name = "nameplateLabel"
+        label.fontSize = 7.5
+        label.fontColor = nameplateTextColor
+        label.horizontalAlignmentMode = .center
+        label.verticalAlignmentMode = .center
+        label.position = CGPoint(x: 0, y: -0.5)
+        label.zPosition = 4
+        node.addChild(label)
+
+        return node
+    }
+
+    func updateNameplate(text: String?) {
+        guard let nameplate else { return }
+        guard let text, !text.isEmpty else {
+            nameplate.isHidden = true
+            return
+        }
+        nameplate.isHidden = false
+
+        guard let label = nameplate.childNode(withName: "nameplateLabel") as? SKLabelNode,
+              let plate = nameplate.childNode(withName: "nameplatePlate") as? SKShapeNode,
+              let stand = nameplate.childNode(withName: "nameplateStand") as? SKShapeNode,
+              let pinL = nameplate.childNode(withName: "nameplatePinL") as? SKShapeNode,
+              let pinR = nameplate.childNode(withName: "nameplatePinR") as? SKShapeNode else { return }
+
+        let truncated = SpeechBubbleNode.truncateScreenText(text, limit: 26)
+        label.text = truncated
+        label.fontColor = Self.nameplateTextColor
+
+        // 文字幅に応じてプレート幅を動的に設定（左右マージンと留め金具の余白を考慮）
+        let measured = label.frame.width
+        let plateW = min(136, max(52, measured + 14))
+        let plateH: CGFloat = 11.5
+
+        let plateRect = CGRect(x: -plateW / 2, y: -plateH / 2, width: plateW, height: plateH)
+        plate.path = CGPath(roundedRect: plateRect, cornerWidth: 1.5, cornerHeight: 1.5, transform: nil)
+        plate.fillColor = Self.nameplateFillColor
+        plate.strokeColor = Self.nameplateBorderColor
+
+        let standRect = CGRect(x: -plateW / 2 - 1.5, y: -plateH / 2 - 1.5, width: plateW + 3.0, height: 2.5)
+        stand.path = CGPath(roundedRect: standRect, cornerWidth: 1.0, cornerHeight: 1.0, transform: nil)
+        stand.fillColor = Self.nameplateStandColor
+
+        pinL.position = CGPoint(x: -plateW / 2 + 3.5, y: 0)
+        pinL.fillColor = Self.nameplatePinColor
+        pinR.position = CGPoint(x: plateW / 2 - 3.5, y: 0)
+        pinR.fillColor = Self.nameplatePinColor
     }
 }

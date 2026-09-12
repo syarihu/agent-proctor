@@ -46,7 +46,9 @@ public enum DeskIslands {
                          },
                          activity: task.currentActivity,
                          isCurrent: isCurrent,
-                         tabNumber: tabNum))
+                         tabNumber: tabNum,
+                         model: task.model,
+                         agent: task.agentDisplayName))
         }
         return order.map { repo in
             DeskIsland(repo: tasks.first { $0.repo == repo }?.repoName ?? repo,
