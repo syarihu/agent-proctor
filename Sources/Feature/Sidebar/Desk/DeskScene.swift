@@ -474,11 +474,13 @@ final class DeskScene: SKScene {
             actions.append(.fadeIn(withDuration: 0.15))
             actions.append(.move(to: doorFront, duration: 0.25))
 
-            let aisleX = max(layout.doorPosition.x + 30, hub.x - (layout.hubDeskWidth / 2 + 14))
+            let aisleX = max(doorFront.x + 24, hub.x - (layout.hubDeskWidth / 2 + 36))
+            let approachY = hubChair.y + 26
             let points = [
                 doorFront,
                 CGPoint(x: aisleX, y: topHallwayY),
-                CGPoint(x: aisleX, y: hubChair.y),
+                CGPoint(x: aisleX, y: approachY),
+                CGPoint(x: hubChair.x, y: approachY),
                 hubChair
             ]
             var from = doorFront

@@ -84,37 +84,34 @@ struct DeskLayout {
         let hub = hubPoint(island: island)
         let spread = columnPitch * CGFloat(seatColumns - 1)
         let col0X = hub.x - spread / 2
-        let column = seatIndex % seatColumns
 
-        let aisleX: CGFloat
-        if seatColumns > 1 {
-            let gapIndex = max(0, min(seatColumns - 2, column == 0 ? 0 : column - 1))
-            let leftColX = col0X + columnPitch * CGFloat(gapIndex)
-            let rightColX = leftColX + columnPitch
-            aisleX = (leftColX + rightColX) / 2
-        } else {
-            aisleX = max(doorPosition.x + 30, min(col0X - (deskWidth / 2 + 14), target.x - 16))
-        }
+        // 机や帳票用紙の左端よりも十分に外側の西側主通路を通る
+        let aisleX = max(doorFront.x + 24, col0X - (deskWidth / 2 + 36))
+        // 椅子へは背後（北側）の通路から回り込んで入る。机やモニタを真横から突っ切らないようにする
+        let approachY = target.y + 26
 
         var points: [CGPoint] = []
 
         // 1. 扉の正面（上部横通路）へ出る
         points.append(doorFront)
 
-        // 2. 上部横通路を通って、机の左側の南北主通路 (aisleX) の入口へ進む
+        // 2. 上部横通路を通って、西側南北主通路 (aisleX) の入口へ進む
         if abs(doorFront.x - aisleX) >= 4 {
             points.append(CGPoint(x: aisleX, y: topHallwayY))
         }
 
-        // 3. 南北主通路を自分の席の段まで進む
-        if abs(topHallwayY - target.y) >= 4 {
-            points.append(CGPoint(x: aisleX, y: target.y))
+        // 3. 南北主通路を自分の席の背後通路の高さまで南下する
+        if abs(topHallwayY - approachY) >= 4 {
+            points.append(CGPoint(x: aisleX, y: approachY))
         }
 
-        // 4. 自分の席（椅子の位置）に入る
+        // 4. 背後通路を通って、自分の椅子の真後ろまで横移動する
         if abs(aisleX - target.x) >= 4 {
-            points.append(target)
+            points.append(CGPoint(x: target.x, y: approachY))
         }
+
+        // 5. 椅子に着席する（南へ一歩進む）
+        points.append(target)
 
         return points
     }
@@ -123,21 +120,25 @@ struct DeskLayout {
     func departureWaypoints(from start: CGPoint) -> [CGPoint] {
         let hubX = roomWidth / 2
         let col0X = hubX - columnPitch * CGFloat(seatColumns - 1) / 2
-        let aisleX = max(doorPosition.x + 30, min(col0X - (deskWidth / 2 + 14), start.x - 16))
+        let aisleX = max(doorFront.x + 24, col0X - (deskWidth / 2 + 36))
+        let approachY = start.y + 26
 
         var points: [CGPoint] = []
 
-        // 1. 南北主通路（左側の通路）へ横移動
+        // 1. 椅子から後ろ（北）へ一歩下がり、背後通路へ出る（机やモニタを突っ切らない）
+        points.append(CGPoint(x: start.x, y: approachY))
+
+        // 2. 背後通路を通って西側南北主通路へ横移動する
         if abs(start.x - aisleX) >= 4 {
-            points.append(CGPoint(x: aisleX, y: start.y))
+            points.append(CGPoint(x: aisleX, y: approachY))
         }
 
-        // 2. 南北主通路を北上して上部横通路へ
-        if abs(start.y - topHallwayY) >= 4 {
+        // 3. 南北主通路を北上して上部横通路へ進む
+        if abs(approachY - topHallwayY) >= 4 {
             points.append(CGPoint(x: aisleX, y: topHallwayY))
         }
 
-        // 3. 上部横通路を通って扉の正面へ進む
+        // 4. 上部横通路を通って扉の正面へ進む
         if abs(aisleX - doorFront.x) >= 4 {
             points.append(doorFront)
         }
