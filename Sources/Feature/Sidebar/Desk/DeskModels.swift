@@ -81,9 +81,18 @@ struct DeskIsland: Equatable {
     let seats: [DeskSeat]
 }
 
+/// 画面外からの呼び出し吹き出しの向き
+enum CallingDirection: Equatable {
+    case top
+    case bottom
+    case left
+    case right
+}
+
 /// 画面外の要確認吹き出しのエントリ情報
 struct MarkerEntry {
     let node: SKNode
     let name: String
     let tabNumber: Int?
+    var direction: CallingDirection
 }

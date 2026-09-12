@@ -154,53 +154,86 @@ final class DeskCameraManager {
 
     // MARK: - 画面外呼び出し吹き出しの配置
 
-    /// 画面外からの呼び出し吹き出しの外形パス
-    static func callingBubblePath(width: CGFloat, height: CGFloat, isDown: Bool) -> CGPath {
+    /// 画面外からの呼び出し吹き出しの外形パス（四方向の矢印尾っぽに対応）
+    static func callingBubblePath(width: CGFloat, height: CGFloat, direction: CallingDirection) -> CGPath {
         let path = CGMutablePath()
         let hw = width / 2
+        let hh = height / 2
         let r: CGFloat = 10
         let tailW: CGFloat = 9
         let tailH: CGFloat = 7
 
-        if isDown {
-            path.move(to: CGPoint(x: -hw + r, y: 0))
-            path.addLine(to: CGPoint(x: -tailW, y: 0))
-            path.addLine(to: CGPoint(x: 0, y: -tailH))
-            path.addLine(to: CGPoint(x: tailW, y: 0))
-            path.addLine(to: CGPoint(x: hw - r, y: 0))
-            path.addArc(tangent1End: CGPoint(x: hw, y: 0), tangent2End: CGPoint(x: hw, y: r), radius: r)
-            path.addLine(to: CGPoint(x: hw, y: height - r))
-            path.addArc(tangent1End: CGPoint(x: hw, y: height), tangent2End: CGPoint(x: hw - r, y: height), radius: r)
-            path.addLine(to: CGPoint(x: -hw + r, y: height))
-            path.addArc(tangent1End: CGPoint(x: -hw, y: height), tangent2End: CGPoint(x: -hw, y: height - r), radius: r)
-            path.addLine(to: CGPoint(x: -hw, y: r))
-            path.addArc(tangent1End: CGPoint(x: -hw, y: 0), tangent2End: CGPoint(x: -hw + r, y: 0), radius: r)
+        switch direction {
+        case .bottom:
+            path.move(to: CGPoint(x: -hw + r, y: -hh))
+            path.addLine(to: CGPoint(x: -tailW, y: -hh))
+            path.addLine(to: CGPoint(x: 0, y: -hh - tailH))
+            path.addLine(to: CGPoint(x: tailW, y: -hh))
+            path.addLine(to: CGPoint(x: hw - r, y: -hh))
+            path.addArc(tangent1End: CGPoint(x: hw, y: -hh), tangent2End: CGPoint(x: hw, y: -hh + r), radius: r)
+            path.addLine(to: CGPoint(x: hw, y: hh - r))
+            path.addArc(tangent1End: CGPoint(x: hw, y: hh), tangent2End: CGPoint(x: hw - r, y: hh), radius: r)
+            path.addLine(to: CGPoint(x: -hw + r, y: hh))
+            path.addArc(tangent1End: CGPoint(x: -hw, y: hh), tangent2End: CGPoint(x: -hw, y: hh - r), radius: r)
+            path.addLine(to: CGPoint(x: -hw, y: -hh + r))
+            path.addArc(tangent1End: CGPoint(x: -hw, y: -hh), tangent2End: CGPoint(x: -hw + r, y: -hh), radius: r)
             path.closeSubpath()
-        } else {
-            path.move(to: CGPoint(x: -hw + r, y: 0))
-            path.addLine(to: CGPoint(x: hw - r, y: 0))
-            path.addArc(tangent1End: CGPoint(x: hw, y: 0), tangent2End: CGPoint(x: hw, y: r), radius: r)
-            path.addLine(to: CGPoint(x: hw, y: height - r))
-            path.addArc(tangent1End: CGPoint(x: hw, y: height), tangent2End: CGPoint(x: hw - r, y: height), radius: r)
-            path.addLine(to: CGPoint(x: tailW, y: height))
-            path.addLine(to: CGPoint(x: 0, y: height + tailH))
-            path.addLine(to: CGPoint(x: -tailW, y: height))
-            path.addLine(to: CGPoint(x: -hw + r, y: height))
-            path.addArc(tangent1End: CGPoint(x: -hw, y: height), tangent2End: CGPoint(x: -hw, y: height - r), radius: r)
-            path.addLine(to: CGPoint(x: -hw, y: r))
-            path.addArc(tangent1End: CGPoint(x: -hw, y: 0), tangent2End: CGPoint(x: -hw + r, y: 0), radius: r)
+
+        case .top:
+            path.move(to: CGPoint(x: -hw + r, y: -hh))
+            path.addLine(to: CGPoint(x: hw - r, y: -hh))
+            path.addArc(tangent1End: CGPoint(x: hw, y: -hh), tangent2End: CGPoint(x: hw, y: -hh + r), radius: r)
+            path.addLine(to: CGPoint(x: hw, y: hh - r))
+            path.addArc(tangent1End: CGPoint(x: hw, y: hh), tangent2End: CGPoint(x: hw - r, y: hh), radius: r)
+            path.addLine(to: CGPoint(x: tailW, y: hh))
+            path.addLine(to: CGPoint(x: 0, y: hh + tailH))
+            path.addLine(to: CGPoint(x: -tailW, y: hh))
+            path.addLine(to: CGPoint(x: -hw + r, y: hh))
+            path.addArc(tangent1End: CGPoint(x: -hw, y: hh), tangent2End: CGPoint(x: -hw, y: hh - r), radius: r)
+            path.addLine(to: CGPoint(x: -hw, y: -hh + r))
+            path.addArc(tangent1End: CGPoint(x: -hw, y: -hh), tangent2End: CGPoint(x: -hw + r, y: -hh), radius: r)
+            path.closeSubpath()
+
+        case .left:
+            path.move(to: CGPoint(x: -hw + r, y: -hh))
+            path.addLine(to: CGPoint(x: hw - r, y: -hh))
+            path.addArc(tangent1End: CGPoint(x: hw, y: -hh), tangent2End: CGPoint(x: hw, y: -hh + r), radius: r)
+            path.addLine(to: CGPoint(x: hw, y: hh - r))
+            path.addArc(tangent1End: CGPoint(x: hw, y: hh), tangent2End: CGPoint(x: hw - r, y: hh), radius: r)
+            path.addLine(to: CGPoint(x: -hw + r, y: hh))
+            path.addArc(tangent1End: CGPoint(x: -hw, y: hh), tangent2End: CGPoint(x: -hw, y: hh - r), radius: r)
+            path.addLine(to: CGPoint(x: -hw, y: tailW))
+            path.addLine(to: CGPoint(x: -hw - tailH, y: 0))
+            path.addLine(to: CGPoint(x: -hw, y: -tailW))
+            path.addLine(to: CGPoint(x: -hw, y: -hh + r))
+            path.addArc(tangent1End: CGPoint(x: -hw, y: -hh), tangent2End: CGPoint(x: -hw + r, y: -hh), radius: r)
+            path.closeSubpath()
+
+        case .right:
+            path.move(to: CGPoint(x: -hw + r, y: -hh))
+            path.addLine(to: CGPoint(x: hw - r, y: -hh))
+            path.addArc(tangent1End: CGPoint(x: hw, y: -hh), tangent2End: CGPoint(x: hw, y: -hh + r), radius: r)
+            path.addLine(to: CGPoint(x: hw, y: -tailW))
+            path.addLine(to: CGPoint(x: hw + tailH, y: 0))
+            path.addLine(to: CGPoint(x: hw, y: tailW))
+            path.addLine(to: CGPoint(x: hw, y: hh - r))
+            path.addArc(tangent1End: CGPoint(x: hw, y: hh), tangent2End: CGPoint(x: hw - r, y: hh), radius: r)
+            path.addLine(to: CGPoint(x: -hw + r, y: hh))
+            path.addArc(tangent1End: CGPoint(x: -hw, y: hh), tangent2End: CGPoint(x: -hw, y: hh - r), radius: r)
+            path.addLine(to: CGPoint(x: -hw, y: -hh + r))
+            path.addArc(tangent1End: CGPoint(x: -hw, y: -hh), tangent2End: CGPoint(x: -hw + r, y: -hh), radius: r)
             path.closeSubpath()
         }
         return path
     }
 
     /// 画面外で助けを求めているエージェントの呼び出し吹き出しノード
-    static func createCallingBubbleNode(seat: DeskSeat, isDown: Bool, width: CGFloat) -> SKNode {
+    static func createCallingBubbleNode(seat: DeskSeat, direction: CallingDirection, width: CGFloat) -> SKNode {
         let node = SKNode()
         node.name = "seat:\(seat.id)"
 
         let bubbleHeight: CGFloat = 34
-        let path = callingBubblePath(width: width, height: bubbleHeight, isDown: isDown)
+        let path = callingBubblePath(width: width, height: bubbleHeight, direction: direction)
         let shape = SKShapeNode(path: path)
         shape.name = "seat:\(seat.id)"
         shape.fillColor = callingBubbleFillColor
@@ -213,12 +246,33 @@ final class DeskCameraManager {
             .scale(to: 1.0, duration: 0.6),
         ])), withKey: "pulse")
 
-        var leftX: CGFloat = -width / 2 + 14
+        var leftX: CGFloat
+        let arrowX: CGFloat
+        let arrowText: String
+
+        switch direction {
+        case .left:
+            arrowText = "◀"
+            arrowX = -width / 2 + 13
+            leftX = -width / 2 + 25
+        case .right:
+            arrowText = "▶"
+            arrowX = width / 2 - 13
+            leftX = -width / 2 + 14
+        case .top:
+            arrowText = "▲"
+            arrowX = width / 2 - 14
+            leftX = -width / 2 + 14
+        case .bottom:
+            arrowText = "▼"
+            arrowX = width / 2 - 14
+            leftX = -width / 2 + 14
+        }
 
         if let tabNumber = seat.tabNumber {
             let badge = SKNode()
             badge.name = "seat:\(seat.id)"
-            badge.position = CGPoint(x: leftX + 13, y: bubbleHeight / 2)
+            badge.position = CGPoint(x: leftX + 13, y: 0)
 
             let badgeBg = SKShapeNode(rect: CGRect(x: -13, y: -8, width: 26, height: 16), cornerRadius: 4.0)
             badgeBg.name = "seat:\(seat.id)"
@@ -243,7 +297,7 @@ final class DeskCameraManager {
         let hand = DeskFurnitureNode.createHandMark()
         hand.name = "seat:\(seat.id)"
         hand.setScale(0.85)
-        hand.position = CGPoint(x: leftX + 10, y: bubbleHeight / 2 - 8)
+        hand.position = CGPoint(x: leftX + 10, y: -8)
         hand.run(.repeatForever(.sequence([
             .rotate(toAngle: 0.22, duration: 0.35),
             .rotate(toAngle: -0.15, duration: 0.35),
@@ -257,8 +311,8 @@ final class DeskCameraManager {
         label.fontColor = .labelColor
         label.horizontalAlignmentMode = .left
         label.verticalAlignmentMode = .center
-        label.position = CGPoint(x: leftX, y: bubbleHeight / 2)
-        let maxChars = seat.tabNumber != nil ? 18 : 22
+        label.position = CGPoint(x: leftX, y: 0)
+        let maxChars = (seat.tabNumber != nil || direction == .left) ? 17 : 21
         label.text = SpeechBubbleNode.truncateScreenText(seat.name, limit: maxChars)
         node.addChild(label)
 
@@ -268,8 +322,8 @@ final class DeskCameraManager {
         arrow.fontColor = callingBadgeStrokeColor
         arrow.horizontalAlignmentMode = .center
         arrow.verticalAlignmentMode = .center
-        arrow.position = CGPoint(x: width / 2 - 14, y: bubbleHeight / 2)
-        arrow.text = isDown ? "▼" : "▲"
+        arrow.position = CGPoint(x: arrowX, y: 0)
+        arrow.text = arrowText
         node.addChild(arrow)
 
         node.zPosition = 10000
@@ -306,7 +360,9 @@ final class DeskCameraManager {
             : NSColor(red: 0.75, green: 0.32, blue: 0.02, alpha: 1.0)
     }
 
-    /// 画面外の要確認吹き出しを更新配置する
+    /// 画面外の要確認吹き出しを更新配置する。
+    /// 助けを求めているエージェントがいる方角（上下左右）の画面端から吹き出しを出現させ、
+    /// 矢印と尾っぽでその方角を指し示す
     func placeMarkers(camera: SKCameraNode, markersNode: SKNode, islands: [DeskIsland], layout: DeskLayout, viewSize: CGSize) {
         guard viewSize.width >= 100 && viewSize.height >= 80 else {
             if !activeMarkers.isEmpty {
@@ -331,9 +387,23 @@ final class DeskCameraManager {
         let bubbleScale = min(maxScale, max(0.42, 1.0 / currentZoom))
         let bubbleHeight: CGFloat = 34
         let tailH: CGFloat = 7
-        let step: CGFloat = (bubbleHeight + 10) * bubbleScale
 
-        var offscreenCalling: [(seat: DeskSeat, isDown: Bool, distance: CGFloat)] = []
+        let effectiveBubbleW = baseBubbleWidth * bubbleScale
+        let effectiveBubbleH = bubbleHeight * bubbleScale
+        let padding: CGFloat = 8
+
+        let maxX = max(0, halfW - effectiveBubbleW / 2 - padding - tailH * bubbleScale)
+        let maxY = max(0, halfH - effectiveBubbleH / 2 - padding - tailH * bubbleScale)
+
+        struct CallingItem {
+            let seat: DeskSeat
+            let direction: CallingDirection
+            let targetPos: CGPoint
+            let distance: CGFloat
+        }
+
+        var offscreenItems: [CallingItem] = []
+
         for (index, island) in islands.enumerated() {
             for (slot, seat) in island.seats.enumerated() where seat.needsPerson {
                 let point = layout.seatPoint(island: index, index: slot)
@@ -350,59 +420,195 @@ final class DeskCameraManager {
                                || (point.y - 40) > viewportTop
                 guard isOffscreen else { continue }
 
-                let isDown: Bool
-                if bubbleBottom < viewportBottom || point.y < viewportBottom {
-                    isDown = true
-                } else if bubbleTop > viewportTop || point.y > viewportTop {
-                    isDown = false
+                // カメラ中心からの画面上の相対ベクトル（ポイント単位）
+                let dx = (point.x - camera.position.x) / currentZoom
+                let dy = (point.y - camera.position.y) / currentZoom
+
+                // 画面端の境界矩形とのレイ交差から、上下左右いずれの縁から出すかを判定
+                let tx = (abs(dx) > 0.001) ? maxX / abs(dx) : CGFloat.infinity
+                let ty = (abs(dy) > 0.001) ? maxY / abs(dy) : CGFloat.infinity
+
+                let direction: CallingDirection
+                let pos: CGPoint
+
+                if ty < tx {
+                    // 上端または下端の境界に先に到達
+                    if dy > 0 {
+                        direction = .top
+                        let x = min(max(dx * ty, -maxX), maxX)
+                        pos = CGPoint(x: x, y: maxY)
+                    } else {
+                        direction = .bottom
+                        let x = min(max(dx * ty, -maxX), maxX)
+                        pos = CGPoint(x: x, y: -maxY)
+                    }
                 } else {
-                    isDown = point.y < camera.position.y
+                    // 左端または右端の境界に先に到達
+                    if dx < 0 {
+                        direction = .left
+                        let y = min(max(dy * tx, -maxY), maxY)
+                        pos = CGPoint(x: -maxX, y: y)
+                    } else {
+                        direction = .right
+                        let y = min(max(dy * tx, -maxY), maxY)
+                        pos = CGPoint(x: maxX, y: y)
+                    }
                 }
-                let distance = abs(point.y - camera.position.y)
-                offscreenCalling.append((seat, isDown, distance))
+
+                let distance = hypot(dx, dy)
+                offscreenItems.append(CallingItem(seat: seat, direction: direction, targetPos: pos, distance: distance))
             }
         }
 
-        let downCalling = offscreenCalling.filter { $0.isDown }.sorted { $0.distance < $1.distance }.prefix(2)
-        let upCalling = offscreenCalling.filter { !$0.isDown }.sorted { $0.distance < $1.distance }.prefix(2)
+        // 近い順に最大3件まで表示
+        let visibleItems = offscreenItems.sorted { $0.distance < $1.distance }.prefix(3)
 
-        var needed: [(key: String, seat: DeskSeat, isDown: Bool, baseY: CGFloat)] = []
-
-        for (idx, item) in downCalling.enumerated() {
-            let key = "down:\(item.seat.id)"
-            let baseY = -halfH + 6 + tailH * bubbleScale + CGFloat(idx) * step
-            needed.append((key, item.seat, true, baseY))
+        // 各方角ごとに吹き出しの重なりを解消して配置を決定する
+        var itemsByDirection: [CallingDirection: [CallingItem]] = [:]
+        for item in visibleItems {
+            itemsByDirection[item.direction, default: []].append(item)
         }
 
-        for (idx, item) in upCalling.enumerated() {
-            let key = "up:\(item.seat.id)"
-            let baseY = halfH - 6 - (bubbleHeight + tailH) * bubbleScale - CGFloat(idx) * step
-            needed.append((key, item.seat, false, baseY))
+        var needed: [(seat: DeskSeat, direction: CallingDirection, targetPos: CGPoint)] = []
+
+        for (direction, items) in itemsByDirection {
+            guard !items.isEmpty else { continue }
+            if items.count == 1 {
+                needed.append((items[0].seat, direction, items[0].targetPos))
+                continue
+            }
+
+            switch direction {
+            case .left, .right:
+                // 縦の縁では Y 座標（上下）に分散させて重なりを防ぎ、尾っぽは画面端に密着させる
+                var sorted = items.sorted { $0.targetPos.y < $1.targetPos.y }
+                let minGap = effectiveBubbleH + 8
+                for i in 1..<sorted.count {
+                    if sorted[i].targetPos.y - sorted[i - 1].targetPos.y < minGap {
+                        let shift = minGap - (sorted[i].targetPos.y - sorted[i - 1].targetPos.y)
+                        sorted[i] = CallingItem(
+                            seat: sorted[i].seat,
+                            direction: sorted[i].direction,
+                            targetPos: CGPoint(x: sorted[i].targetPos.x, y: sorted[i].targetPos.y + shift),
+                            distance: sorted[i].distance
+                        )
+                    }
+                }
+                // 画面上端・下端からはみ出さないよう全体を調整
+                if let topY = sorted.last?.targetPos.y, topY > maxY {
+                    let over = topY - maxY
+                    for i in 0..<sorted.count {
+                        sorted[i] = CallingItem(
+                            seat: sorted[i].seat,
+                            direction: sorted[i].direction,
+                            targetPos: CGPoint(x: sorted[i].targetPos.x, y: max(-maxY, sorted[i].targetPos.y - over)),
+                            distance: sorted[i].distance
+                        )
+                    }
+                }
+                for item in sorted {
+                    needed.append((item.seat, direction, item.targetPos))
+                }
+
+            case .top, .bottom:
+                // 横の縁では、画面幅に余裕があれば左右に並べ、狭ければ段重ねにする
+                let minGap = effectiveBubbleW + 10
+                let totalWidthNeeded = CGFloat(items.count) * effectiveBubbleW + CGFloat(items.count - 1) * 10
+                if 2 * maxX >= totalWidthNeeded {
+                    var sorted = items.sorted { $0.targetPos.x < $1.targetPos.x }
+                    for i in 1..<sorted.count {
+                        if sorted[i].targetPos.x - sorted[i - 1].targetPos.x < minGap {
+                            let shift = minGap - (sorted[i].targetPos.x - sorted[i - 1].targetPos.x)
+                            sorted[i] = CallingItem(
+                                seat: sorted[i].seat,
+                                direction: sorted[i].direction,
+                                targetPos: CGPoint(x: sorted[i].targetPos.x + shift, y: sorted[i].targetPos.y),
+                                distance: sorted[i].distance
+                            )
+                        }
+                    }
+                    if let rightX = sorted.last?.targetPos.x, rightX > maxX {
+                        let over = rightX - maxX
+                        for i in 0..<sorted.count {
+                            sorted[i] = CallingItem(
+                                seat: sorted[i].seat,
+                                direction: sorted[i].direction,
+                                targetPos: CGPoint(x: max(-maxX, sorted[i].targetPos.x - over), y: sorted[i].targetPos.y),
+                                distance: sorted[i].distance
+                            )
+                        }
+                    }
+                    for item in sorted {
+                        needed.append((item.seat, direction, item.targetPos))
+                    }
+                } else {
+                    let stackStep: CGFloat = (bubbleHeight + 10) * bubbleScale
+                    for (idx, item) in items.enumerated() {
+                        let y = direction == .top
+                            ? item.targetPos.y - CGFloat(idx) * stackStep
+                            : item.targetPos.y + CGFloat(idx) * stackStep
+                        needed.append((item.seat, direction, CGPoint(x: item.targetPos.x, y: y)))
+                    }
+                }
+            }
         }
 
-        let neededKeys = Set(needed.map(\.key))
+        let neededKeys = Set(needed.map { $0.seat.id })
         for (key, entry) in activeMarkers where !neededKeys.contains(key) {
-            entry.node.removeFromParent()
+            entry.node.run(.sequence([
+                .fadeOut(withDuration: 0.2),
+                .removeFromParent()
+            ]))
             activeMarkers.removeValue(forKey: key)
         }
 
         for item in needed {
+            let key = item.seat.id
             let entry: MarkerEntry
-            if let existing = activeMarkers[item.key],
+            if let existing = activeMarkers[key],
                existing.name == item.seat.name,
-               existing.tabNumber == item.seat.tabNumber {
+               existing.tabNumber == item.seat.tabNumber,
+               existing.direction == item.direction {
                 entry = existing
             } else {
-                activeMarkers[item.key]?.node.removeFromParent()
-                let bubble = Self.createCallingBubbleNode(seat: item.seat, isDown: item.isDown, width: baseBubbleWidth)
+                activeMarkers[key]?.node.removeFromParent()
+                let bubble = Self.createCallingBubbleNode(seat: item.seat, direction: item.direction, width: baseBubbleWidth)
                 markersNode.addChild(bubble)
-                let newEntry = MarkerEntry(node: bubble, name: item.seat.name, tabNumber: item.seat.tabNumber)
-                activeMarkers[item.key] = newEntry
+
+                // 呼んでいる方向の外側から画面内へスライドインする登場演出
+                let spawnOffset: CGFloat = 36 * bubbleScale
+                let spawnPos: CGPoint
+                switch item.direction {
+                case .top:
+                    spawnPos = CGPoint(x: item.targetPos.x, y: item.targetPos.y + spawnOffset)
+                case .bottom:
+                    spawnPos = CGPoint(x: item.targetPos.x, y: item.targetPos.y - spawnOffset)
+                case .left:
+                    spawnPos = CGPoint(x: item.targetPos.x - spawnOffset, y: item.targetPos.y)
+                case .right:
+                    spawnPos = CGPoint(x: item.targetPos.x + spawnOffset, y: item.targetPos.y)
+                }
+                bubble.position = spawnPos
+                bubble.alpha = 0
+
+                let moveAction = SKAction.move(to: item.targetPos, duration: 0.28)
+                moveAction.timingMode = .easeOut
+                let enterAction = SKAction.group([
+                    .fadeIn(withDuration: 0.20),
+                    moveAction
+                ])
+                bubble.run(enterAction, withKey: "enter")
+
+                let newEntry = MarkerEntry(node: bubble, name: item.seat.name, tabNumber: item.seat.tabNumber, direction: item.direction)
+                activeMarkers[key] = newEntry
                 entry = newEntry
             }
 
             entry.node.setScale(bubbleScale)
-            entry.node.position = CGPoint(x: 0, y: item.baseY)
+            // 登場演出中以外は、カメラのパンやズームの移動に合わせて現在位置を追従させる
+            if entry.node.action(forKey: "enter") == nil {
+                entry.node.position = item.targetPos
+            }
         }
     }
 }
