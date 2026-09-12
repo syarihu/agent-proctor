@@ -306,17 +306,34 @@ final class WhiteboardNode: SKNode {
         detailBubble = nil
     }
 
+    override func removeFromParent() {
+        detailBubble?.removeFromParent()
+        detailBubble = nil
+        super.removeFromParent()
+    }
+
     private func renderDetailBubble() {
         detailBubble?.removeFromParent()
 
+        // ホワイトボード自体は壁レイヤー（zPosition: -9970）に配置されているため、
+        // 吹き出しを WhiteboardNode の子にしてしまうと作業員や思考雲（zPosition: 5000）の
+        // 背面に隠れてしまう。そのため親コンテナ（room）に最前面レイヤー（zPosition: 15000）として配置する
+        guard let container = parent else { return }
+
         let bubble = SKNode()
-        bubble.zPosition = 100
+        bubble.name = "whiteboardDetail"
+        // 部屋全体の思考雲（実効 zPosition: 約4700）や作業員より確実に前面へ出す
+        bubble.zPosition = 15000
 
         var lines: [String] = []
 
         if let f = summary.rateLimits.fiveHour {
             var text = "5-Hour: \(f.usedPercent)%"
-            if let r = formatResetTime(f.resetsAt) { text += " (resets \(r))" }
+            if let r = formatResetTime(f.resetsAt) {
+                text += " (resets \(r)"
+                if let rem = formatRemainingTime(f.resetsAt) { text += ", in \(rem)" }
+                text += ")"
+            }
             lines.append(text)
         } else {
             lines.append("5-Hour: No limits reported")
@@ -324,7 +341,11 @@ final class WhiteboardNode: SKNode {
 
         if let w = summary.rateLimits.sevenDay {
             var text = "7-Day: \(w.usedPercent)%"
-            if let r = formatResetTime(w.resetsAt) { text += " (resets \(r))" }
+            if let r = formatResetTime(w.resetsAt) {
+                text += " (resets \(r)"
+                if let rem = formatRemainingTime(w.resetsAt) { text += ", in \(rem)" }
+                text += ")"
+            }
             lines.append(text)
         } else {
             lines.append("7-Day: No limits reported")
@@ -333,20 +354,51 @@ final class WhiteboardNode: SKNode {
         let header = summary.agentDisplayName
         lines.insert(header, at: 0)
 
-        let bubbleW: CGFloat = 220
-        let bubbleH: CGFloat = CGFloat(lines.count) * 16 + 12
-        let bubbleY: CGFloat = -Self.boardHeight / 2 - bubbleH / 2 - 8
+        let bubbleW: CGFloat = 240
+        let bubbleH: CGFloat = CGFloat(lines.count) * 17 + 16
+        let bubbleY: CGFloat = -Self.boardHeight / 2 - bubbleH / 2 - 10
 
+        // ポップオーバー背面のドロップシャドウ
+        let shadow = SKShapeNode(rect: CGRect(x: -bubbleW / 2 + 1, y: -bubbleH / 2 - 3, width: bubbleW, height: bubbleH),
+                                 cornerRadius: 5.5)
+        shadow.fillColor = NSColor.black.withAlphaComponent(0.28)
+        shadow.strokeColor = .clear
+        shadow.zPosition = -1
+        bubble.addChild(shadow)
+
+        // ポップオーバー本体
         let shape = SKShapeNode(rect: CGRect(x: -bubbleW / 2, y: -bubbleH / 2, width: bubbleW, height: bubbleH),
-                                cornerRadius: 4.5)
+                                cornerRadius: 5.0)
         shape.fillColor = NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                ? NSColor(white: 0.15, alpha: 0.96)
-                : NSColor(white: 0.98, alpha: 0.96)
+                ? NSColor(calibratedWhite: 0.12, alpha: 0.98)
+                : NSColor(calibratedWhite: 0.99, alpha: 0.98)
         }
-        shape.strokeColor = .secondaryLabelColor.withAlphaComponent(0.4)
-        shape.lineWidth = 1.0
+        shape.strokeColor = NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(white: 0.45, alpha: 0.90)
+                : NSColor(white: 0.70, alpha: 0.90)
+        }
+        shape.lineWidth = 1.2
         bubble.addChild(shape)
+
+        // ホワイトボード下部へ向けた三角ポインター
+        let pointerPath = CGMutablePath()
+        pointerPath.move(to: CGPoint(x: -6, y: bubbleH / 2))
+        pointerPath.addLine(to: CGPoint(x: 0, y: bubbleH / 2 + 7))
+        pointerPath.addLine(to: CGPoint(x: 6, y: bubbleH / 2))
+        pointerPath.closeSubpath()
+        let pointer = SKShapeNode(path: pointerPath)
+        pointer.fillColor = shape.fillColor
+        pointer.strokeColor = shape.strokeColor
+        pointer.lineWidth = shape.lineWidth
+        bubble.addChild(pointer)
+
+        // タイトル下の区切り線
+        let divider = SKShapeNode(rect: CGRect(x: -bubbleW / 2 + 14, y: bubbleH / 2 - 24, width: bubbleW - 28, height: 0.8))
+        divider.fillColor = markerColor(for: summary.agent).withAlphaComponent(0.3)
+        divider.strokeColor = .clear
+        bubble.addChild(divider)
 
         for (i, lineText) in lines.enumerated() {
             let lbl = SKLabelNode(fontNamed: i == 0 ? "SFMono-Bold" : "SFMono-Regular")
@@ -355,14 +407,15 @@ final class WhiteboardNode: SKNode {
             lbl.text = lineText
             lbl.horizontalAlignmentMode = .center
             lbl.verticalAlignmentMode = .center
-            let y = bubbleH / 2 - 12 - CGFloat(i) * 16
+            let y = bubbleH / 2 - 13 - CGFloat(i) * 17
             lbl.position = CGPoint(x: 0, y: y)
             bubble.addChild(lbl)
         }
 
-        bubble.position = CGPoint(x: 0, y: bubbleY)
+        // 親コンテナ（room）の座標系に合わせて配置
+        bubble.position = CGPoint(x: position.x, y: position.y + bubbleY)
         bubble.alpha = 0
-        boardNode.addChild(bubble)
+        container.addChild(bubble)
         bubble.run(.fadeIn(withDuration: 0.15))
         self.detailBubble = bubble
     }
@@ -375,5 +428,19 @@ final class WhiteboardNode: SKNode {
         let formatter = DateFormatter()
         formatter.dateFormat = Calendar.current.isDateInToday(resetDate) ? "HH:mm" : "M/d HH:mm"
         return formatter.string(from: resetDate)
+    }
+
+    private func formatRemainingTime(_ epoch: Int?) -> String? {
+        guard let epoch, epoch > 0 else { return nil }
+        let now = Date().timeIntervalSince1970
+        let diff = Double(epoch) - now
+        guard diff > 0 else { return nil }
+        let hours = Int(diff) / 3600
+        let minutes = (Int(diff) % 3600) / 60
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        } else {
+            return "\(minutes)m"
+        }
     }
 }
