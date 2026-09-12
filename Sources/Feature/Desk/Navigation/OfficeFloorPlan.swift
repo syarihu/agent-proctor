@@ -102,8 +102,11 @@ enum OfficeMetrics {
     /// 状態ディスプレイの枚数（確認待ち・作業中・休憩中）
     static let loungeDisplayCount = 3
 
-    /// 確認待ちディスプレイに出す明細1件の高さ
-    static let loungeDetailRowHeight: CGFloat = 27
+    /// 確認待ちディスプレイに出す明細1件の高さ。
+    /// 見出し1行と、待っている内容の折り返し2行が入る
+    static let loungeDetailRowHeight: CGFloat = 36
+    /// 待っている内容に使える行数
+    static let loungeDetailBodyLines = 2
     /// 明細の行数。件数で高さを変えると台帳が動くたびに部屋を組み直すことになるので、
     /// 枠は固定にして、あふれたぶんは件数でまとめる
     static let loungeDetailRows = 3

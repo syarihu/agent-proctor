@@ -118,9 +118,17 @@ final class OfficeLoungeNode: SKNode {
     private var counters: [Board: SKLabelNode] = [:]
     /// 各ディスプレイの画面。件数が 0 のときは暗く落とす
     private var panels: [Board: SKShapeNode] = [:]
-    /// 確認待ちディスプレイの明細行（1行目: 何を待たせているか／2行目: 待っている内容）
-    private var detailTitles: [SKLabelNode] = []
-    private var detailBodies: [SKLabelNode] = []
+    /// 確認待ちディスプレイの明細1件分のラベル
+    private struct DetailRow {
+        /// 何を待たせているか（セッション名とリポジトリ名）
+        let title: SKLabelNode
+        /// 待っている内容。長いので折り返して複数行に流す
+        let lines: [SKLabelNode]
+    }
+
+    private var detailRows: [DetailRow] = []
+    /// 明細のラベルが使える幅
+    private var detailMaxWidth: CGFloat = 0
 
     /// 確認待ちの明細1件
     struct Attention {
@@ -196,37 +204,108 @@ final class OfficeLoungeNode: SKNode {
         }
 
         // 枠に収まらないぶんは最終行を「あと N 件」に使う
-        let capacity = detailTitles.count
+        let capacity = detailRows.count
         let overflows = attention.count > capacity
         let shown = overflows ? Array(attention.prefix(capacity - 1)) : attention
         let tint = Board.needsPerson.tint
 
-        for index in 0..<capacity {
-            let title = detailTitles[index]
-            let body = detailBodies[index]
-
+        for (index, row) in detailRows.enumerated() {
             if index < shown.count {
                 let entry = shown[index]
-                title.text = Self.truncate("\(entry.name)  \(entry.repo)", limit: 30)
-                title.fontColor = Self.boardInkColor
-                body.text = entry.request.map { Self.truncate($0, limit: 36) } ?? ""
-                body.fontColor = tint.withAlphaComponent(0.85)
+                // セッション名がリポジトリ名と同じときは繰り返さない。
+                // 台帳に名前が付いていないセッションは両方ともリポジトリ名になる
+                let heading = entry.name == entry.repo
+                    ? entry.name
+                    : "\(entry.name)  \(entry.repo)"
+                Self.fit(row.title, text: heading, maxWidth: detailMaxWidth)
+                row.title.fontColor = Self.boardInkColor
+
+                let wrapped = Self.wrap(entry.request ?? "",
+                                        maxWidth: detailMaxWidth,
+                                        lineCount: row.lines.count,
+                                        probe: row.lines[0])
+                for (lineIndex, line) in row.lines.enumerated() {
+                    Self.fit(line,
+                             text: lineIndex < wrapped.count ? wrapped[lineIndex] : "",
+                             maxWidth: detailMaxWidth)
+                    line.fontColor = tint.withAlphaComponent(0.85)
+                }
             } else if overflows && index == capacity - 1 {
-                title.text = "+\(attention.count - shown.count)"
-                title.fontColor = Self.boardInkColor.withAlphaComponent(0.7)
-                body.text = ""
+                row.title.text = "+\(attention.count - shown.count)"
+                row.title.fontColor = Self.boardInkColor.withAlphaComponent(0.7)
+                for line in row.lines { line.text = "" }
             } else {
-                title.text = ""
-                body.text = ""
+                row.title.text = ""
+                for line in row.lines { line.text = "" }
             }
         }
     }
 
-    /// 画面幅に収まらない文字を後ろから詰める
-    private static func truncate(_ text: String, limit: Int) -> String {
+    /// ラベルに文字を入れ、幅に収まらなければ末尾を削って「…」を付ける。
+    ///
+    /// 文字数ではなく実寸で見るのは、日本語と英数字で1文字の幅が倍近く違うため。
+    /// 文字数で切ると、日本語ならはみ出し、英数字なら余白が余る
+    private static func fit(_ label: SKLabelNode, text: String, maxWidth: CGFloat) {
+        label.text = text
+        guard !text.isEmpty, maxWidth > 0, label.frame.width > maxWidth else { return }
+
+        var chars = Array(text)
+        while chars.count > 1 {
+            chars.removeLast()
+            label.text = String(chars) + "…"
+            if label.frame.width <= maxWidth { return }
+        }
+    }
+
+    /// 幅で折り返して複数行に分ける。
+    ///
+    /// `probe` は幅を測るためだけに使う。表示中のラベルを渡してよい
+    /// （このあと `fit` で本来の文字を入れ直すため）
+    private static func wrap(_ text: String, maxWidth: CGFloat,
+                             lineCount: Int, probe: SKLabelNode) -> [String] {
         let flat = text.replacingOccurrences(of: "\n", with: " ")
-        guard flat.count > limit else { return flat }
-        return String(flat.prefix(limit - 1)) + "…"
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !flat.isEmpty, maxWidth > 0, lineCount > 0 else { return [] }
+
+        var lines: [String] = []
+        var rest = flat
+
+        for _ in 0..<lineCount {
+            guard !rest.isEmpty else { break }
+            probe.text = rest
+            if probe.frame.width <= maxWidth {
+                lines.append(rest)
+                rest = ""
+                break
+            }
+
+            // 収まる最長の前半を二分探索で探す
+            let chars = Array(rest)
+            var low = 1
+            var high = chars.count
+            var fitCount = 1
+            while low <= high {
+                let mid = (low + high) / 2
+                probe.text = String(chars[0..<mid])
+                if probe.frame.width <= maxWidth {
+                    fitCount = mid
+                    low = mid + 1
+                } else {
+                    high = mid - 1
+                }
+            }
+
+            // 単語の途中で切らないよう、近くの空白まで戻す
+            var splitAt = fitCount
+            if let space = chars[0..<fitCount].lastIndex(of: " "), space > fitCount / 2 {
+                splitAt = space
+            }
+
+            lines.append(String(chars[0..<splitAt]).trimmingCharacters(in: .whitespaces))
+            rest = String(chars[splitAt...]).trimmingCharacters(in: .whitespaces)
+        }
+
+        return lines
     }
 
     // MARK: - 部品
@@ -348,6 +427,8 @@ final class OfficeLoungeNode: SKNode {
         node.addChild(divider)
 
         let rowHeight = OfficeMetrics.loungeDetailRowHeight
+        detailMaxWidth = headRect.width - 30
+
         for index in 0..<OfficeMetrics.loungeDetailRows {
             let rowTop = headRect.minY - 4 - rowHeight * CGFloat(index)
 
@@ -359,17 +440,22 @@ final class OfficeLoungeNode: SKNode {
             title.position = CGPoint(x: headRect.minX + 12, y: rowTop - 8)
             title.zPosition = 2
             node.addChild(title)
-            detailTitles.append(title)
 
-            let body = SKLabelNode(text: "")
-            body.fontName = "Menlo"
-            body.fontSize = 8
-            body.horizontalAlignmentMode = .left
-            body.verticalAlignmentMode = .center
-            body.position = CGPoint(x: headRect.minX + 18, y: rowTop - 19)
-            body.zPosition = 2
-            node.addChild(body)
-            detailBodies.append(body)
+            var lines: [SKLabelNode] = []
+            for lineIndex in 0..<OfficeMetrics.loungeDetailBodyLines {
+                let body = SKLabelNode(text: "")
+                body.fontName = "Menlo"
+                body.fontSize = 8
+                body.horizontalAlignmentMode = .left
+                body.verticalAlignmentMode = .center
+                body.position = CGPoint(x: headRect.minX + 18,
+                                        y: rowTop - 20 - 10 * CGFloat(lineIndex))
+                body.zPosition = 2
+                node.addChild(body)
+                lines.append(body)
+            }
+
+            detailRows.append(DetailRow(title: title, lines: lines))
         }
     }
 
