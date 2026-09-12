@@ -492,13 +492,17 @@ final class DeskScene: SKScene {
     private func updateLounge() {
         guard layout.plan.lounge != nil else { return }
 
-        var onBreak: [String] = []
+        var counts: [OfficeLoungeNode.Board: Int] = [:]
         var stillResting: Set<String> = []
         var sofaIndex = 0
 
         for (index, island) in islands.enumerated() {
-            for (slot, seat) in island.seats.enumerated() where seat.status == TaskStatus.seen {
-                onBreak.append(seat.name)
+            for (slot, seat) in island.seats.enumerated() {
+                counts[OfficeLoungeNode.board(for: seat), default: 0] += 1
+
+                // ソファへ送るのは `seen` だけ。ディスプレイの「休憩中」は
+                // サイドバーの完了の箱と同じ範囲なので、こちらより広い
+                guard seat.status == TaskStatus.seen else { continue }
                 stillResting.insert(seat.id)
                 sendToLounge(seat: seat, island: index, slot: slot, sofaIndex: sofaIndex)
                 sofaIndex += 1
@@ -509,7 +513,7 @@ final class DeskScene: SKScene {
             returnFromLounge(id: id, walker: walker)
         }
 
-        loungeNode?.setResting(onBreak)
+        loungeNode?.setCounts(counts)
     }
 
     private func sendToLounge(seat: DeskSeat, island: Int, slot: Int, sofaIndex: Int) {

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Model
 import Resources
 import SpriteKit
 
@@ -7,11 +8,47 @@ import SpriteKit
 ///
 /// 区画ごとにソファを置くとリポジトリが増えるたびに横幅が膨らむので、
 /// スイートの外に1つだけ置いて全員で使う。
-/// 上から順に、案内板・休憩者のボード・ドリンクバー、そして下端にソファを並べる。
+/// 上から順に、案内板・状態ディスプレイ・ドリンクバー・ソファを並べる。
 ///
-/// ソファを下端に吸着させているのは、スイートが縦に伸びてラウンジも一緒に伸びたときに、
-/// 中身が上に固まって下半分が空カーペットになるのを避けるため
+/// 状態ディスプレイはサイドバーの状態タブと同じ切り方（確認待ち・作業中・休憩中）で数を出す。
+/// 見る場所が違っても数が食い違わないよう、区切り方は `TaskGrouping.byStatus` に合わせてある
+/// （`FeatureSidebar` は `FeatureDesk` に依存する側なので、型は借りずに判定だけ揃えている）
 final class OfficeLoungeNode: SKNode {
+    // MARK: - 状態の区分
+
+    /// ディスプレイに出す区分。並びはサイドバーの状態タブと同じ
+    enum Board: Int, CaseIterable {
+        case needsPerson
+        case working
+        case resting
+
+        var titleKey: String {
+            switch self {
+            case .needsPerson: return "app.office.lounge.needs_person"
+            case .working: return "app.office.lounge.working"
+            case .resting: return "app.office.lounge.resting"
+            }
+        }
+
+        /// 机のモニタや自立ホワイトボードで使っている状態色に合わせる
+        var tint: NSColor {
+            switch self {
+            case .needsPerson: return NSColor(red: 1.0, green: 0.655, blue: 0.149, alpha: 1.0)
+            case .working: return NSColor(red: 0.310, green: 0.765, blue: 0.969, alpha: 1.0)
+            case .resting: return NSColor(red: 0.400, green: 0.733, blue: 0.416, alpha: 1.0)
+            }
+        }
+    }
+
+    /// 席1つがどの区分に入るか。
+    ///
+    /// 人の手が要るかを先に見るのは、サイドバーの状態タブと同じ順序。
+    /// ここに独自の条件を書くと、同じ台帳を見ているのに数が合わなくなる
+    static func board(for seat: DeskSeat) -> Board {
+        if seat.needsPerson { return .needsPerson }
+        if seat.status == TaskStatus.running { return .working }
+        return .resting
+    }
     // MARK: - 重なり順
 
     static let carpetZ: CGFloat = -9800
@@ -25,6 +62,8 @@ final class OfficeLoungeNode: SKNode {
     private static let gap = OfficeMetrics.loungeGap
     private static let headerHeight = OfficeMetrics.loungeHeaderHeight
     private static let boardHeight = OfficeMetrics.loungeBoardHeight
+    private static let displayHeight = OfficeMetrics.loungeDisplayHeight
+    private static let displayGap = OfficeMetrics.loungeDisplayGap
     private static let barHeight = OfficeMetrics.loungeBarHeight
     private static let sofaHeight = OfficeMetrics.loungeSofaHeight
 
@@ -48,17 +87,18 @@ final class OfficeLoungeNode: SKNode {
             : NSColor(red: 0.72, green: 0.63, blue: 0.51, alpha: 0.95)
     }
 
-    static let boardColor = NSColor(name: nil) { appearance in
+    /// ディスプレイの外枠。画面まわりは明暗どちらでも暗くして、画面を光って見せる
+    static let bezelColor = NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(white: 0.93, alpha: 0.96)
-            : NSColor(white: 1.0, alpha: 0.98)
+            ? NSColor(white: 0.10, alpha: 0.98)
+            : NSColor(white: 0.24, alpha: 0.98)
     }
 
-    static let boardInkColor = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(white: 0.22, alpha: 1.0)
-            : NSColor(white: 0.32, alpha: 1.0)
-    }
+    /// 件数が 0 のディスプレイ。電源が落ちているように見せる
+    static let panelOffColor = NSColor(white: 0.07, alpha: 0.92)
+
+    /// 画面に載る文字。地が暗いので明暗どちらでも明るい側で置く
+    static let boardInkColor = NSColor(white: 0.86, alpha: 1.0)
 
     static let sofaColor = NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -74,24 +114,14 @@ final class OfficeLoungeNode: SKNode {
 
     // MARK: - 更新できる部品
 
-    /// 休憩者ボードの本文。休憩中のエージェントに合わせて差し替える
-    private let boardLines: [SKLabelNode]
+    /// 各ディスプレイの件数表示
+    private var counters: [Board: SKLabelNode] = [:]
+    /// 各ディスプレイの画面。件数が 0 のときは暗く落とす
+    private var panels: [Board: SKShapeNode] = [:]
 
     // MARK: - 初期化
 
     init(lounge: OfficeFloorPlan.Lounge) {
-        var lines: [SKLabelNode] = []
-        for _ in 0..<3 {
-            let label = SKLabelNode(text: "")
-            label.fontName = "Menlo"
-            label.fontSize = 8
-            label.horizontalAlignmentMode = .left
-            label.verticalAlignmentMode = .center
-            label.fontColor = Self.boardInkColor
-            lines.append(label)
-        }
-        boardLines = lines
-
         super.init()
 
         name = "lounge"
@@ -109,7 +139,7 @@ final class OfficeLoungeNode: SKNode {
         addChild(header(width: width, y: cursor))
 
         cursor -= Self.gap + Self.boardHeight
-        addChild(board(width: width, y: cursor))
+        addChild(displays(width: width, y: cursor))
 
         cursor -= Self.gap + Self.barHeight
         addChild(drinkBar(width: width, y: cursor))
@@ -121,7 +151,7 @@ final class OfficeLoungeNode: SKNode {
         // 東側の出入口。ソファと同じ高さに開けて、入ってすぐ座れるようにする
         addChild(doorway(at: CGPoint(x: width, y: lounge.doorY - lounge.frame.minY)))
 
-        setResting([])
+        setCounts([:])
     }
 
     required init?(coder aDecoder: NSCoder) {
@@ -130,33 +160,23 @@ final class OfficeLoungeNode: SKNode {
 
     // MARK: - 状態の反映
 
-    /// 休憩中のエージェントの一覧をボードに書き出す
-    func setResting(_ entries: [String]) {
-        guard !entries.isEmpty else {
-            boardLines[0].text = Localized.text("app.office.lounge.all_at_desk")
-            for line in boardLines.dropFirst() { line.text = "" }
-            return
+    /// 状態ごとの件数をディスプレイに出す
+    func setCounts(_ counts: [Board: Int]) {
+        for board in Board.allCases {
+            let count = counts[board] ?? 0
+            counters[board]?.text = "\(count)"
+            // 0 のディスプレイは電源が落ちているように見せる。
+            // 全部同じ明るさだと、いま何が起きているのかが一目で読めない
+            counters[board]?.fontColor = count > 0
+                ? board.tint
+                : Self.boardInkColor.withAlphaComponent(0.35)
+            panels[board]?.fillColor = count > 0
+                ? board.tint.withAlphaComponent(0.14)
+                : Self.panelOffColor
+            panels[board]?.strokeColor = count > 0
+                ? board.tint.withAlphaComponent(0.75)
+                : Self.boardInkColor.withAlphaComponent(0.25)
         }
-
-        // 行数に収まらないぶんは最終行に件数でまとめる
-        let capacity = boardLines.count
-        let overflows = entries.count > capacity
-        let shown = overflows ? Array(entries.prefix(capacity - 1)) : entries
-
-        for (index, line) in boardLines.enumerated() {
-            if index < shown.count {
-                line.text = "☕ " + Self.truncate(shown[index], limit: 22)
-            } else if overflows && index == capacity - 1 {
-                line.text = "+\(entries.count - shown.count)"
-            } else {
-                line.text = ""
-            }
-        }
-    }
-
-    private static func truncate(_ text: String, limit: Int) -> String {
-        guard text.count > limit else { return text }
-        return String(text.prefix(limit - 1)) + "…"
     }
 
     // MARK: - 部品
@@ -196,41 +216,60 @@ final class OfficeLoungeNode: SKNode {
         return node
     }
 
-    private func board(width: CGFloat, y: CGFloat) -> SKNode {
+    /// 状態ごとの巨大ディスプレイ。壁掛けモニタを縦に3枚並べたつもりで描く
+    private func displays(width: CGFloat, y: CGFloat) -> SKNode {
         let node = SKNode()
         node.position = CGPoint(x: 12, y: y)
         node.zPosition = Self.furnitureZ - Self.carpetZ
 
-        let boardWidth = width - 24
-        let panel = SKShapeNode(rect: CGRect(x: 0, y: 0, width: boardWidth, height: Self.boardHeight),
-                                cornerRadius: 3)
-        panel.fillColor = Self.boardColor
-        panel.strokeColor = Self.accentColor.withAlphaComponent(0.5)
-        panel.lineWidth = 1.0
-        node.addChild(panel)
+        let panelWidth = width - 24
 
-        let titleBand = SKShapeNode(rect: CGRect(x: 0, y: Self.boardHeight - 14,
-                                                 width: boardWidth, height: 14),
-                                    cornerRadius: 3)
-        titleBand.fillColor = Self.accentColor.withAlphaComponent(0.85)
-        titleBand.strokeColor = .clear
-        titleBand.zPosition = 1
-        node.addChild(titleBand)
+        for (index, board) in Board.allCases.enumerated() {
+            // 上から順に並べる。`Board.allCases` の並びがそのまま表示順になる
+            let top = Self.boardHeight - CGFloat(index) * (Self.displayHeight + Self.displayGap)
+            let rect = CGRect(x: 0, y: top - Self.displayHeight,
+                              width: panelWidth, height: Self.displayHeight)
 
-        let title = SKLabelNode(text: Localized.text("app.office.lounge.resting"))
-        title.fontName = "Menlo-Bold"
-        title.fontSize = 8
-        title.fontColor = Self.boardColor
-        title.horizontalAlignmentMode = .left
-        title.verticalAlignmentMode = .center
-        title.position = CGPoint(x: 7, y: Self.boardHeight - 7)
-        title.zPosition = 2
-        node.addChild(title)
+            // 画面の外枠（ベゼル）
+            let bezel = SKShapeNode(rect: rect.insetBy(dx: -1.5, dy: -1.5), cornerRadius: 5)
+            bezel.fillColor = Self.bezelColor
+            bezel.strokeColor = .clear
+            node.addChild(bezel)
 
-        for (index, line) in boardLines.enumerated() {
-            line.position = CGPoint(x: 8, y: Self.boardHeight - 30 - CGFloat(index) * 16)
-            line.zPosition = 2
-            node.addChild(line)
+            let panel = SKShapeNode(rect: rect, cornerRadius: 4)
+            panel.lineWidth = 1.2
+            panel.zPosition = 1
+            node.addChild(panel)
+            panels[board] = panel
+
+            // 左端の状態色のバー。数字を読まなくても色で区別が付く
+            let stripe = SKShapeNode(rect: CGRect(x: rect.minX + 6, y: rect.minY + 8,
+                                                  width: 4, height: rect.height - 16),
+                                     cornerRadius: 2)
+            stripe.fillColor = board.tint
+            stripe.strokeColor = .clear
+            stripe.zPosition = 2
+            node.addChild(stripe)
+
+            let title = SKLabelNode(text: Localized.text(board.titleKey))
+            title.fontName = "Menlo-Bold"
+            title.fontSize = 11
+            title.fontColor = Self.boardInkColor
+            title.horizontalAlignmentMode = .left
+            title.verticalAlignmentMode = .center
+            title.position = CGPoint(x: rect.minX + 18, y: rect.midY)
+            title.zPosition = 2
+            node.addChild(title)
+
+            let counter = SKLabelNode(text: "0")
+            counter.fontName = "Menlo-Bold"
+            counter.fontSize = 26
+            counter.horizontalAlignmentMode = .right
+            counter.verticalAlignmentMode = .center
+            counter.position = CGPoint(x: rect.maxX - 14, y: rect.midY - 1)
+            counter.zPosition = 2
+            node.addChild(counter)
+            counters[board] = counter
         }
 
         return node

@@ -106,7 +106,8 @@
 "app.office.window_title" = "Office";
 "app.office.lounge.title" = "Common Lounge";
 "app.office.lounge.resting" = "On a break";
-"app.office.lounge.all_at_desk" = "Everyone is at their desk";
+"app.office.lounge.working" = "Working";
+"app.office.lounge.needs_person" = "Needs you";
 
 /* 設定画面 */
 "app.settings.window_title" = "Agent Proctor Settings";

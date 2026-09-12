@@ -60,8 +60,8 @@ enum OfficeMetrics {
     /// スイートとスイートの間を通す中央廊下
     static let centralCorridor: CGFloat = 52
 
-    /// 西側の共用ラウンジの幅
-    static let loungeWidth: CGFloat = 200
+    /// 西側の共用ラウンジの幅。状態ディスプレイの数字が窮屈にならない幅を取る
+    static let loungeWidth: CGFloat = 280
     /// ラウンジとスイートの間の縦通路
     static let loungeCorridor: CGFloat = 48
 
@@ -70,9 +70,20 @@ enum OfficeMetrics {
     static let loungePadding: CGFloat = 10
     static let loungeGap: CGFloat = 8
     static let loungeHeaderHeight: CGFloat = 26
-    static let loungeBoardHeight: CGFloat = 88
     static let loungeBarHeight: CGFloat = 26
     static let loungeSofaHeight: CGFloat = 40
+
+    /// 状態ディスプレイ1枚の高さ
+    static let loungeDisplayHeight: CGFloat = 50
+    static let loungeDisplayGap: CGFloat = 6
+    /// 状態ディスプレイの枚数（確認待ち・作業中・休憩中）
+    static let loungeDisplayCount = 3
+
+    /// 状態ディスプレイをまとめた高さ
+    static var loungeBoardHeight: CGFloat {
+        loungeDisplayHeight * CGFloat(loungeDisplayCount)
+            + loungeDisplayGap * CGFloat(loungeDisplayCount - 1)
+    }
 
     /// ラウンジの高さ。中身を上から下へ積んだぶんだけ
     static var loungeHeight: CGFloat {
