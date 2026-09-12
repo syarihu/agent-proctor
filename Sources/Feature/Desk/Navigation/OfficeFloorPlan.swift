@@ -200,9 +200,17 @@ extension OfficeFloorPlan {
         let budget = max(1, min(6, Int(viewport.width / 245)))
         let maxZones = groups.map(\.indices.count).max() ?? 1
         let zoneColumns = max(1, min(budget, Int(ceil(Double(maxZones).squareRoot()))))
-        let seatColumns = max(1, budget / zoneColumns)
+
+        // 列の間隔はバジェットぶんの列数から出す。実際に使う列数で割ってしまうと、
+        // 席が1つしかないときに机同士が窓幅いっぱいまで離れてしまう
+        let pitchColumns = max(1, budget / zoneColumns)
         let columnPitch = max(OfficeMetrics.minColumnPitch,
-                              (viewport.width - 24) / CGFloat(seatColumns * zoneColumns))
+                              (viewport.width - 24) / CGFloat(pitchColumns * zoneColumns))
+
+        // 実際に使う列数は席の数までに抑える。席1つに3列ぶんの幅を取ると、
+        // 区画の左右が空きカーペットになる
+        let maxSeats = islands.map(\.seats.count).max() ?? 0
+        let seatColumns = max(1, min(pitchColumns, maxSeats))
 
         // 区画1つの幅は席の列数だけで決まるので、どの区画も同じ幅になる
         let zoneWidth = OfficeMetrics.seatCellWidth
