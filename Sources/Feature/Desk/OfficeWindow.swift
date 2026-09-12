@@ -86,7 +86,10 @@ private struct OfficeView: View {
     }
 
     var body: some View {
-        DeskView(islands: deskIslands, running: store.collecting, onOpen: onOpen)
+        DeskView(islands: deskIslands,
+                 rateLimits: store.rateLimitSummaries,
+                 running: store.collecting,
+                 onOpen: onOpen)
             .background(Color(nsColor: .windowBackgroundColor))
     }
 }

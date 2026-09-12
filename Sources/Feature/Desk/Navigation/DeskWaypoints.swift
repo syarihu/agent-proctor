@@ -49,6 +49,15 @@ struct DeskLayout {
         CGPoint(x: doorPosition.x, y: doorPosition.y + 6)
     }
 
+    /// 正面エントランスの扉と対になるホワイトボードの位置（奥壁の人間より少し右）
+    var whiteboardPosition: CGPoint {
+        let hubX = roomWidth / 2
+        // 人間の思考雲（幅210、左右に約105pt）と重ならず、扉（hubX - 160）と対称的に配置する。
+        // ホワイトボード幅は112pt（左右56pt）あるため、hubX + 175 で雲の右端との間に約13ptの隙間を確保する。
+        let boardX = hubX + 175
+        return CGPoint(x: boardX, y: roomHeight - wallHeight - 12)
+    }
+
     // MARK: - 机と椅子の座標計算
 
     /// 島の見出し (hub) の机の位置

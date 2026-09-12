@@ -76,6 +76,8 @@ final class DeskScene: SKScene {
     private var builtSeatColumns = 0
 
     private var islands: [DeskIsland] = []
+    private var rateLimits: [AgentQuotaSummary] = []
+    private weak var whiteboardNode: WhiteboardNode?
     private var activity: [Double] = []
     private var lastUpdate: TimeInterval = 0
 
@@ -113,8 +115,9 @@ final class DeskScene: SKScene {
 
     // MARK: - 台帳データの受け取り
 
-    func apply(islands: [DeskIsland]) {
+    func apply(islands: [DeskIsland], rateLimits: [AgentQuotaSummary] = []) {
         self.islands = islands
+        self.rateLimits = rateLimits
 
         let currentSeats = Set(islands.flatMap { $0.seats.map(\.id) })
         let currentRepos = Set(islands.map(\.repo))
@@ -129,7 +132,10 @@ final class DeskScene: SKScene {
             if !currentSeats.isEmpty || !currentRepos.isEmpty || Date().timeIntervalSince(createdAt) > 1.5 {
                 hasInitializedArrivals = true
             }
-            if !rebuildIfNeeded() { refreshSeats() }
+            if !rebuildIfNeeded() {
+                refreshSeats()
+                whiteboardNode?.update(summaries: rateLimits)
+            }
             return
         }
 
@@ -155,6 +161,7 @@ final class DeskScene: SKScene {
         let rebuilt = rebuildIfNeeded()
         if !rebuilt {
             refreshSeats()
+            whiteboardNode?.update(summaries: rateLimits)
         }
 
         if !newSeats.isEmpty || !newRepos.isEmpty {
@@ -271,6 +278,11 @@ final class DeskScene: SKScene {
         let door = EntranceDoorNode(wallHeight: layout.wallHeight)
         door.position = layout.doorPosition
         room.addChild(door)
+
+        let whiteboard = WhiteboardNode(summaries: rateLimits)
+        whiteboard.position = layout.whiteboardPosition
+        room.addChild(whiteboard)
+        self.whiteboardNode = whiteboard
     }
 
     private func hairline(from: CGPoint, to: CGPoint) -> SKShapeNode {
@@ -778,6 +790,17 @@ final class DeskScene: SKScene {
         return nil
     }
 
+    private func isWhiteboard(at point: CGPoint) -> Bool {
+        for node in nodes(at: point) {
+            var current: SKNode? = node
+            while let candidate = current {
+                if candidate.name == "whiteboard" { return true }
+                current = candidate.parent
+            }
+        }
+        return false
+    }
+
     private func userInteracted() {
         cameraManager.isUserControlling = true
         cameraManager.lastUserControlTime = lastUpdate > 0 ? lastUpdate : CACurrentMediaTime()
@@ -802,6 +825,14 @@ final class DeskScene: SKScene {
 
     override func mouseDown(with event: NSEvent) {
         let point = event.location(in: self)
+
+        if isWhiteboard(at: point) {
+            whiteboardNode?.toggleDetail()
+            return
+        } else {
+            whiteboardNode?.closeDetail()
+        }
+
         let clickedSeat = seatId(at: point)
 
         if event.clickCount == 2 {

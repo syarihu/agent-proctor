@@ -75,7 +75,10 @@ public struct TaskListView: View {
                 if appearance.sidebarMode == .desk {
                     // 俯瞰では要確認ストリップを出さない。
                     // 手を挙げている机はカメラが優先して映し、画面外のぶんは縁の印が知らせる
-                    DeskView(islands: deskIslands, running: store.collecting, onOpen: { id in
+                    DeskView(islands: deskIslands,
+                             rateLimits: store.rateLimitSummaries,
+                             running: store.collecting,
+                             onOpen: { id in
                         guard let task = store.tasks.first(where: { $0.id == id }) else { return }
                         onOpen(task)
                     })

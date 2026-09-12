@@ -10,13 +10,18 @@ import SwiftUI
 /// 部屋はビューポートより広いことがあり、そのぶんはカメラで送る。
 public struct DeskView: View {
     public let islands: [DeskIsland]
+    public let rateLimits: [AgentQuotaSummary]
     /// サイドバーまたはオフィス窓が見えているか。隠れているあいだはコマ数を落とす
     public let running: Bool
     /// 机をクリックしたときに開くセッション。一覧の行クリックと同じ相手を渡す
     public var onOpen: (String) -> Void
 
-    public init(islands: [DeskIsland], running: Bool, onOpen: @escaping (String) -> Void) {
+    public init(islands: [DeskIsland],
+                rateLimits: [AgentQuotaSummary] = [],
+                running: Bool,
+                onOpen: @escaping (String) -> Void) {
         self.islands = islands
+        self.rateLimits = rateLimits
         self.running = running
         self.onOpen = onOpen
     }
@@ -35,16 +40,19 @@ public struct DeskView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
                 box.scene.onOpen = onOpen
-                box.scene.apply(islands: islands)
+                box.scene.apply(islands: islands, rateLimits: rateLimits)
             }
             .onChange(of: islands) { islands in
-                box.scene.apply(islands: islands)
+                box.scene.apply(islands: islands, rateLimits: rateLimits)
+            }
+            .onChange(of: rateLimits) { rateLimits in
+                box.scene.apply(islands: islands, rateLimits: rateLimits)
             }
             // 止まっている間は台帳の変化も大きさの変化も取りこぼす。
             // 動き出す時点でもう一度当て直さないと、止まる前の姿のまま再開する
             .onChange(of: running) { running in
                 guard running else { return }
-                box.scene.apply(islands: islands)
+                box.scene.apply(islands: islands, rateLimits: rateLimits)
             }
     }
 }
