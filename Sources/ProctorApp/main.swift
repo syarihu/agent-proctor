@@ -13,7 +13,6 @@ import SwiftUI
 import UseCaseNotice
 import UseCaseSession
 import UseCaseTask
-import Utility
 
 /// アプリケーションのエントリポイントおよび全体協調
 @MainActor
@@ -161,6 +160,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.runModal()
     }
 
+    /// iTerm2 等の外部プロセスから呼び出すための proctor 実行ファイルの絶対パス。
+    /// iTerm2 の command 実行ではシェルを経由せず直接 execvp されるため $PATH が検索されず、
+    /// 相対コマンド名では errno 2（No such file or directory）で失敗する。
+    private static var proctorExecutablePath: String {
+        // 1. アプリバンドル内の Contents/Helpers/proctor（dev / 配布版共通で確実に同一ビルドを指す）
+        let helperPath = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/proctor").path
+        if FileManager.default.isExecutableFile(atPath: helperPath) {
+            return helperPath
+        }
+        // 2. ~/bin/proctor（install.sh / switch-cli.sh が張るシンボリックリンク）
+        let homeBin = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("bin/proctor").path
+        if FileManager.default.isExecutableFile(atPath: homeBin) {
+            return homeBin
+        }
+        // 3. /opt/homebrew/bin/proctor
+        let brewBin = "/opt/homebrew/bin/proctor"
+        if FileManager.default.isExecutableFile(atPath: brewBin) {
+            return brewBin
+        }
+        return "proctor"
+    }
+
     /// タスクに対応するタブまたは新規タブで attach を開く
     private func open(taskID: String) {
         // 押下時点の最新の itermSession を参照するため TaskStore の台帳レコードを直接参照する
@@ -175,15 +196,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return
                 }
             }
+
+            let proctor = Self.proctorExecutablePath
             // hotkey window がある場合は表示して attach コマンドを実行する
             if ItermBridge.revealHotkeyWindow() {
-                if !ItermBridge.openTab(runningCommand: "proctor attach \(task.id)") {
+                if !ItermBridge.openTab(runningCommand: "\(proctor) attach \(task.id)") {
                     showOpenFailedAlert(displayName: task.displayName)
                 }
                 return
             }
             // hotkey window が使えない場合は通常の新規タブで attach を開く
-            if !ItermBridge.openTab(runningCommand: "proctor attach \(task.id)") {
+            if !ItermBridge.openTab(runningCommand: "\(proctor) attach \(task.id)") {
                 showOpenFailedAlert(displayName: task.displayName)
             }
         }

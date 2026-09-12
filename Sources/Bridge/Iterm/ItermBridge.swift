@@ -207,8 +207,8 @@ public enum ItermBridge {
                             select w
                             select t
                             select s
-                            // ホットキーウィンドウは明示的に reveal しないと前面に出ない。
-                            // 逆に通常ウィンドウのときは呼ばないと、無関係な新規ホットキーウィンドウが開いてしまう。
+                            -- ホットキーウィンドウは明示的に reveal しないと前面に出ない。
+                            -- 逆に通常ウィンドウのときは呼ばないと、無関係な新規ホットキーウィンドウが開いてしまう。
                             if is hotkey window of w then
                                 tell w to reveal hotkey window
                             end if
