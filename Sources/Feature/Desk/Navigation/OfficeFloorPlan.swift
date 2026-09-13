@@ -29,8 +29,26 @@ enum OfficeLayoutStyle {
 enum OfficeMetrics {
     /// 席の机の中心から上端（自立ホワイトボードの天面）まで
     static let seatCellTop: CGFloat = 115
+    // 連続帳票用紙（机の下のログ）。描画側の `DeskFurnitureNode` がこの値を読むので、
+    // 紙の寸法はここが正本。行数を変えれば机1つぶんの格子の高さも一緒に動く
+    /// 机の中心から紙の上端まで
+    static let paperTopOffset: CGFloat = 16
+    /// 紙に印字する行数
+    static let paperLineCount = 4
+    /// 行と行の間隔
+    static let paperLineSpacing: CGFloat = 19
+    /// 紙の上端から1行目の中心まで
+    static let paperTopInset: CGFloat = 9
+    /// 最終行の下に残す余白
+    static let paperBottomInset: CGFloat = 13
+
+    /// 紙の高さ
+    static var paperHeight: CGFloat {
+        paperTopInset + paperLineSpacing * CGFloat(paperLineCount - 1) + paperBottomInset
+    }
+
     /// 席の机の中心から下端（連続帳票用紙の末端）まで
-    static let seatCellBottom: CGFloat = 76
+    static var seatCellBottom: CGFloat { paperTopOffset + paperHeight }
     /// ハブ机の中心から上端（自立ホワイトボードの天面）まで。
     /// 席より 2pt 高いので、格子の上端で揃えるとホワイトボードの天面が並ぶ
     static let hubCellTop: CGFloat = 117
@@ -38,7 +56,7 @@ enum OfficeMetrics {
     /// 机1つが占める格子の幅（連続帳票用紙の幅。天板 184pt より広い）
     static let cellWidth: CGFloat = 226
     /// 机1つが占める格子の高さ（ホワイトボードの天面から用紙の末端まで）
-    static let cellHeight: CGFloat = seatCellTop + seatCellBottom
+    static var cellHeight: CGFloat { seatCellTop + seatCellBottom }
     /// 机と机の間。
     ///
     /// ハブ机は席の机より幅も高さも小さい（160×138 に対して席は 226×191）ので、

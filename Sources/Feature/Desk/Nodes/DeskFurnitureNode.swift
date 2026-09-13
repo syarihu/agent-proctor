@@ -15,9 +15,12 @@ final class DeskFurnitureNode: SKNode {
     static let hubDeskWidth: CGFloat = 104
     static let maxSheetsPerSide = 6
     /// 連続帳票用紙の幅
-    static let paperWidth: CGFloat = 226
+    static let paperWidth: CGFloat = OfficeMetrics.cellWidth
     /// 紙の左右の余白（14pt ずつ）を除いた、文字に使える幅
-    static let paperTextWidth: CGFloat = 226 - 28
+    static let paperTextWidth: CGFloat = OfficeMetrics.cellWidth - 28
+    /// 紙に印字できる行数。間取り側が紙の高さをこの数から出しているので、
+    /// 増やすと机1つぶんの格子も一緒に高くなる
+    static let paperLineCount = OfficeMetrics.paperLineCount
     static let sheetWidth: CGFloat = 18
     static let sheetHeight: CGFloat = 5
 
@@ -36,6 +39,21 @@ final class DeskFurnitureNode: SKNode {
     var nameplate: SKNode?
     let stackL: SKNode
     let stackR: SKNode
+
+    /// 帳票に印字する1行
+    struct PrintedLine {
+        let text: String
+        let color: NSColor
+        /// 紙幅に収まらないときに2行へ折ってよい行。
+        /// いま何をしているかが載る行だけを対象にする（残りは飾りのダミー出力なので折らない）
+        let wraps: Bool
+
+        init(_ text: String, _ color: NSColor, wraps: Bool = false) {
+            self.text = text
+            self.color = color
+            self.wraps = wraps
+        }
+    }
 
     // MARK: - ログ色定数
 
@@ -266,7 +284,8 @@ final class DeskFurnitureNode: SKNode {
 
         if seat != nil {
             // 連続帳票用紙
-            let paperNode = Self.createPrintedPaperNode(width: Self.paperWidth, height: 60)
+            let paperNode = Self.createPrintedPaperNode(width: Self.paperWidth,
+                                                        height: OfficeMetrics.paperHeight)
             addChild(paperNode)
             self.paper = paperNode
 
@@ -350,8 +369,8 @@ final class DeskFurnitureNode: SKNode {
         occupant.zPosition = -20
 
         // 連続帳票用紙に作業ログを印刷
-        let termLines = printedLogLines(seat: seat)
-        for lineIndex in 0..<3 {
+        let termLines = printedRows(seat: seat)
+        for lineIndex in 0..<Self.paperLineCount {
             let lineLabel = paper?.childNode(withName: "paperLine\(lineIndex)") as? SKLabelNode
             if lineIndex < termLines.count {
                 // ログはファイルパスやコマンドがそのまま載るので、紙幅で切る。
@@ -477,7 +496,7 @@ final class DeskFurnitureNode: SKNode {
 
     // MARK: - 作業ログ印字
 
-    func printedLogLines(seat: DeskSeat) -> [(text: String, color: NSColor)] {
+    func printedLogLines(seat: DeskSeat) -> [PrintedLine] {
         let green = Self.logGreen
         let cyan = Self.logCyan
         let yellow = Self.logYellow
@@ -503,46 +522,46 @@ final class DeskFurnitureNode: SKNode {
                 switch tool {
                 case "Read", "NotebookRead", "view_file":
                     return [
-                        ("🔍 \(SpeechBubbleNode.truncateScreenText(file, limit: 28))", cyan),
-                        ("import Foundation", dim),
-                        ("reading...", dim),
+                        PrintedLine("🔍 \(file)", cyan, wraps: true),
+                        PrintedLine("import Foundation", dim),
+                        PrintedLine("reading...", dim),
                     ]
                 case "Edit", "NotebookEdit", "replace_file_content", "write_to_file":
                     return [
-                        ("✏️ \(SpeechBubbleNode.truncateScreenText(file, limit: 28))", green),
-                        ("func update() {", dim),
-                        ("saving changes █", green),
+                        PrintedLine("✏️ \(file)", green, wraps: true),
+                        PrintedLine("func update() {", dim),
+                        PrintedLine("saving changes █", green),
                     ]
                 case "Bash", "run_command":
                     return [
-                        ("$ \(SpeechBubbleNode.truncateScreenText(detail, limit: 26))", yellow),
-                        ("executing...", dim),
-                        ("exit status: 0 █", yellow),
+                        PrintedLine("$ \(detail)", yellow, wraps: true),
+                        PrintedLine("executing...", dim),
+                        PrintedLine("exit status: 0 █", yellow),
                     ]
                 case "Grep", "Glob", "grep_search", "find_by_name":
                     return [
-                        ("🔎 \(SpeechBubbleNode.truncateScreenText(detail, limit: 28))", cyan),
-                        ("pattern match: 42 lines", dim),
-                        ("searching...", dim),
+                        PrintedLine("🔎 \(detail)", cyan, wraps: true),
+                        PrintedLine("pattern match: 42 lines", dim),
+                        PrintedLine("searching...", dim),
                     ]
                 case "LS", "list_dir":
                     return [
-                        ("📁 \(SpeechBubbleNode.truncateScreenText(detail, limit: 28))", cyan),
-                        ("drwxr-xr-x 8 user staff", dim),
-                        ("listing...", dim),
+                        PrintedLine("📁 \(detail)", cyan, wraps: true),
+                        PrintedLine("drwxr-xr-x 8 user staff", dim),
+                        PrintedLine("listing...", dim),
                     ]
                 default:
                     return [
-                        ("▶ \(SpeechBubbleNode.truncateScreenText(raw, limit: 28))", green),
-                        ("processing...", dim),
-                        ("status: running █", green),
+                        PrintedLine("▶ \(raw)", green, wraps: true),
+                        PrintedLine("processing...", dim),
+                        PrintedLine("status: running █", green),
                     ]
                 }
             } else {
                 return [
-                    ("▶ agent working", green),
-                    ("processing task...", dim),
-                    ("status: running █", green),
+                    PrintedLine("▶ agent working", green),
+                    PrintedLine("processing task...", dim),
+                    PrintedLine("status: running █", green),
                 ]
             }
 
@@ -551,39 +570,68 @@ final class DeskFurnitureNode: SKNode {
                 ?? seat.activity
                 ?? "approval"
             return [
-                ("⚠️ WAITING APPROVAL", orange),
-                ("> \(SpeechBubbleNode.truncateScreenText(req, limit: 28))", yellow),
-                ("[ Confirm / Deny ] █", orange),
+                PrintedLine("⚠️ WAITING APPROVAL", orange),
+                PrintedLine("> \(req)", yellow, wraps: true),
+                PrintedLine("[ Confirm / Deny ] █", orange),
             ]
 
         case TaskStatus.done:
             return [
-                ("✓ TASK COMPLETED", green),
-                ("> \(SpeechBubbleNode.truncateScreenText(seat.name, limit: 28))", dim),
-                ("all done. 0 errors.", green),
+                PrintedLine("✓ TASK COMPLETED", green),
+                PrintedLine("> \(seat.name)", dim, wraps: true),
+                PrintedLine("all done. 0 errors.", green),
             ]
 
         case TaskStatus.failed:
             return [
-                ("✕ TASK FAILED", red),
-                ("> exit code: 1", red),
-                ("check log for details", dim),
+                PrintedLine("✕ TASK FAILED", red),
+                PrintedLine("> exit code: 1", red),
+                PrintedLine("check log for details", dim),
             ]
 
         case TaskStatus.seen:
             return [
-                ("✓ \(SpeechBubbleNode.truncateScreenText(seat.name, limit: 28))", dim),
-                ("reviewed.", dim),
-                ("$ _", dim),
+                PrintedLine("✓ \(seat.name)", dim, wraps: true),
+                PrintedLine("reviewed.", dim),
+                PrintedLine("$ _", dim),
             ]
 
         default:
             return [
-                ("proctor terminal", dim),
-                ("ready.", dim),
-                ("$ _", dim),
+                PrintedLine("proctor terminal", dim),
+                PrintedLine("ready.", dim),
+                PrintedLine("$ _", dim),
             ]
         }
+    }
+
+    /// 印字する行を紙の行数に合わせて組み立てる。
+    ///
+    /// 折ってよい行は紙幅で2行に分ける。紙は3行しか無いので、
+    /// 折るとそのぶん後ろの飾り行が押し出されて落ちる。
+    /// いま何をしているかのほうが、下の「executing...」より読む価値がある
+    private func printedRows(seat: DeskSeat) -> [(text: String, color: NSColor)] {
+        let source = printedLogLines(seat: seat)
+        guard let probe = paper?.childNode(withName: "paperLine0") as? SKLabelNode else {
+            return source.map { ($0.text, $0.color) }
+        }
+
+        var rows: [(text: String, color: NSColor)] = []
+        for line in source {
+            let room = Self.paperLineCount - rows.count
+            guard room > 0 else { break }
+
+            guard line.wraps else {
+                rows.append((line.text, line.color))
+                continue
+            }
+            let wrapped = LabelFitting.wrap(line.text,
+                                            maxWidth: Self.paperTextWidth,
+                                            lineCount: min(2, room),
+                                            probe: probe)
+            rows += wrapped.map { ($0, line.color) }
+        }
+        return rows
     }
 
     // MARK: - 帳票用紙ノード生成
@@ -593,8 +641,11 @@ final class DeskFurnitureNode: SKNode {
         paper.name = "printedPaper"
 
         let hw = width / 2
-        let topY: CGFloat = -DeskFurnitureNode.deskDepth / 2 - 4
+        let topY = -OfficeMetrics.paperTopOffset
         let bottomY = topY - height
+        let lineY = { (index: Int) -> CGFloat in
+            topY - OfficeMetrics.paperTopInset - OfficeMetrics.paperLineSpacing * CGFloat(index)
+        }
 
         let bg = SKShapeNode(rect: CGRect(x: -hw, y: bottomY, width: width, height: height),
                              cornerRadius: 2.5)
@@ -612,8 +663,8 @@ final class DeskFurnitureNode: SKNode {
         let holeRadius: CGFloat = 1.3
         let leftHoleX = -hw + 5.0
         let rightHoleX = hw - 5.0
-        for i in 0..<3 {
-            let holeY = topY - 9.0 - CGFloat(i) * 19.0
+        for i in 0..<OfficeMetrics.paperLineCount {
+            let holeY = lineY(i)
             for x in [leftHoleX, rightHoleX] {
                 let hole = SKShapeNode(circleOfRadius: holeRadius)
                 hole.position = CGPoint(x: x, y: holeY)
@@ -627,11 +678,17 @@ final class DeskFurnitureNode: SKNode {
             }
         }
 
-        // 帳票用紙の中央段ゼブラ帯
-        let stripe = SKShapeNode(rect: CGRect(x: -hw + 9.5, y: topY - 37.5, width: width - 19.0, height: 19.0))
-        stripe.fillColor = NSColor(red: 0.2, green: 0.6, blue: 0.35, alpha: 0.06)
-        stripe.strokeColor = .clear
-        paper.addChild(stripe)
+        // 連続帳票らしい1行おきのゼブラ帯
+        for index in stride(from: 1, to: OfficeMetrics.paperLineCount, by: 2) {
+            let stripe = SKShapeNode(rect: CGRect(
+                x: -hw + 9.5,
+                y: lineY(index) - OfficeMetrics.paperLineSpacing / 2,
+                width: width - 19.0,
+                height: OfficeMetrics.paperLineSpacing))
+            stripe.fillColor = NSColor(red: 0.2, green: 0.6, blue: 0.35, alpha: 0.06)
+            stripe.strokeColor = .clear
+            paper.addChild(stripe)
+        }
 
         // 下端のミシン目
         let perfPath = CGMutablePath()
@@ -653,15 +710,15 @@ final class DeskFurnitureNode: SKNode {
         perf.lineWidth = 0.6
         paper.addChild(perf)
 
-        // 印刷された作業ログ3行
+        // 印刷された作業ログ
         let textLeft = -hw + 14.0
-        for lineIndex in 0..<3 {
+        for lineIndex in 0..<OfficeMetrics.paperLineCount {
             let lineLabel = SKLabelNode(fontNamed: "Menlo-Bold")
             lineLabel.name = "paperLine\(lineIndex)"
             lineLabel.fontSize = 9.8
             lineLabel.horizontalAlignmentMode = .left
             lineLabel.verticalAlignmentMode = .center
-            lineLabel.position = CGPoint(x: textLeft, y: topY - 9.0 - CGFloat(lineIndex) * 19.0)
+            lineLabel.position = CGPoint(x: textLeft, y: lineY(lineIndex))
             lineLabel.zPosition = 2
             lineLabel.fontColor = .clear
             paper.addChild(lineLabel)
