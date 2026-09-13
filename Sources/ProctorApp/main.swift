@@ -245,11 +245,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // 持ち上げるので、同じ高さにいるオフィス窓はその後ろに回る。
                 // 隠さないだけでは足りず、上に出し直すところまでが「そのまま残す」
                 if bundleID == self.officeHostApp {
-                    self.officeWindow.raise()
+                    self.raiseOfficeAboveReturningApp()
                     return
                 }
                 self.officeWindow.hide()
             }
+        }
+    }
+
+    /// 前面を返されたアプリの上へ、オフィス窓を出し直す。
+    ///
+    /// 2回出す。相手がウィンドウを持ち上げるのと、こちらが出し直すのが同じ瞬間に起きていて、
+    /// **どちらが後になるかは決まっていない**。1回だけだと、相手の持ち上げが後に届いた回は
+    /// そのまま埋まったままになる (見た目は閉じたのと区別がつかない。
+    /// ホットキーを押しても、窓は「出ている」ので1回目は引っ込める側に倒れ、
+    /// 2回押してようやく出てくる、という症状で現れる)。
+    ///
+    /// 層で1段上げれば競争そのものが消えるが、それをやると今度は端末がこの窓の下に潜る。
+    /// 端末と同じ高さに並ぶと決めた以上、順序で勝つしかない
+    private func raiseOfficeAboveReturningApp() {
+        officeWindow.raise()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.officeWindow.raise()
         }
     }
 
