@@ -197,10 +197,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 通常ウィンドウがすべて閉じられた場合に activationPolicy を .accessory に戻す
+    /// 通常ウィンドウがすべて閉じられた場合に activationPolicy を .accessory に戻す。
+    ///
+    /// オフィス窓はここに数えない。アプリを前に出さずに出入りするパネルになったので、
+    /// そもそも .regular を要求しない。数えたままにすると、設定画面を閉じても
+    /// オフィス窓が出ている間は Dock にアイコンが残り続ける
     private func updateActivationPolicy() {
-        let anyRegular = (settings?.isVisible ?? false) || (officeWindow?.isVisible ?? false)
-        if !anyRegular {
+        if !(settings?.isVisible ?? false) {
             NSApp.setActivationPolicy(.accessory)
         }
     }

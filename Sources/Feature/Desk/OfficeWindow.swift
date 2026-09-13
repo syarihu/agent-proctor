@@ -46,12 +46,17 @@ public final class OfficeWindow {
 
     public func show() {
         if window == nil { window = make() }
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
         // 仕舞われている窓は前へ出すだけでは戻らない。
         // ホットキーを押したのに Dock で跳ねるだけ、という見え方になる
         if window?.isMiniaturized == true { window?.deminiaturize(nil) }
-        window?.makeKeyAndOrderFront(nil)
+        // アプリを前に出さずに窓だけ前へ出す。
+        //
+        // `NSApp.activate` で自分を前面に持ってくると、Stage Manager はそれを
+        // アプリの切り替えとして扱い、いま見ていたステージを押しのける。
+        // 見取り図は覗きに来るものなので、覗いた先を片付けてしまっては困る。
+        // 窓が非アクティブ化パネルなのも同じ理由で、`orderFrontRegardless` は
+        // アプリが前にいなくてもその窓を同じ階層の一番上へ出す
+        window?.orderFrontRegardless()
         Self.setOpenState(true)
         onVisibilityChange?(true)
     }
@@ -85,11 +90,26 @@ public final class OfficeWindow {
     private func make() -> NSWindow {
         let view = OfficeView(store: store, appearance: appearance, onOpen: onOpen)
         let hosting = NSHostingController(rootView: view)
-        let window = NSWindow(contentViewController: hosting)
+        // 普通のウィンドウではなくパネル。
+        //
+        // `nonactivatingPanel` は、押しても掴んでもアプリを前面に引き出さない窓。
+        // iTerm2 の hotkey window と同じ作りで、これがサイドバーにも使われている。
+        // ここでアプリごと前に出ると、Stage Manager が見ていたステージを畳んでしまう。
+        // 中身は SpriteKit が生のマウスイベントを直に受けるので、
+        // アプリが前にいなくても机は押せるし、床は掴んで動かせる
+        let window = NSPanel(contentViewController: hosting)
         window.title = Localized.text("app.office.window_title")
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .nonactivatingPanel]
+        // パネルは既定で最前面に浮くが、この窓は浮かせない。
+        // iTerm2 の hotkey window (こちらは浮く設定) が上に重なれる高さに置いておく
+        window.isFloatingPanel = false
+        window.level = .normal
+        // Stage Manager に「この窓は集合に加わらない」と伝える。
+        // 加わると、覗きに来ただけの窓が相手のステージの一員になってしまう
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .auxiliary]
         window.minSize = NSSize(width: 580, height: 400)
         window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = false
         window.delegate = delegateProxy
 
         // 保存されたウィンドウサイズ・位置があれば復元し、無ければ既定の 960x600 で画面中央に配置する
