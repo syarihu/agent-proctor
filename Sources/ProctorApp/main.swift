@@ -37,24 +37,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var countObserver: AnyCancellable?
     /// オフィス窓のホットキー設定の変更監視用
     private var hotkeyObserver: AnyCancellable?
-    /// オフィス窓を出したときに前にいたアプリ。
-    ///
-    /// iTerm2 の hotkey window を引っ込めると、その裏にいたこのアプリが macOS によって
-    /// 自動で前へ戻る。人がそちらへ移ったわけではないので、これを「別のアプリへ移った」と
-    /// 読むと、端末を引っ込めただけでオフィス窓まで道連れになる
-    private var officeHostApp: String?
-    /// 自分以外で最後に前へ出たアプリ。
-    ///
-    /// オフィス窓をメニューバーから開くと、そのクリックで自分が前に出てしまい、
-    /// 「窓を出したとき前にいたアプリ」を今の前面から読むと自分自身になる。
-    /// 人が戻る先はその1つ手前なので、そちらを覚えておく
-    private var lastForeignApp: String?
-    /// オフィス窓がいま一番手前にいるか。
-    ///
-    /// 出したときに一番手前へ出て、次にどれかのアプリが前に出た時点でその座を譲る。
-    /// アプリを前面に出さない窓なので、手前かどうかを尋ねられる相手がいない。
-    /// 出し入れと、アプリが前に出た合図の2つから、こちらで数えておく
-    private var officeIsFrontmost = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)  // Dock アイコンを出さない
@@ -101,24 +83,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sidebar.onVisibilityChange = { [weak self] _ in
             self?.updateCollectingState()
         }
-        sidebar.officeIsFrontmost = { [weak self] in self?.officeIsFrontmost ?? false }
 
         officeWindow = OfficeWindow(
             store: store, appearance: appearance,
             onOpen: { [weak self] id in
                 self?.open(taskID: id)
             })
-        officeWindow.onVisibilityChange = { [weak self] visible in
-            guard let self else { return }
-            // 出した時点で前にいたアプリを覚える。アプリを前に出さずに窓だけ重ねるので、
-            // このアプリは窓が出ている間ずっと前にいるまま
-            if visible { self.officeHostApp = self.hostApp() }
-            // 出した窓は一番手前に出る。引っ込めたらその座も無くなる
-            self.officeIsFrontmost = visible
-            // サイドバーはオフィス窓の下へ回る。あちらが前面に出ない窓なので、
-            // 通知では気づけず、ここから知らせるほかない
-            self.sidebar?.refreshLevel()
-            self.updateCollectingState()
+        officeWindow.onVisibilityChange = { [weak self] _ in
+            self?.updateCollectingState()
         }
         officeWindow.onClose = { [weak self] in
             self?.updateActivationPolicy()
@@ -207,19 +179,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 別のアプリへ移ったらオフィス窓を引っ込める。
     ///
-    /// 通さない相手は3つある。
+    /// 通さないのは自分自身と iTerm2 の2つ。iTerm2 を通すのは、見取り図を見て端末で
+    /// 手を動かす往復がこの窓の使い方で、そこで消えると押し直しになるため。
     ///
-    /// - 自分自身
-    /// - iTerm2。見取り図を見て端末で手を動かす、という往復がこの窓の使い方なので、
-    ///   そこで消えると押し直しになる
-    /// - 窓を出したときに前にいたアプリ (`officeHostApp`)。iTerm2 の hotkey window を
-    ///   引っ込めると、その裏にいたこのアプリが自動で前へ戻ってくる。移ったのは人ではなく、
-    ///   端末が退いた結果でしかない。
-    ///   なお、このアプリは窓を出している間ずっと前にいるので、そこを押しても通知は飛ばない。
-    ///   前へ「出てくる」のは他所から戻ってきたときだけで、それがまさにこの場合になる
-    ///
-    /// この3つ以外が前に出たときだけが、人が本当に別の作業へ移った合図になる。
-    /// iTerm2 の hotkey window は自分で引っ込むので、そのとき両方まとめて消える
+    /// 端末の hotkey window を引っ込めたときは、前面がこのアプリへ返ってくる
+    /// (オフィス窓を出した時点でこちらがアクティブになっているので、1つ手前が自分)。
+    /// 自分は通すので、そこでオフィス窓が巻き添えで消えることはない。
+    /// アプリを前面に出さない窓だった頃は、前面が裏のアプリへ返っていたので、
+    /// どのアプリが戻ってきたかを覚えておく仕掛けが要った。今は要らない
     private func watchActivation() {
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
@@ -227,65 +194,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             let bundleID = app?.bundleIdentifier
             Task { @MainActor in
-                guard let self else { return }
-                if let bundleID, bundleID != Bundle.main.bundleIdentifier {
-                    self.lastForeignApp = bundleID
-                }
-                // 前に出たアプリは自分のウィンドウを持ち上げるので、
-                // オフィス窓は手前ではなくなる。サイドバーは端末の上へ戻ってよい
-                if self.officeIsFrontmost {
-                    self.officeIsFrontmost = false
-                    self.sidebar?.refreshLevel()
-                }
-                guard self.appearance.hidesOfficeOnDeactivate else { return }
+                guard let self, self.appearance.hidesOfficeOnDeactivate else { return }
                 guard bundleID != Bundle.main.bundleIdentifier,
                       bundleID != ItermBridge.bundleID else { return }
-                // 窓を出したときに前にいたアプリが戻ってきた。人が移ったのではなく、
-                // 端末が退いた穴を埋めただけ。ただし戻ってきた側は自分のウィンドウを
-                // 持ち上げるので、同じ高さにいるオフィス窓はその後ろに回る。
-                // 隠さないだけでは足りず、上に出し直すところまでが「そのまま残す」
-                if bundleID == self.officeHostApp {
-                    self.raiseOfficeAboveReturningApp()
-                    return
-                }
                 self.officeWindow.hide()
             }
         }
     }
 
-    /// 前面を返されたアプリの上へ、オフィス窓を出し直す。
-    ///
-    /// 2回出す。相手がウィンドウを持ち上げるのと、こちらが出し直すのが同じ瞬間に起きていて、
-    /// **どちらが後になるかは決まっていない**。1回だけだと、相手の持ち上げが後に届いた回は
-    /// そのまま埋まったままになる (見た目は閉じたのと区別がつかない。
-    /// ホットキーを押しても、窓は「出ている」ので1回目は引っ込める側に倒れ、
-    /// 2回押してようやく出てくる、という症状で現れる)。
-    ///
-    /// 層で1段上げれば競争そのものが消えるが、それをやると今度は端末がこの窓の下に潜る。
-    /// 端末と同じ高さに並ぶと決めた以上、順序で勝つしかない
-    private func raiseOfficeAboveReturningApp() {
-        officeWindow.raise()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.officeWindow.raise()
-        }
-    }
-
-    /// オフィス窓を重ねる相手。
-    ///
-    /// いま前にいるアプリ。それが自分なら (メニューバーから開いたとき) その1つ手前
-    private func hostApp() -> String? {
-        let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        if let front, front != Bundle.main.bundleIdentifier { return front }
-        return lastForeignApp
-    }
-
-    /// 通常ウィンドウがすべて閉じられた場合に activationPolicy を .accessory に戻す。
-    ///
-    /// オフィス窓はここに数えない。アプリを前に出さずに出入りするパネルになったので、
-    /// そもそも .regular を要求しない。数えたままにすると、設定画面を閉じても
-    /// オフィス窓が出ている間は Dock にアイコンが残り続ける
+    /// 通常ウィンドウがすべて閉じられた場合に activationPolicy を .accessory に戻す
     private func updateActivationPolicy() {
-        if !(settings?.isVisible ?? false) {
+        let anyRegular = (settings?.isVisible ?? false) || (officeWindow?.isVisible ?? false)
+        if !anyRegular {
             NSApp.setActivationPolicy(.accessory)
         }
     }

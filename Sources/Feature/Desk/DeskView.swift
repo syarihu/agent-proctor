@@ -34,7 +34,7 @@ public struct DeskView: View {
     /// ズーム倍率等の状態永続化キー（オフィスウィンドウのみ保存し、サイドバーと分離する）
     public let persistenceKey: String?
     public let style: Style
-    /// 押されたらキーボードを受け取るか。
+    /// この窓で打鍵を受け取るか。
     ///
     /// オフィス窓だけが true。サイドバーは iTerm2 の脇に貼り付いている窓で、
     /// **押しても端末からフォーカスを奪わない**ことがそもそもの作りなので、
@@ -130,24 +130,21 @@ private struct DeskSKContainerView: NSViewRepresentable {
 /// `mouseDragged` に中継してくれるが、`scrollWheel` と `magnify` は
 /// デフォルトでは中継されないため、ここで明示的にシーンへ渡す
 private final class DeskSKView: SKView {
-    /// 押されたらキーボードを受け取るか
+    /// この窓で打鍵を受け取るか
     var takesKeyboard = false
 
     /// 受け取る設定のときだけ打鍵の宛先になれる。
     /// サイドバーは端末に打たせ続けたいので、宛先の候補にすら入らない
     override var acceptsFirstResponder: Bool { takesKeyboard }
 
-    /// 押されて初めてキーボードを受け取る。
+    /// 窓に載った時点で打鍵の宛先になる。
     ///
-    /// 窓は非アクティブ化パネルなので、押しても macOS はこちらを打鍵の宛先にしない。
-    /// 出しただけで奪うと、覗きに来ただけのときに裏のアプリへ打てなくなる。
-    /// 押すという動作が「ここを使う」の合図なので、そこで初めて受け取る
-    override func mouseDown(with event: NSEvent) {
-        if takesKeyboard {
-            window?.makeKey()
-            window?.makeFirstResponder(self)
-        }
-        super.mouseDown(with: event)
+    /// 窓が前面に出れば macOS がキーウィンドウにしてくれるが、宛先はその中の
+    /// 最初の responder。SwiftUI の階層に載っているだけでは回ってこないので、名乗り出る
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard takesKeyboard else { return }
+        window?.makeFirstResponder(self)
     }
 
     /// ⌘1〜⌘9 は机を開く。拾わなかった打鍵はそのまま次へ流す

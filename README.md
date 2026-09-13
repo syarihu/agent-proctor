@@ -122,7 +122,7 @@ agent-proctor runs quietly in your macOS menu bar. The menu bar icon displays a 
 
 The office window answers to a hotkey of its own (⌥⌘O by default, changeable in Settings), the way an iTerm2 hotkey window does: press it to look over the floor, and it steps aside when you switch to another app. It stays put while iTerm2 is in front, so reading the floor and then working in the terminal does not mean summoning it again.
 
-The sidebar floats over the terminal, and the terminal comes down over the office floor. Nothing has to be configured in iTerm2 for that: the office window sits at the ordinary window level, so a terminal summoned after it simply arrives on top, and the floor puts itself back in front when the terminal steps away again.
+Each whiteboard shows which iTerm2 tab its session is in, and while the floor has the keyboard those badges are live: ⌘1 through ⌘9 focus that tab, the same as clicking the desk.
 
 ## Architecture & Design
 

@@ -74,13 +74,6 @@ public final class SidebarPanel: NSObject {
     /// 表示状態の変更通知コールバック（非表示時のバックグラウンド処理抑制用）
     public var onVisibilityChange: ((Bool) -> Void)?
 
-    /// オフィス窓がいま一番手前にいるかを答えるクロージャ。
-    ///
-    /// あちらはアプリを前面に出さずに重なるパネルなので、前面アプリを見ても手前にいることが分からない。
-    /// 「出ているか」ではなく「手前か」を訊くのは、出したあと端末へ移ったときに
-    /// サイドバーを端末の上へ戻す必要があるため
-    public var officeIsFrontmost: (() -> Bool)?
-
     public init(appearance: Appearance, content: some View) {
         self.appearance = appearance
         super.init()
@@ -207,14 +200,6 @@ public final class SidebarPanel: NSObject {
     /// iTerm2 がアクティブな場合は端末の前面に表示するため `alongsideTerminalLevel` に設定し、
     /// 本アプリの別ウィンドウ（オフィス窓など）や他のアプリがアクティブな場合は
     /// 作業の妨げにならないよう .normal に下げて背面に潜らせる。
-    /// オフィス窓の出入りに合わせて高さを見直す。
-    ///
-    /// あちらはアプリを前面に出さないので、アクティブ化もキーウィンドウの移動も起きない。
-    /// 通知では気づけないので、窓を出し入れした側から声をかけてもらう
-    public func refreshLevel() {
-        updateLevel()
-    }
-
     private func updateLevel() {
         // 浮いている端末 (hotkey window) には、誰が前にいるかに関係なく寄り添う。
         //
@@ -231,18 +216,6 @@ public final class SidebarPanel: NSObject {
         // 浮いている端末より下にいる。サイドバーがその両方の上に立つ順序で正しい
         if itermLayer > NSWindow.Level.normal.rawValue {
             panel.level = alongsideTerminalLevel
-            return
-        }
-
-        // オフィス窓が手前にいる間は浮かせない。
-        //
-        // あちらは通常のレベルに、アプリを前面に出さないまま重なる。
-        // 前面アプリを見て決めていると、前面が iTerm2 のままなので下げる条件に当たらず、
-        // サイドバーだけがオフィス窓の上に取り残される。
-        // 逆に、出ているあいだ下げっぱなしにすると、そのあと端末へ移ったときに
-        // サイドバーが端末の上へ戻れない。だから見るのは「出ているか」ではなく「手前か」
-        if officeIsFrontmost?() == true {
-            panel.level = .normal
             return
         }
 

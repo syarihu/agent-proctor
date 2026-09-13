@@ -6,8 +6,15 @@ import SwiftUI
 
 /// 独立したオフィス（見取り図）ウィンドウのコントローラ。
 ///
-/// メニューバー常駐アプリ（.accessory）のまま、アプリを前面に出さずに窓だけを重ねる。
-/// activationPolicy は動かさない（動かすと Stage Manager がアプリの切り替えとして扱う）。
+/// メニューバー常駐アプリ（.accessory）のため、表示中は一時的に activationPolicy を .regular に昇格させ、
+/// 閉じた際に他に開いているウィンドウが無ければ .accessory に戻す。
+///
+/// 一度、アプリを前面に出さない窓（非アクティブ化パネル）にしていた。Stage Manager が
+/// アプリの切り替えとしてステージを入れ替えてしまうのを避けるためだったが、代償が大きすぎた。
+/// 前面に出ない窓は打鍵の宛先にならず、通知も出さないので、
+/// 「前面アプリが誰か」で書かれた周りのコード（サイドバーの高さ、自動で隠す判定）が軒並み外れる。
+/// 端末のタブを開いて戻ってきても焦点が返らない。
+/// Stage Manager の1点を諦めて、普通のアプリの窓に戻した。経緯は .knowledge/office-window.md。
 @MainActor
 public final class OfficeWindow {
     /// アプリ終了処理中フラグ。通常クローズと終了時クローズを区別する
@@ -46,17 +53,12 @@ public final class OfficeWindow {
 
     public func show() {
         if window == nil { window = make() }
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
         // 仕舞われている窓は前へ出すだけでは戻らない。
         // ホットキーを押したのに Dock で跳ねるだけ、という見え方になる
         if window?.isMiniaturized == true { window?.deminiaturize(nil) }
-        // アプリを前に出さずに窓だけ前へ出す。
-        //
-        // `NSApp.activate` で自分を前面に持ってくると、Stage Manager はそれを
-        // アプリの切り替えとして扱い、いま見ていたステージを押しのける。
-        // 見取り図は覗きに来るものなので、覗いた先を片付けてしまっては困る。
-        // 窓が非アクティブ化パネルなのも同じ理由で、`orderFrontRegardless` は
-        // アプリが前にいなくてもその窓を同じ階層の一番上へ出す
-        window?.orderFrontRegardless()
+        window?.makeKeyAndOrderFront(nil)
         Self.setOpenState(true)
         onVisibilityChange?(true)
     }
@@ -74,21 +76,11 @@ public final class OfficeWindow {
         onClose?()
     }
 
-    /// 出ている窓を、もう一度一番手前へ出す。
-    ///
-    /// 端末が退いて前面を返されたアプリは、自分のウィンドウを持ち上げる。
-    /// 同じ高さにいるこの窓はその後ろへ回るので、出し直して上に戻す。
-    /// 出ていないときは何もしない (勝手に出てくる窓になってしまう)
-    public func raise() {
-        guard isVisible else { return }
-        window?.orderFrontRegardless()
-    }
-
     /// ホットキーの1押しぶん。出ていれば引っ込める、出ていなければ出す。
     ///
-    /// 前面にいるかどうかは見ない。この窓は iTerm2 が前に出ても退かずに下に残るので、
-    /// 「出ているが手前ではない」が普段の状態になる。そこで前面に出すほうを選ぶと、
-    /// 端末で手を動かしたあと片付けるのに2回押すことになる
+    /// 前面にいるかどうかは見ない。別のアプリへ移れば自動で引っ込むので、
+    /// 「出ているが手前ではない」はほとんど起きない。
+    /// そこを場合分けすると、片付けるのに2回押すことになる回が生まれる
     public func toggle() {
         if isVisible {
             hide()
@@ -100,33 +92,11 @@ public final class OfficeWindow {
     private func make() -> NSWindow {
         let view = OfficeView(store: store, appearance: appearance, onOpen: onOpen)
         let hosting = NSHostingController(rootView: view)
-        // 普通のウィンドウではなくパネル。
-        //
-        // `nonactivatingPanel` は、押しても掴んでもアプリを前面に引き出さない窓。
-        // iTerm2 の hotkey window と同じ作りで、これがサイドバーにも使われている。
-        // ここでアプリごと前に出ると、Stage Manager が見ていたステージを畳んでしまう。
-        // 中身は SpriteKit が生のマウスイベントを直に受けるので、
-        // アプリが前にいなくても机は押せるし、床は掴んで動かせる
-        let window = NSPanel(contentViewController: hosting)
+        let window = NSWindow(contentViewController: hosting)
         window.title = Localized.text("app.office.window_title")
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .nonactivatingPanel]
-        // 普通のウィンドウと同じ高さに置く。
-        //
-        // 一度は1段上げた。前面を返されたアプリがこの窓を埋めてしまうからで、それ自体は起きる。
-        // だが上げると、端末がこの窓の下に潜るようになる。それを避けるために iTerm2 側で
-        // hotkey window を浮かせてもらったところ、**浮いた hotkey window は焦点を取らない**ので、
-        // 端末を呼んだ直後に打てなくなった。回避のために入れた設定が、端末の一番の仕事を奪った。
-        //
-        // なので高さは戻し、埋まるほうは `raise()` で出し直して対処する。
-        // 端末に上を取らせたいときは、ただ後から持ち上げてもらえばよい
-        window.isFloatingPanel = false
-        window.level = .normal
-        // Stage Manager に「この窓は集合に加わらない」と伝える。
-        // 加わると、覗きに来ただけの窓が相手のステージの一員になってしまう
-        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .auxiliary]
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.minSize = NSSize(width: 580, height: 400)
         window.isReleasedWhenClosed = false
-        window.hidesOnDeactivate = false
         window.delegate = delegateProxy
 
         // 保存されたウィンドウサイズ・位置があれば復元し、無ければ既定の 960x600 で画面中央に配置する
