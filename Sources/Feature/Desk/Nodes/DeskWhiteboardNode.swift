@@ -23,6 +23,16 @@ final class DeskWhiteboardNode: SKNode {
     private var isPlate: Bool { kind == .plate }
     /// 上端の青いヘッダー帯の高さ。常駐ハブの板だけが持つ
     static let hubHeaderHeight: CGFloat = 11
+    /// タブ番号バッジの高さの半分。バッジは自分の位置を中心に上下へこれだけ伸びる
+    static let tabBadgeHalfHeight: CGFloat = 6.5
+    /// ハブの板で、板の上端から本文の範囲が始まるまでの距離。
+    ///
+    /// 上からヘッダー帯、その真下にタブ番号バッジ、と積むので、本文はその下に残る。
+    /// バッジは席の板では板の上端をまたぐが、ハブでは帯に食い込ませない。
+    /// 食い込むと帯に刷った "HUB" の上にバッジが乗って、文字が読めなくなる
+    static var hubContentInset: CGFloat {
+        hubHeaderHeight + tabBadgeHalfHeight * 2 + 0.5
+    }
     let boardWidth: CGFloat
     let boardHeight: CGFloat
     let boardCenterY: CGFloat
@@ -270,8 +280,11 @@ final class DeskWhiteboardNode: SKNode {
         if !isPlate {
             let badge = SKNode()
             badge.name = "tabBadge"
-            badge.position = CGPoint(x: -bw / 2 + 17,
-                                     y: centerY + bh / 2 - (kind == .hub ? Self.hubHeaderHeight + 0.8 : 2))
+            // 席では板の上端をまたがせる。ハブでは帯の真下に置き、帯には触れさせない
+            let badgeDrop = kind == .hub
+                ? Self.hubHeaderHeight + Self.tabBadgeHalfHeight + 0.5
+                : 2
+            badge.position = CGPoint(x: -bw / 2 + 17, y: centerY + bh / 2 - badgeDrop)
             badge.zPosition = 10
             badge.isHidden = true
 
@@ -318,7 +331,11 @@ final class DeskWhiteboardNode: SKNode {
 
         // ハブの板は上端をヘッダー帯とタブバッジに取られているので、
         // 本文はその下に残った範囲の真ん中に置く。板の中央のままだと帯に頭がかかる
-        let textCenterY = kind == .hub ? boardCenterY - 9.15 : boardCenterY
+        // 本文の範囲は上端から `hubContentInset` ぶん下がって始まり、板の下端で終わる。
+        // その真ん中は、板の中心から取られたぶんの半分だけ下
+        let textCenterY = kind == .hub
+            ? boardCenterY - Self.hubContentInset / 2
+            : boardCenterY
 
         // まず1行で収まるか試す。収まらなければ2行に折る
         label1.fontSize = oneLineSize
