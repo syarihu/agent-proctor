@@ -27,6 +27,7 @@ graph TD
     subgraph Bridges["Design & Bridges Layer"]
         DesignSystem["DesignSystem"]
         ItermBridge["ItermBridge"]
+        HotkeyBridge["HotkeyBridge"]
     end
 
     subgraph UseCases["UseCase Layer (1 UseCase 1 Responsibility)"]
@@ -77,6 +78,7 @@ graph TD
     FeatureSettings --> DesignSystem
     FeatureSettings --> UseCaseSession
     FeatureSettings --> ItermBridge
+    FeatureSettings --> HotkeyBridge
 
     AppState --> UseCaseTask
     AppState --> UseCaseSession
@@ -118,6 +120,7 @@ graph TD
 | | `UseCaseNotice` | User notification resolution and recency pacing (`CollectNotices`, `PaceRecounts`). |
 | **Design & Bridges** | `DesignSystem` | Reusable UI design tokens, status glyphs, and palette colors (`StatusGlyph`, `Palette`). Presentation only. |
 | | `ItermBridge` | AppleScript automation bridge for iTerm2 terminal integration and window focus management. |
+| | `HotkeyBridge` | Carbon `RegisterEventHotKey` registration for the app-wide hotkey that summons the office window. Chosen over a global `NSEvent` monitor, which would need Accessibility access. |
 | **Application State** | `AppState` | Observable `@MainActor` state stores (`TaskStore`) bridging background polling to SwiftUI views. Wraps ledger operations. |
 | **Features** | `FeatureSettings` | Settings window views and notification/sidebar preferences (`SettingsView`, `NoticeSettings`). |
 | | `FeatureMenuBar` | macOS menu bar extra status controller and popup menu (`MenuBarController`). |

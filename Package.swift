@@ -90,6 +90,11 @@ let package = Package(
             dependencies: ["Model", "Utility", "Resources"],
             path: "Sources/Bridge/Iterm",
             swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "HotkeyBridge",
+            dependencies: ["Model"],
+            path: "Sources/Bridge/Hotkey",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
 
         // -------------------------------------------------------------
         // アプリケーション状態 (UI層で共有する状態管理)
@@ -112,7 +117,7 @@ let package = Package(
             name: "FeatureSettings",
             dependencies: [
                 "Model", "Utility", "Resources", "DesignSystem", "ItermBridge",
-                "UseCaseSession",
+                "HotkeyBridge", "UseCaseSession",
             ],
             path: "Sources/Feature/Settings",
             swiftSettings: [.swiftLanguageMode(.v5)]),
@@ -161,7 +166,7 @@ let package = Package(
                 "Model", "Utility", "Resources",
                 "RepositoryLedger", "RepositoryGit", "RepositoryGitHub",
                 "UseCaseTask", "UseCaseSession", "UseCaseWorktree", "UseCaseNotice",
-                "DesignSystem", "ItermBridge", "AppState",
+                "DesignSystem", "ItermBridge", "HotkeyBridge", "AppState",
                 "FeatureSettings", "FeatureMenuBar", "FeatureSidebar", "FeatureDesk"
             ],
             swiftSettings: [.swiftLanguageMode(.v5)]),

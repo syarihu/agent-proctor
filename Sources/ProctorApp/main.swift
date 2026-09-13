@@ -6,6 +6,7 @@ import FeatureDesk
 import FeatureMenuBar
 import FeatureSettings
 import FeatureSidebar
+import HotkeyBridge
 import ItermBridge
 import Model
 import Resources
@@ -34,6 +35,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var noticeWatcher: NoticeWatcher!
     /// 変更カウント設定の変更監視用
     private var countObserver: AnyCancellable?
+    /// オフィス窓のホットキー設定の変更監視用
+    private var hotkeyObserver: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)  // Dock アイコンを出さない
@@ -98,6 +101,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             officeWindow.show()
         }
 
+        registerOfficeHotkey(appearance.officeHotkey)
+        // 設定画面で決めたそばから効かせる。@Published は willSet で流れるので、
+        // ここで appearance を読み直すと1つ前のキーを登録することになる。
+        // 流れてきた値のほうを使う
+        hotkeyObserver = appearance.$officeHotkey
+            .dropFirst()
+            .sink { [weak self] combo in
+                Task { @MainActor in self?.registerOfficeHotkey(combo) }
+            }
+        watchActivation()
+
         notices = NoticeSettings()
         notifier = Notifier()
         notifier.onOpen = { [weak self] id in self?.open(taskID: id) }
@@ -149,6 +163,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let anyVisible = (sidebar?.isShowing ?? false) || (officeWindow?.isVisible ?? false)
         store.setCollecting(anyVisible)
         pullRequests.setEnabled(anyVisible)
+    }
+
+    /// ホットキーを張り替える。
+    ///
+    /// 押されたらオフィス窓を出し入れする。空にしてあるなら登録しない。
+    /// 取れなかった (他アプリが先に持っている) ことは設定画面へ伝える。
+    /// 黙って効かないのが一番分かりにくいので、欄の横に但し書きを出させる
+    private func registerOfficeHotkey(_ combo: HotkeyCombo?) {
+        let registered = GlobalHotkey.set(combo) { [weak self] in
+            self?.officeWindow.toggle()
+        }
+        appearance.officeHotkeyTaken = combo != nil && !registered
+    }
+
+    /// 別のアプリが前に出たらオフィス窓を引っ込める。
+    ///
+    /// iTerm2 だけは通す。見取り図を見て端末で手を動かす、という往復がこの窓の使い方で、
+    /// そこで消えると押し直しになる。iTerm2 の hotkey window は自分で引っ込むので、
+    /// そのあと別のアプリへ移れば両方まとめて消える
+    private func watchActivation() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil, queue: .main) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            let bundleID = app?.bundleIdentifier
+            Task { @MainActor in
+                guard let self, self.appearance.hidesOfficeOnDeactivate else { return }
+                guard bundleID != Bundle.main.bundleIdentifier,
+                      bundleID != ItermBridge.bundleID else { return }
+                self.officeWindow.hide()
+            }
+        }
     }
 
     /// 通常ウィンドウがすべて閉じられた場合に activationPolicy を .accessory に戻す

@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Model
 import SwiftUI
 import CoreGraphics
 import Combine
@@ -72,6 +73,35 @@ public final class Appearance: ObservableObject {
     /// 無効時は不要な Apple Event 送信（ItermBridge.focusedTab）を避けるため問い合わせを行わない。
     @Published public var showTabNumbers: Bool {
         didSet { UserDefaults.standard.set(showTabNumbers, forKey: Self.showTabNumbersKey) }
+    }
+
+    // MARK: - オフィス窓のホットキー
+
+    /// アプリが前面にいなくてもオフィス窓を出し入れできるキー。nil なら登録しない。
+    ///
+    /// 空にできるようにしてあるのは、他アプリと取り合いになったときに
+    /// こちらが降りられるようにするため。取られたままだと、どちらも効かなくなる
+    @Published public var officeHotkey: HotkeyCombo? {
+        didSet {
+            UserDefaults.standard.set(officeHotkey?.stored ?? "", forKey: Self.officeHotkeyKey)
+        }
+    }
+
+    /// そのキーを他のアプリが先に取っていて、登録できなかったか。
+    ///
+    /// 覚えない。押さえられているかどうかは相手の起動状況で変わるので、
+    /// 前回の答えを持ち越すと、相手を終了させても但し書きが残る
+    @Published public var officeHotkeyTaken = false
+
+    /// 別のアプリに移ったらオフィス窓を引っ込めるか。
+    ///
+    /// iTerm2 が前に出ている間は残す。見取り図を見て端末で手を動かす、という
+    /// 往復がこの窓の使い方なので、そこで消えると出し直しばかりになる。
+    /// 出しっぱなしで眺めたい人のために切れるようにしてある
+    @Published public var hidesOfficeOnDeactivate: Bool {
+        didSet {
+            UserDefaults.standard.set(hidesOfficeOnDeactivate, forKey: Self.hidesOfficeKey)
+        }
     }
 
     // MARK: - 変更を数える
@@ -232,6 +262,8 @@ public final class Appearance: ObservableObject {
     private static let canGroupByOrgKey = "proctor_can_group_by_org"
     private static let showTabNumbersKey = "proctor_show_tab_numbers"
     private static let countChangesKey = "proctor_count_changes"
+    private static let officeHotkeyKey = "proctor_office_hotkey"
+    private static let hidesOfficeKey = "proctor_hides_office_on_deactivate"
 
     public init() {
         fontSize = Self.load(Self.sizeKey, in: Self.sizeRange, default: Self.defaultSize)
@@ -253,6 +285,18 @@ public final class Appearance: ObservableObject {
         // 何も選んでいない人の見え方は変えない
         countChanges = UserDefaults.standard
             .object(forKey: Self.countChangesKey) as? Bool ?? true
+
+        // 保存が無ければ既定のキー (⌥⌘O)。空文字は「自分で外した」なので登録しない。
+        // 未設定と空文字を分けないと、外したそばから既定が戻ってくる
+        if let saved = UserDefaults.standard.string(forKey: Self.officeHotkeyKey) {
+            officeHotkey = HotkeyCombo(stored: saved)
+        } else {
+            officeHotkey = .officeDefault
+        }
+        // 既定はオン。ホットキーで出し入れする使い方を想定しているので、
+        // 別のアプリへ移ったら引っ込むほうを既定にする
+        hidesOfficeOnDeactivate = UserDefaults.standard
+            .object(forKey: Self.hidesOfficeKey) as? Bool ?? true
 
         // 既定は一覧。俯瞰は眺めるためのもので、探して開くのは一覧のほうが速い
         sidebarMode = SidebarMode(

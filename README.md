@@ -120,6 +120,8 @@ proctor skill worktree
 
 agent-proctor runs quietly in your macOS menu bar. The menu bar icon displays a live tally of waiting and running sessions, and clicking it opens a menu listing every active session with instant navigation to its iTerm2 tab.
 
+The office window answers to a hotkey of its own (⌥⌘O by default, changeable in Settings), the way an iTerm2 hotkey window does: press it to look over the floor, and it steps aside when you switch to another app. It stays put while iTerm2 is in front, so reading the floor and then working in the terminal does not mean summoning it again.
+
 ## Architecture & Design
 
 agent-proctor is designed as a modular, multi-target Swift Package Manager application adhering to strict layer separation:

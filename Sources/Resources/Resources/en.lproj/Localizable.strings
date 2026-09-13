@@ -136,6 +136,16 @@
 "app.settings.make_room" = "Shrink iTerm2 to make room";
 "app.settings.sidebar_section" = "Sidebar";
 "app.settings.sidebar_footer" = "Row spacing follows the text size, and you can also drag the left edge of the sidebar to change its width.\nWith “Shrink iTerm2 to make room” on, a full-width iTerm2 window has its left edge moved right so the sidebar does not cover it, and gets its width back when the sidebar is hidden or Agent Proctor quits.";
+
+"app.settings.office_section" = "Office Window";
+"app.settings.office_hotkey" = "Hotkey";
+"app.settings.office_autohide" = "Hide it when you switch to another app";
+"app.settings.office_autohide.keeps_iterm" = "It stays while iTerm2 is in front, so you can read the floor and then work in the terminal without summoning it again.";
+"app.settings.hotkey.none" = "None";
+"app.settings.hotkey.recording" = "Press a key";
+"app.settings.hotkey.help" = "Click, then press the keys you want. Escape cancels.";
+"app.settings.hotkey.clear" = "Clear the hotkey";
+"app.settings.hotkey.taken" = "Another app holds this one";
 "app.settings.launch_section" = "Startup";
 "app.settings.launch_at_login" = "Open at login";
 

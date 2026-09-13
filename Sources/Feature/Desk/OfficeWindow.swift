@@ -53,6 +53,31 @@ public final class OfficeWindow {
         onVisibilityChange?(true)
     }
 
+    /// 窓を引っ込める。ホットキーをもう一度押したときと、別のアプリへ移ったときに通る。
+    ///
+    /// 閉じる (`close`) のではなく退ける (`orderOut`) のは、次に出すときへ
+    /// 大きさと位置をそのまま残すため。`windowWillClose` も飛ばないので、
+    /// 見えなくなったことはここから自分で知らせる
+    public func hide() {
+        guard let window, window.isVisible else { return }
+        window.saveFrame(usingName: Self.frameAutosaveName)
+        window.orderOut(nil)
+        onVisibilityChange?(false)
+        onClose?()
+    }
+
+    /// ホットキーの1押しぶん。
+    ///
+    /// 出ていても後ろに回っているなら、引っ込めるのではなく前へ出す。
+    /// 端末の後ろに隠れた窓を呼ぶつもりで押したときに消えると、押し直すことになる
+    public func toggle() {
+        if isVisible && NSApp.isActive {
+            hide()
+        } else {
+            show()
+        }
+    }
+
     private func make() -> NSWindow {
         let view = OfficeView(store: store, appearance: appearance, onOpen: onOpen)
         let hosting = NSHostingController(rootView: view)

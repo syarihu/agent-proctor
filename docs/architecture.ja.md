@@ -29,6 +29,7 @@ graph TD
     subgraph Bridges["デザイン & ブリッジ層"]
         DesignSystem["DesignSystem"]
         ItermBridge["ItermBridge"]
+        HotkeyBridge["HotkeyBridge"]
     end
 
     subgraph UseCases["ユースケース層 (1 UseCase 1 責務)"]
@@ -79,6 +80,7 @@ graph TD
     FeatureSettings --> DesignSystem
     FeatureSettings --> UseCaseSession
     FeatureSettings --> ItermBridge
+    FeatureSettings --> HotkeyBridge
 
     AppState --> UseCaseTask
     AppState --> UseCaseSession
@@ -120,6 +122,7 @@ graph TD
 | | `UseCaseNotice` | ユーザー通知イベントの解決と通知ペース制御 (`CollectNotices`, `PaceRecounts`)。 |
 | **デザイン & ブリッジ** | `DesignSystem` | 再利用可能な UI トークン、状態グリフ、パレット色 (`StatusGlyph`, `Palette`)。表示都合のみを管理。 |
 | | `ItermBridge` | iTerm2 ターミナル連携とウィンドウフォーカスを制御する AppleScript ブリッジ。 |
+| | `HotkeyBridge` | オフィス窓を呼び出す全体ホットキーを Carbon の `RegisterEventHotKey` で登録する。`NSEvent` のグローバル監視を採らないのは、そちらがアクセシビリティの許可を要するため。 |
 | **状態管理 (AppState)** | `AppState` | バックグラウンドのポーリング結果を SwiftUI ビューに届ける `@MainActor` の状態ストア (`TaskStore`)。台帳操作をラップ。 |
 | **フィーチャー (Feature)** | `FeatureSettings` | 設定画面と通知・サイドバー設定 (`SettingsView`, `NoticeSettings`)。 |
 | | `FeatureMenuBar` | macOS メニューバーのエクストラ表示とポップアップメニュー (`MenuBarController`)。 |

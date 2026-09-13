@@ -126,6 +126,27 @@ struct SettingsView: View {
             }
 
             Section {
+                LabeledContent(Localized.text("app.settings.office_hotkey")) {
+                    HotkeyRecorder(combo: $appearance.officeHotkey,
+                                   conflicted: appearance.officeHotkeyTaken)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle(Localized.text("app.settings.office_autohide"),
+                           isOn: $appearance.hidesOfficeOnDeactivate)
+                    // 入れてあるときにこそ但し書きが要る。「別のアプリに移ったら隠す」
+                    // だけを読むと、端末に切り替えた時点で消えると思えてしまう
+                    if appearance.hidesOfficeOnDeactivate {
+                        Text(Localized.text("app.settings.office_autohide.keeps_iterm"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            } header: {
+                Text(Localized.text("app.settings.office_section"))
+            }
+
+            Section {
                 // onChange の2引数版は macOS 14 からなので、
                 // 書き込みを受けるバインディングを自分で作る
                 Toggle(Localized.text("app.settings.launch_at_login"), isOn: Binding(
