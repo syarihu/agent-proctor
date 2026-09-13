@@ -148,20 +148,46 @@ public enum DeskGesture {
     }
 }
 
-/// リポジトリ1つ分の島。見出しの机 (hub) と、その下に並ぶセッションの机。
+/// リポジトリ1つ分の島。見出しの机 (hub) と、そのあとに並ぶセッションの机。
 ///
-/// adjutant を繋いだら hub は本物の hub セッションになる。
-/// いまはリポジトリの名札で、座っている人はいない
+/// adjutant (`adj hub`) の常駐ハブが動いていれば、見出しの机にそのセッションが座る。
+/// 動いていなければリポジトリの名札のままで、座っている人はいない
 public struct DeskIsland: Equatable {
     public let repo: String
+    /// 見出しの机に座っている常駐ハブ。いなければ nil
+    public let hub: DeskSeat?
     public let seats: [DeskSeat]
     public let origin: RepoOrigin?
 
-    public init(repo: String, seats: [DeskSeat], origin: RepoOrigin? = nil) {
+    public init(repo: String, hub: DeskSeat? = nil, seats: [DeskSeat],
+                origin: RepoOrigin? = nil) {
         self.repo = repo
+        self.hub = hub
         self.seats = seats
         self.origin = origin
     }
+
+    /// 見出しの机を指す席番号。常駐ハブだけがここに座る。
+    ///
+    /// 常駐ハブは席と同じ情報を出すが、**動きだけは別**。
+    /// 承認待ちでも待機列に並ばず（並ぶ先が自分の机になる）、
+    /// 仕事を終えてもラウンジへ行かない（常に待機しているのが役目なので）。
+    /// その2か所だけがこの番号を見て分岐する
+    public static let hubSeatIndex = -1
+
+    /// ハブを含めた、この島に座っている全員。
+    ///
+    /// 席番号は格子の添字ではなく `seats` の添字で、ハブだけ `hubSeatIndex` を持つ。
+    /// 座標を引く側 (`DeskLayout.seatPoint`) がそれを見出し机として解釈するので、
+    /// 呼ぶ側はハブと普通の席を区別せずに回せる
+    public var indexedSeats: [(index: Int, seat: DeskSeat)] {
+        let rest = seats.enumerated().map { (index: $0.offset, seat: $0.element) }
+        guard let hub else { return rest }
+        return [(index: Self.hubSeatIndex, seat: hub)] + rest
+    }
+
+    /// ハブを含めた、この島に座っている全員（席番号は要らないとき用）
+    public var allSeats: [DeskSeat] { indexedSeats.map(\.seat) }
 
     /// Organization の識別キー（例: "github.com/syarihu"）
     public var organizationKey: String {

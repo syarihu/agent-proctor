@@ -108,6 +108,7 @@
 "app.office.lounge.resting" = "休憩中";
 "app.office.lounge.working" = "作業中";
 "app.office.lounge.needs_person" = "確認待ち";
+"app.office.desk.hub_mark" = "HUB";
 
 /* 設定画面 */
 "app.settings.window_title" = "Agent Proctor の設定";

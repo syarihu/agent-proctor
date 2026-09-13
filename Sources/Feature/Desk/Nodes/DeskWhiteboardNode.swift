@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Resources
 import SpriteKit
 
 /// 机の後ろに自立するモバイルホワイトボード（タスク内容またはリポジトリ名を表示する）ノード。
@@ -7,7 +8,21 @@ import SpriteKit
 /// 従来の頭上思考雲吹き出しから、オフィス空間に馴染むキャスター付き自立型ホワイトボードに変更した。
 /// アルミフレーム、T字脚、キャスター車輪、ペントレー、イレーザー、マーカーペン、マグネット式タブ番号バッジを備える。
 final class DeskWhiteboardNode: SKNode {
-    let isHub: Bool
+    /// 板の役どころ。机の種類によって、板に何が載るかが変わる
+    enum Kind {
+        /// 普通のセッション机
+        case seat
+        /// 誰も座っていない見出し机。リポジトリの名札として立っているだけの板
+        case plate
+        /// 常駐ハブが座っている見出し机。名札と席の両方を兼ねる
+        case hub
+    }
+
+    let kind: Kind
+    /// 名札として立っているだけの板か。寸法も文字の大きさもこちらだけ別建て
+    private var isPlate: Bool { kind == .plate }
+    /// 上端の青いヘッダー帯の高さ。常駐ハブの板だけが持つ
+    static let hubHeaderHeight: CGFloat = 11
     let boardWidth: CGFloat
     let boardHeight: CGFloat
     let boardCenterY: CGFloat
@@ -30,19 +45,22 @@ final class DeskWhiteboardNode: SKNode {
     var tabBadgeBg: SKShapeNode?
     var tabBadgeLabel: SKLabelNode?
 
-    init(isHub: Bool, initialText: String) {
-        self.isHub = isHub
+    init(kind: Kind, initialText: String) {
+        self.kind = kind
+        let isPlate = kind == .plate
 
-        // 机幅（通常席184pt、hub104pt）や列間ピッチ（242pt）に干渉せず、
+        // 机幅（通常席184pt、名札机104pt）や列間ピッチ（242pt）に干渉せず、
         // かつタスク名が2行に渡ってもゆったり収まるよう、板面の高さを従来の1.5倍（約54pt）に拡大
-        let width: CGFloat = isHub ? 180 : 196
-        let height: CGFloat = isHub ? 56 : 54
+        let width: CGFloat = isPlate ? 180 : 196
+        let height: CGFloat = isPlate ? 56 : 54
         let boardBottomY: CGFloat = 58
         let centerY: CGFloat = boardBottomY + height / 2
-        self.boardWidth = isHub ? 158 : 174
-        // ブランチ名の右端はステータスマグネットの手前（bw/2 - 14）、
-        // 左端は左上のタブバッジの右端（-bw/2 + 29）
-        self.branchMaxWidth = (self.boardWidth / 2 - 14) - (-self.boardWidth / 2 + 29)
+        self.boardWidth = isPlate ? 158 : 174
+        // ブランチ名の右端はステータスマグネットの手前（bw/2 - 14）。
+        // 左端は、席では左上のタブバッジの右端（-bw/2 + 29）。
+        // ハブではブランチ名がヘッダー帯の中に入るので、"HUB" の文字の右（-bw/2 + 34）
+        self.branchMaxWidth = (self.boardWidth / 2 - 14)
+            - (-self.boardWidth / 2 + (kind == .hub ? 34 : 29))
         self.boardHeight = height
         self.boardCenterY = centerY
 
@@ -57,34 +75,44 @@ final class DeskWhiteboardNode: SKNode {
         board.lineWidth = 1.4
         board.zPosition = 4
 
-        // 上部ステータスカラー帯（タスクの状態を示すマグネットテープ風アクセント）
-        let statusRect = CGRect(x: -bw / 2 + 1.5, y: centerY + bh / 2 - 3.2, width: bw - 3.0, height: 2.4)
+        // 上部ステータスカラー帯（タスクの状態を示すマグネットテープ風アクセント）。
+        //
+        // 常駐ハブの板だけは、ここを太くして "HUB" と刷った青いヘッダー帯にする。
+        // 板に書くのはリポジトリ名なので、帯が無いと普通の席の板と見分けが付かない。
+        // 状態のほうは右の丸マグネットと机のモニタが引き続き出す
+        let headerHeight = kind == .hub ? Self.hubHeaderHeight : 2.4
+        let statusRect = CGRect(x: -bw / 2 + 1.5, y: centerY + bh / 2 - 0.8 - headerHeight,
+                                width: bw - 3.0, height: headerHeight)
         statusBar = SKShapeNode(rect: statusRect, cornerRadius: 0.8)
         statusBar.name = "statusBar"
-        statusBar.fillColor = isHub ? NSColor(red: 0.20, green: 0.45, blue: 0.85, alpha: 0.85) : .clear
+        statusBar.fillColor = isPlate || kind == .hub ? Self.hubAccentColor : .clear
         statusBar.strokeColor = .clear
         statusBar.zPosition = 5
 
-        // 右上の丸型ステータスマグネット
+        // 右上の丸型ステータスマグネット。ハブでは青い帯の上に載るので、
+        // 状態の色が帯に溶けないよう白い縁を回す
         statusMagnet = SKShapeNode(circleOfRadius: 2.6)
         statusMagnet.name = "statusMagnet"
-        statusMagnet.position = CGPoint(x: bw / 2 - 8, y: centerY + bh / 2 - 7)
-        statusMagnet.fillColor = isHub ? NSColor(red: 0.20, green: 0.45, blue: 0.85, alpha: 0.95) : NSColor(white: 0.6, alpha: 0.6)
-        statusMagnet.strokeColor = NSColor(white: 0.35, alpha: 0.4)
-        statusMagnet.lineWidth = 0.5
+        statusMagnet.position = CGPoint(x: bw / 2 - 8,
+                                        y: centerY + bh / 2 - (kind == .hub ? 6.5 : 7))
+        statusMagnet.fillColor = isPlate ? Self.hubAccentColor : NSColor(white: 0.6, alpha: 0.6)
+        statusMagnet.strokeColor = kind == .hub
+            ? NSColor(white: 1.0, alpha: 0.85)
+            : NSColor(white: 0.35, alpha: 0.4)
+        statusMagnet.lineWidth = kind == .hub ? 1.0 : 0.5
         statusMagnet.zPosition = 6
 
         // 板書テキスト（1行目・2行目）
         label1 = SKLabelNode(fontNamed: "Menlo-Bold")
         label1.name = "whiteboardLabel1"
-        label1.fontColor = Self.markerInkColor(isHub: isHub)
+        label1.fontColor = Self.markerInkColor(kind: kind)
         label1.horizontalAlignmentMode = .left
         label1.verticalAlignmentMode = .center
         label1.zPosition = 6
 
         label2 = SKLabelNode(fontNamed: "Menlo-Bold")
         label2.name = "whiteboardLabel2"
-        label2.fontColor = Self.markerInkColor(isHub: isHub)
+        label2.fontColor = Self.markerInkColor(kind: kind)
         label2.horizontalAlignmentMode = .left
         label2.verticalAlignmentMode = .center
         label2.zPosition = 6
@@ -201,27 +229,49 @@ final class DeskWhiteboardNode: SKNode {
         addChild(label2)
         applyText(initialText)
 
-        // MARK: 5. 右上のブランチ名
-        // 板書の本文（左寄せ・上下中央）とタブバッジ（左上）を避けて右上に置く。
-        // 右端はステータスマグネット（bw/2 - 8）の左に収める
-        if !isHub {
+        // MARK: 5. ハブのヘッダー帯に刷る "HUB"
+        // 帯の中の左端。ブランチ名とステータスマグネットが同じ帯の右側に並ぶ
+        if kind == .hub {
+            let mark = SKLabelNode(fontNamed: "Menlo-Bold")
+            mark.name = "hubMark"
+            mark.text = Localized.text("app.office.desk.hub_mark")
+            mark.fontSize = 7.5
+            mark.fontColor = NSColor(white: 1.0, alpha: 0.97)
+            mark.horizontalAlignmentMode = .left
+            mark.verticalAlignmentMode = .center
+            mark.position = CGPoint(x: -bw / 2 + 8, y: centerY + bh / 2 - 6.5)
+            mark.zPosition = 6
+            addChild(mark)
+        }
+
+        // MARK: 6. 右上のブランチ名
+        // 席では、板書の本文（左寄せ・上下中央）とタブバッジ（左上）を避けて右上に置く。
+        // ハブでは青いヘッダー帯の中、"HUB" の右に白インクで並べる。
+        // 右端はどちらもステータスマグネット（bw/2 - 8）の左に収める
+        if !isPlate {
             let branch = SKLabelNode(fontNamed: "Menlo")
             branch.name = "branchLabel"
             branch.fontSize = 7.5
-            branch.fontColor = Self.branchInkColor
+            branch.fontColor = kind == .hub
+                ? NSColor(white: 1.0, alpha: 0.88)
+                : Self.branchInkColor
             branch.horizontalAlignmentMode = .right
             branch.verticalAlignmentMode = .center
-            branch.position = CGPoint(x: bw / 2 - 14, y: centerY + bh / 2 - 9)
+            branch.position = CGPoint(x: bw / 2 - 14,
+                                      y: centerY + bh / 2 - (kind == .hub ? 6.5 : 9))
             branch.zPosition = 6
             addChild(branch)
             self.branchLabel = branch
         }
 
-        // MARK: 5. マグネット式タブ番号バッジ（⌘1など）
-        if !isHub {
+        // MARK: 7. マグネット式タブ番号バッジ（⌘1など）
+        // 席では板の上端に、ハブではヘッダー帯の下端に貼る。
+        // どちらも縁をまたがせるのは、磁石で留めた札に見せるため
+        if !isPlate {
             let badge = SKNode()
             badge.name = "tabBadge"
-            badge.position = CGPoint(x: -bw / 2 + 17, y: centerY + bh / 2 - 2)
+            badge.position = CGPoint(x: -bw / 2 + 17,
+                                     y: centerY + bh / 2 - (kind == .hub ? Self.hubHeaderHeight + 0.8 : 2))
             badge.zPosition = 10
             badge.isHidden = true
 
@@ -263,14 +313,18 @@ final class DeskWhiteboardNode: SKNode {
         // （あちらは本文より上の帯にいる）ので、板面の内寸いっぱいまで使える
         let maxWidth = boardWidth - 24
 
-        let oneLineSize: CGFloat = isHub ? 12.5 : 11.2
-        let twoLineSize: CGFloat = isHub ? 11.0 : 10.2
+        let oneLineSize: CGFloat = isPlate ? 12.5 : 11.2
+        let twoLineSize: CGFloat = isPlate ? 11.0 : 10.2
+
+        // ハブの板は上端をヘッダー帯とタブバッジに取られているので、
+        // 本文はその下に残った範囲の真ん中に置く。板の中央のままだと帯に頭がかかる
+        let textCenterY = kind == .hub ? boardCenterY - 9.15 : boardCenterY
 
         // まず1行で収まるか試す。収まらなければ2行に折る
         label1.fontSize = oneLineSize
         label1.text = text
         if label1.frame.width <= maxWidth {
-            label1.position = CGPoint(x: textLeft, y: boardCenterY)
+            label1.position = CGPoint(x: textLeft, y: textCenterY)
             label2.text = nil
             label2.isHidden = true
         } else {
@@ -278,14 +332,14 @@ final class DeskWhiteboardNode: SKNode {
             label2.fontSize = twoLineSize
             let lines = LabelFitting.wrap(text, maxWidth: maxWidth, lineCount: 2, probe: label1)
             LabelFitting.fit(label1, text: lines.first ?? text, maxWidth: maxWidth)
-            label1.position = CGPoint(x: textLeft, y: boardCenterY + 7.5)
+            label1.position = CGPoint(x: textLeft, y: textCenterY + 7.5)
             LabelFitting.fit(label2, text: lines.count > 1 ? lines[1] : "", maxWidth: maxWidth)
-            label2.position = CGPoint(x: textLeft, y: boardCenterY - 7.5)
+            label2.position = CGPoint(x: textLeft, y: textCenterY - 7.5)
             label2.isHidden = false
         }
 
-        label1.fontColor = Self.markerInkColor(isHub: isHub)
-        label2.fontColor = Self.markerInkColor(isHub: isHub)
+        label1.fontColor = Self.markerInkColor(kind: kind)
+        label2.fontColor = Self.markerInkColor(kind: kind)
     }
 
     /// テキスト・枠線色・アクティブ状態・タブ番号を更新する
@@ -297,10 +351,16 @@ final class DeskWhiteboardNode: SKNode {
         }
 
         // ステータスカラー帯とマグネットの更新（タスク状態を視覚的に通知）
-        if isHub {
-            statusBar.fillColor = NSColor(red: 0.20, green: 0.45, blue: 0.85, alpha: 0.85)
-            statusMagnet.fillColor = NSColor(red: 0.20, green: 0.45, blue: 0.85, alpha: 0.95)
-        } else {
+        switch kind {
+        case .plate:
+            // 誰も座っていない見出し机。出す状態が無いので、帯もマグネットもハブの青
+            statusBar.fillColor = Self.hubAccentColor
+            statusMagnet.fillColor = Self.hubAccentColor
+        case .hub:
+            // 帯は "HUB" の見出しとして青のまま。状態はマグネットのほうが受け持つ
+            statusBar.fillColor = Self.hubAccentColor
+            statusMagnet.fillColor = strokeColor
+        case .seat:
             statusBar.fillColor = strokeColor
             statusMagnet.fillColor = strokeColor
         }
@@ -357,12 +417,19 @@ final class DeskWhiteboardNode: SKNode {
             : NSColor(calibratedWhite: 0.98, alpha: 0.99)
     }
 
-    static func markerInkColor(isHub: Bool) -> NSColor {
-        if isHub {
+    /// 見出しの机の板に書くのはリポジトリ名。常駐ハブが座っていても同じ文字なので、
+    /// インクも名札机と揃えて、区画の見出しとして読ませる
+    static func markerInkColor(kind: Kind) -> NSColor {
+        switch kind {
+        case .plate, .hub:
             return NSColor(red: 0.08, green: 0.18, blue: 0.36, alpha: 0.96)
+        case .seat:
+            return NSColor(red: 0.12, green: 0.14, blue: 0.18, alpha: 0.96)
         }
-        return NSColor(red: 0.12, green: 0.14, blue: 0.18, alpha: 0.96)
     }
+
+    /// ハブの印に使う青。見出し机の帯・マグネット・ヘッダーで揃える
+    static let hubAccentColor = NSColor(red: 0.20, green: 0.45, blue: 0.85, alpha: 0.92)
 
     /// タブ番号マグネットバッジの色
     static func tabBadgeColors(isCurrent: Bool) -> (bg: NSColor, stroke: NSColor, text: NSColor, width: CGFloat) {

@@ -140,7 +140,7 @@ final class DeskScene: SKScene {
         self.islands = islands
         self.rateLimits = rateLimits
 
-        let currentSeats = Set(islands.flatMap { $0.seats.map(\.id) })
+        let currentSeats = Set(islands.flatMap { $0.allSeats.map(\.id) })
         let currentRepos = Set(islands.map(\.repo))
 
         if !hasInitializedArrivals {
@@ -191,7 +191,8 @@ final class DeskScene: SKScene {
     }
 
     private func skeleton(of islands: [DeskIsland]) -> String {
-        islands.map { "\($0.repo)/\($0.organizationKey)/\($0.seats.map(\.id).joined(separator: ","))" }
+        // ハブの有無も間取りを変える（見出し机の寸法が席と同じになる）ので鍵に混ぜる
+        islands.map { "\($0.repo)/\($0.organizationKey)/\($0.hub?.id ?? "-")/\($0.seats.map(\.id).joined(separator: ","))" }
             .joined(separator: "|")
     }
 
@@ -235,9 +236,10 @@ final class DeskScene: SKScene {
         for (index, island) in islands.enumerated() {
             let orgName = island.organizationName ?? Localized.text("app.group.no_organization")
             let hubNode = DeskFurnitureNode(at: layout.hubPoint(island: index),
-                                            label: island.repo, isHub: true, seat: nil,
+                                            label: island.repo, isHub: true, seat: island.hub,
                                             orgName: orgName)
-            if pendingArrivalRepos.contains(island.repo) {
+            if pendingArrivalRepos.contains(island.repo)
+                || island.hub.map({ pendingArrivalSeats.contains($0.id) }) == true {
                 hubNode.occupant.isHidden = true
             }
             room.addChild(hubNode)
@@ -367,13 +369,25 @@ final class DeskScene: SKScene {
 
         var queued: Set<String> = []
         for (index, island) in islands.enumerated() {
-            for seat in island.seats {
+            for seat in island.allSeats {
                 guard let desk = room.childNode(withName: "seat:\(seat.id)") as? DeskFurnitureNode else { continue }
                 desk.dress(as: seat, isAway: isAway(seat.id))
             }
             queued.formUnion(updateQueue(island: index))
         }
         dismissVisitors(keeping: queued)
+    }
+
+    /// リポジトリの見出し机。
+    ///
+    /// 常駐ハブが座っていると、机のノード名は台帳の ID 側（`seat:`）になる。
+    /// リポジトリ単位の出入りはハブの有無に関わらず同じ机を動かすので、ここで吸収する
+    private func hubDesk(repo: String) -> DeskFurnitureNode? {
+        if let hub = islands.first(where: { $0.repo == repo })?.hub,
+           let desk = room.childNode(withName: "seat:\(hub.id)") as? DeskFurnitureNode {
+            return desk
+        }
+        return room.childNode(withName: "hub:\(repo)") as? DeskFurnitureNode
     }
 
     /// その席の作業者がいま机を離れているか
@@ -389,8 +403,8 @@ final class DeskScene: SKScene {
 
     private func homeSpot(of id: String) -> (island: Int, seat: Int, spot: CGPoint)? {
         for (index, island) in islands.enumerated() {
-            if let seat = island.seats.firstIndex(where: { $0.id == id }) {
-                return (index, seat, layout.chairSpot(island: index, seat: seat))
+            if let entry = island.indexedSeats.first(where: { $0.seat.id == id }) {
+                return (index, entry.index, layout.chairSpot(island: index, seat: entry.index))
             }
         }
         return nil
@@ -403,8 +417,12 @@ final class DeskScene: SKScene {
         var slot = 0
         var standing = Set<String>()
 
-        for (seatIndex, seat) in island.seats.enumerated()
-        where seat.status == TaskStatus.waiting
+        // 待機列は見出しの机の前にできる。常駐ハブはその机の主なので、
+        // 承認待ちになっても列には並ばせない（自分の机に自分が並ぶことになる）。
+        // ハブは席に着いたまま手を挙げて待つ
+        for (seatIndex, seat) in island.indexedSeats
+        where seatIndex != DeskIsland.hubSeatIndex
+            && seat.status == TaskStatus.waiting
             // まだ入口から歩いてきている最中の人は席にも着いていない。
             // ここで待機列にも立たせると、同じ人が2人に見える
             && !pendingArrivalSeats.contains(seat.id) {
@@ -469,7 +487,7 @@ final class DeskScene: SKScene {
     private func refreshSeatOccupant(id: String) {
         guard let desk = room.childNode(withName: "seat:\(id)") as? DeskFurnitureNode else { return }
         for island in islands {
-            if let seat = island.seats.first(where: { $0.id == id }) {
+            if let seat = island.allSeats.first(where: { $0.id == id }) {
                 desk.dress(as: seat, isAway: isAway(id))
                 return
             }
@@ -491,7 +509,7 @@ final class DeskScene: SKScene {
         var onBreak: [(id: String, island: Int, slot: Int)] = []
 
         for (index, island) in islands.enumerated() {
-            for (slot, seat) in island.seats.enumerated() {
+            for (slot, seat) in island.indexedSeats {
                 let board = OfficeLoungeNode.board(for: seat)
                 counts[board, default: 0] += 1
                 if board == .needsPerson {
@@ -499,6 +517,12 @@ final class DeskScene: SKScene {
                                                                 repo: island.repo,
                                                                 request: seat.request))
                 }
+
+                // 常駐ハブは休憩に出さない。手が空いているあいだも依頼を待つのが役目で、
+                // 席を外すとワーカーが報告を持ってきたときに宛先の机が空になる。
+                // 数のほうは上で足したまま残す。ディスプレイが出しているのは
+                // サイドバーと同じ状態別の集計で、ラウンジにいる人数ではないため
+                guard slot != DeskIsland.hubSeatIndex else { continue }
 
                 // ラウンジへ送るのは `seen` だけ。ディスプレイの「休憩中」は
                 // サイドバーの完了の箱と同じ範囲なので、こちらより広い。
@@ -654,6 +678,13 @@ final class DeskScene: SKScene {
         for repo in repoNames {
             guard let islandIndex = islands.firstIndex(where: { $0.repo == repo }) else { continue }
 
+            // 見出しの机に常駐ハブが座るリポジトリでは、ハブ自身が席として入ってくる。
+            // ここで担当者も歩かせると、同じ1つの机へ2人が入場することになる
+            if islands[islandIndex].hub != nil {
+                pendingArrivalRepos.remove(repo)
+                continue
+            }
+
             let walker = PersonNode(kind: .human)
             walker.setScale(1.2)
             walker.position = doorSpawn
@@ -678,7 +709,7 @@ final class DeskScene: SKScene {
                 walker?.stopBobbing()
                 walker?.removeFromParent()
                 self.pendingArrivalRepos.remove(repo)
-                if let desk = self.room.childNode(withName: "hub:\(repo)") as? DeskFurnitureNode {
+                if let desk = self.hubDesk(repo: repo) {
                     desk.occupant.isHidden = false
                     desk.occupant.setScale(1.2)
                     desk.occupant.cheer()
@@ -1131,7 +1162,7 @@ final class DeskScene: SKScene {
 
     private func findSeatPoint(id: String) -> (island: Int, point: CGPoint)? {
         for (index, island) in islands.enumerated() {
-            for (slot, seat) in island.seats.enumerated() where seat.id == id {
+            for (slot, seat) in island.indexedSeats where seat.id == id {
                 return (index, layout.seatPoint(island: index, index: slot))
             }
         }

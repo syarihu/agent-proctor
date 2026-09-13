@@ -26,7 +26,10 @@ final class DeskFurnitureNode: SKNode {
 
     // MARK: - プロパティ
 
+    /// リポジトリの見出し机か（常駐ハブが座っているかどうかは問わない）
     let isHub: Bool
+    /// 誰も座っていない見出し机。リポジトリの名札として小さいまま置く
+    let isBarePlate: Bool
     let deskLabel: String
     let screen: SKShapeNode
     let occupant: PersonNode
@@ -189,7 +192,12 @@ final class DeskFurnitureNode: SKNode {
         self.isHub = isHub
         self.deskLabel = label
 
-        let width = isHub ? Self.hubDeskWidth : Self.deskWidth
+        // 見出しの机でも、常駐ハブが座っているなら普通の席と同じ設えにする。
+        // 出す情報が席と同じだけあるので、机が小さいままだと紙もモニタも入らない。
+        // 誰も座っていない見出し机だけが、リポジトリの名札として小さいまま残る
+        let isBarePlate = isHub && seat == nil
+        self.isBarePlate = isBarePlate
+        let width = isBarePlate ? Self.hubDeskWidth : Self.deskWidth
 
         // 前面（暗い面で厚みを表現）
         let front = SKShapeNode(rect: CGRect(x: -width / 2, y: -Self.deskDepth / 2 - 9,
@@ -206,8 +214,8 @@ final class DeskFurnitureNode: SKNode {
         top.strokeColor = .clear
 
         // 机の上のモニタ
-        let mWidth: CGFloat = isHub ? 52 : 108
-        let mHeight: CGFloat = isHub ? 22 : 28
+        let mWidth: CGFloat = isBarePlate ? 52 : 108
+        let mHeight: CGFloat = isBarePlate ? 22 : 28
         let screenY: CGFloat = 9
 
         let stand = SKShapeNode(rect: CGRect(x: -mWidth / 6, y: screenY - 3, width: mWidth / 3, height: 5),
@@ -242,8 +250,8 @@ final class DeskFurnitureNode: SKNode {
         chair.zPosition = -21
         chair.isHidden = true
 
-        // 席の作業者（リポジトリ担当者は人間、セッション作業員はAIエージェント）
-        occupant = PersonNode(kind: isHub ? .human : .agent)
+        // 席の作業者（空の見出し机はリポジトリ担当者の人間、セッションが座る机はAIエージェント）
+        occupant = PersonNode(kind: isBarePlate ? .human : .agent)
         occupant.name = "occupant"
         occupant.setScale(1.2)
         occupant.position = CGPoint(x: 0, y: 30)
@@ -251,13 +259,16 @@ final class DeskFurnitureNode: SKNode {
 
         // 机背後の自立型ホワイトボード（タスク内容またはリポジトリ名を表示）
         // 作業員の頭部や身体に隠れず、机の右側から自然に見通せるよう少し右寄りに配置する
-        whiteboard = DeskWhiteboardNode(isHub: isHub, initialText: label)
-        whiteboard.position = CGPoint(x: isHub ? 12 : 18, y: 0)
+        let boardKind: DeskWhiteboardNode.Kind = isBarePlate ? .plate : (isHub ? .hub : .seat)
+        whiteboard = DeskWhiteboardNode(kind: boardKind, initialText: label)
+        whiteboard.position = CGPoint(x: isBarePlate ? 12 : 18, y: 0)
 
         super.init()
 
         position = point
         zPosition = -point.y
+        // 席に座っているものは、見出し机であっても席として引けるようにする。
+        // 台帳の ID で探す仕掛け（着替え・クリック・退室）が全部この名前を見ている
         name = seat != nil ? "seat:\(seat!.id)" : "hub:\(label)"
 
         addChild(front)
@@ -278,7 +289,9 @@ final class DeskFurnitureNode: SKNode {
         addChild(nameplateNode)
         self.nameplate = nameplateNode
 
-        if isHub, let orgName, !orgName.isEmpty {
+        // 空の見出し机のネームプレートは組織名。常駐ハブが座る机では
+        // 席と同じくモデル名を出すので、ここでは何も入れない (dress が入れる)
+        if isBarePlate, let orgName, !orgName.isEmpty {
             updateNameplate(text: orgName)
         }
 
@@ -336,9 +349,11 @@ final class DeskFurnitureNode: SKNode {
             updateNameplate(text: seat.nameplateText)
         }
 
-        // 席に人がいるかどうか
+        // 席に人がいるかどうか。
+        // 承認待ちのあいだ席が空くのは、その人が見出しの机の前の待機列に立っているため。
+        // 常駐ハブは列に並ばない（並ぶ先が自分の机になる）ので、待っていても席にいる
         let seated = !isMissing
-            && seat.status != TaskStatus.waiting
+            && (isHub || seat.status != TaskStatus.waiting)
             && !isAway
         occupant.isHidden = !seated
         if seated { occupant.setScale(1.2) }
@@ -417,7 +432,12 @@ final class DeskFurnitureNode: SKNode {
             strokeColor = .secondaryLabelColor.withAlphaComponent(0.35)
         }
 
-        whiteboard.update(text: seat.name, isCurrent: seat.isCurrent, tabNumber: seat.tabNumber,
+        // 見出しの机の板はリポジトリ名のまま。ここが島の見出しなので、
+        // 常駐ハブが座ったからといってセッション名に差し替えると、
+        // どのリポジトリの区画なのかを示すものが区画から無くなる。
+        // ハブが何をしているかは、席と同じくモニタと紙のほうに出る
+        whiteboard.update(text: isHub ? deskLabel : seat.name,
+                          isCurrent: seat.isCurrent, tabNumber: seat.tabNumber,
                           branch: seat.branch, strokeColor: strokeColor)
         alpha = seat.status == TaskStatus.missing ? 0.45 : 1
     }
@@ -797,7 +817,7 @@ final class DeskFurnitureNode: SKNode {
         // プレートの最大幅に収まるまで文字を削る。
         // 先に文字数で切っていたが、プレート幅は測った文字幅から決めるので、
         // 収まらない文字数だとプレートだけが上限で止まって文字がはみ出す
-        let maxW: CGFloat = isHub ? (Self.hubDeskWidth - 12) : 136
+        let maxW: CGFloat = isBarePlate ? (Self.hubDeskWidth - 12) : 136
         LabelFitting.fit(label, text: text, maxWidth: maxW - 14)
         label.fontColor = Self.nameplateTextColor
 

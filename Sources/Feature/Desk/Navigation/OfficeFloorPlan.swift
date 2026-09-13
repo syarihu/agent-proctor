@@ -431,8 +431,12 @@ extension OfficeFloorPlan {
                     }
 
                     // 机の位置は上端（ホワイトボードの天面）で揃える。
-                    // ハブと席では机から天面までの高さが違うので、中心をそのまま揃えると板がずれる
-                    let hub = CGPoint(x: cellCenterX(0), y: cellTop(0) - OfficeMetrics.hubCellTop)
+                    // ハブと席では机から天面までの高さが違うので、中心をそのまま揃えると板がずれる。
+                    // 常駐ハブが座っている見出し机は席と同じ寸法になるので、そのときは席の値で揃える
+                    let hubTop = islands[islandIndex].hub == nil
+                        ? OfficeMetrics.hubCellTop
+                        : OfficeMetrics.seatCellTop
+                    let hub = CGPoint(x: cellCenterX(0), y: cellTop(0) - hubTop)
                     let seats = (0..<islands[islandIndex].seats.count).map { index -> CGPoint in
                         let cell = index + 1
                         return CGPoint(x: cellCenterX(cell),

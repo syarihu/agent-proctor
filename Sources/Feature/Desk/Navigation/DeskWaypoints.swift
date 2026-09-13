@@ -79,9 +79,13 @@ struct DeskLayout {
         plan.zone(island: island)?.hubPoint ?? CGPoint(x: roomWidth / 2, y: roomHeight / 2)
     }
 
-    /// 島の中の机の位置。ハブ机を左上として、右・下へ順に並ぶ格子の中の1つ
+    /// 島の中の机の位置。ハブ机を左上として、右・下へ順に並ぶ格子の中の1つ。
+    ///
+    /// -1 は見出しの机を指す。常駐ハブもそこに座る1人なので、
+    /// 呼ぶ側がハブと普通の席で座標の引き方を変えなくて済むようにしてある
     func seatPoint(island: Int, index: Int) -> CGPoint {
-        guard let zone = plan.zone(island: island), index < zone.seatPoints.count else {
+        guard index >= 0,
+              let zone = plan.zone(island: island), index < zone.seatPoints.count else {
             return hubPoint(island: island)
         }
         return zone.seatPoints[index]

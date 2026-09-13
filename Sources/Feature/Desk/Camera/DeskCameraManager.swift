@@ -70,7 +70,7 @@ final class DeskCameraManager {
         guard activity.count == islands.count else { return }
         let ratio = 1 - pow(0.5, delta / 4)
         for (index, island) in islands.enumerated() {
-            let running = Double(island.seats.filter { $0.status == TaskStatus.running }.count)
+            let running = Double(island.allSeats.filter { $0.status == TaskStatus.running }.count)
             activity[index] += (running - activity[index]) * ratio
         }
     }
@@ -103,8 +103,8 @@ final class DeskCameraManager {
 
         // 3. 人の手が要る机があればそこへ寄せる
         for (index, island) in islands.enumerated() {
-            if let seatIndex = island.seats.firstIndex(where: { $0.needsPerson }) {
-                let spot = layout.chairSpot(island: index, seat: seatIndex)
+            if let entry = island.indexedSeats.first(where: { $0.seat.needsPerson }) {
+                let spot = layout.chairSpot(island: index, seat: entry.index)
                 if focusedIsland != index || focus != spot {
                     focusedIsland = index
                     focus = spot
@@ -145,8 +145,8 @@ final class DeskCameraManager {
 
     private func firstCurrentSeat(islands: [DeskIsland], layout: DeskLayout) -> (island: Int, point: CGPoint)? {
         for (index, island) in islands.enumerated() {
-            if let seatIndex = island.seats.firstIndex(where: { $0.isCurrent }) {
-                return (index, layout.chairSpot(island: index, seat: seatIndex))
+            if let entry = island.indexedSeats.first(where: { $0.seat.isCurrent }) {
+                return (index, layout.chairSpot(island: index, seat: entry.index))
             }
         }
         return nil
@@ -405,7 +405,7 @@ final class DeskCameraManager {
         var offscreenItems: [CallingItem] = []
 
         for (index, island) in islands.enumerated() {
-            for (slot, seat) in island.seats.enumerated() where seat.needsPerson {
+            for (slot, seat) in island.indexedSeats where seat.needsPerson {
                 let point = layout.seatPoint(island: index, index: slot)
                 let bubbleLeft = point.x - 112
                 let bubbleRight = point.x + 112
