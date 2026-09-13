@@ -37,6 +37,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var countObserver: AnyCancellable?
     /// オフィス窓のホットキー設定の変更監視用
     private var hotkeyObserver: AnyCancellable?
+    /// オフィス窓を出したときに前にいたアプリ。
+    ///
+    /// iTerm2 の hotkey window を引っ込めると、その裏にいたこのアプリが macOS によって
+    /// 自動で前へ戻る。人がそちらへ移ったわけではないので、これを「別のアプリへ移った」と
+    /// 読むと、端末を引っ込めただけでオフィス窓まで道連れになる
+    private var officeHostApp: String?
+    /// 自分以外で最後に前へ出たアプリ。
+    ///
+    /// オフィス窓をメニューバーから開くと、そのクリックで自分が前に出てしまい、
+    /// 「窓を出したとき前にいたアプリ」を今の前面から読むと自分自身になる。
+    /// 人が戻る先はその1つ手前なので、そちらを覚えておく
+    private var lastForeignApp: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)  // Dock アイコンを出さない
@@ -89,8 +101,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onOpen: { [weak self] id in
                 self?.open(taskID: id)
             })
-        officeWindow.onVisibilityChange = { [weak self] _ in
-            self?.updateCollectingState()
+        officeWindow.onVisibilityChange = { [weak self] visible in
+            guard let self else { return }
+            // 出した時点で前にいたアプリを覚える。アプリを前に出さずに窓だけ重ねるので、
+            // このアプリは窓が出ている間ずっと前にいるまま
+            if visible { self.officeHostApp = self.hostApp() }
+            self.updateCollectingState()
         }
         officeWindow.onClose = { [weak self] in
             self?.updateActivationPolicy()
@@ -177,11 +193,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appearance.officeHotkeyTaken = combo != nil && !registered
     }
 
-    /// 別のアプリが前に出たらオフィス窓を引っ込める。
+    /// 別のアプリへ移ったらオフィス窓を引っ込める。
     ///
-    /// iTerm2 だけは通す。見取り図を見て端末で手を動かす、という往復がこの窓の使い方で、
-    /// そこで消えると押し直しになる。iTerm2 の hotkey window は自分で引っ込むので、
-    /// そのあと別のアプリへ移れば両方まとめて消える
+    /// 通さない相手は3つある。
+    ///
+    /// - 自分自身
+    /// - iTerm2。見取り図を見て端末で手を動かす、という往復がこの窓の使い方なので、
+    ///   そこで消えると押し直しになる
+    /// - 窓を出したときに前にいたアプリ (`officeHostApp`)。iTerm2 の hotkey window を
+    ///   引っ込めると、その裏にいたこのアプリが自動で前へ戻ってくる。移ったのは人ではなく、
+    ///   端末が退いた結果でしかない
+    ///
+    /// この3つ以外が前に出たときだけが、人が本当に別の作業へ移った合図になる。
+    /// iTerm2 の hotkey window は自分で引っ込むので、そのとき両方まとめて消える
     private func watchActivation() {
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
@@ -189,12 +213,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             let bundleID = app?.bundleIdentifier
             Task { @MainActor in
-                guard let self, self.appearance.hidesOfficeOnDeactivate else { return }
+                guard let self else { return }
+                if let bundleID, bundleID != Bundle.main.bundleIdentifier {
+                    self.lastForeignApp = bundleID
+                }
+                guard self.appearance.hidesOfficeOnDeactivate else { return }
                 guard bundleID != Bundle.main.bundleIdentifier,
-                      bundleID != ItermBridge.bundleID else { return }
+                      bundleID != ItermBridge.bundleID,
+                      bundleID != self.officeHostApp else { return }
                 self.officeWindow.hide()
             }
         }
+    }
+
+    /// オフィス窓を重ねる相手。
+    ///
+    /// いま前にいるアプリ。それが自分なら (メニューバーから開いたとき) その1つ手前
+    private func hostApp() -> String? {
+        let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        if let front, front != Bundle.main.bundleIdentifier { return front }
+        return lastForeignApp
     }
 
     /// 通常ウィンドウがすべて閉じられた場合に activationPolicy を .accessory に戻す。
