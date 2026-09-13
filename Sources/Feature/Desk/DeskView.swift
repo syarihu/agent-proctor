@@ -34,6 +34,12 @@ public struct DeskView: View {
     /// ズーム倍率等の状態永続化キー（オフィスウィンドウのみ保存し、サイドバーと分離する）
     public let persistenceKey: String?
     public let style: Style
+    /// 押されたらキーボードを受け取るか。
+    ///
+    /// オフィス窓だけが true。サイドバーは iTerm2 の脇に貼り付いている窓で、
+    /// **押しても端末からフォーカスを奪わない**ことがそもそもの作りなので、
+    /// ここで受け取ると端末に打てなくなる
+    public let takesKeyboard: Bool
     /// 机をクリックしたときに開くセッション。一覧の行クリックと同じ相手を渡す
     public var onOpen: (String) -> Void
 
@@ -42,12 +48,14 @@ public struct DeskView: View {
                 running: Bool,
                 persistenceKey: String? = nil,
                 style: Style = .compact,
+                takesKeyboard: Bool = false,
                 onOpen: @escaping (String) -> Void) {
         self.islands = islands
         self.rateLimits = rateLimits
         self.running = running
         self.persistenceKey = persistenceKey
         self.style = style
+        self.takesKeyboard = takesKeyboard
         self.onOpen = onOpen
     }
 
@@ -61,7 +69,7 @@ public struct DeskView: View {
         // シーンが出ないまま view の地色 (白) が出る。アプリを立ち上げ直した直後は
         // サイドバーがまだ「見えている」と分かっていないので、必ずそこに落ちる。
         // 2fps なら常駐していても負荷はほぼ無く、描かれないことも無い
-        DeskSKContainerView(scene: box.scene, running: running)
+        DeskSKContainerView(scene: box.scene, running: running, takesKeyboard: takesKeyboard)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
                 box.scene.persistenceKey = persistenceKey
@@ -92,9 +100,11 @@ public struct DeskView: View {
 private struct DeskSKContainerView: NSViewRepresentable {
     let scene: DeskScene
     let running: Bool
+    let takesKeyboard: Bool
 
     func makeNSView(context: Context) -> DeskSKView {
         let view = DeskSKView()
+        view.takesKeyboard = takesKeyboard
         view.allowsTransparency = true
         view.preferredFramesPerSecond = running ? 60 : 2
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -106,6 +116,7 @@ private struct DeskSKContainerView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: DeskSKView, context: Context) {
+        view.takesKeyboard = takesKeyboard
         view.preferredFramesPerSecond = running ? 60 : 2
         if view.scene !== scene {
             view.presentScene(scene)
@@ -119,6 +130,32 @@ private struct DeskSKContainerView: NSViewRepresentable {
 /// `mouseDragged` に中継してくれるが、`scrollWheel` と `magnify` は
 /// デフォルトでは中継されないため、ここで明示的にシーンへ渡す
 private final class DeskSKView: SKView {
+    /// 押されたらキーボードを受け取るか
+    var takesKeyboard = false
+
+    /// 受け取る設定のときだけ打鍵の宛先になれる。
+    /// サイドバーは端末に打たせ続けたいので、宛先の候補にすら入らない
+    override var acceptsFirstResponder: Bool { takesKeyboard }
+
+    /// 押されて初めてキーボードを受け取る。
+    ///
+    /// 窓は非アクティブ化パネルなので、押しても macOS はこちらを打鍵の宛先にしない。
+    /// 出しただけで奪うと、覗きに来ただけのときに裏のアプリへ打てなくなる。
+    /// 押すという動作が「ここを使う」の合図なので、そこで初めて受け取る
+    override func mouseDown(with event: NSEvent) {
+        if takesKeyboard {
+            window?.makeKey()
+            window?.makeFirstResponder(self)
+        }
+        super.mouseDown(with: event)
+    }
+
+    /// ⌘1〜⌘9 は机を開く。拾わなかった打鍵はそのまま次へ流す
+    override func keyDown(with event: NSEvent) {
+        if let scene = scene as? DeskScene, scene.handleTabShortcut(event) { return }
+        super.keyDown(with: event)
+    }
+
     override func scrollWheel(with event: NSEvent) {
         if let scene = scene as? DeskScene {
             scene.scrollWheel(with: event)

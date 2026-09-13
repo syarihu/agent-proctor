@@ -1146,18 +1146,40 @@ final class DeskScene: SKScene {
             NSCursor.pop()
             cameraManager.isDragging = false
         } else if let seatId = cameraManager.clickedSeatId {
-            onOpen?(seatId)
-            if let spot = findSeatPoint(id: seatId) {
-                cameraManager.focus = spot.point
-                cameraManager.focusedIsland = spot.island
-                cameraManager.switchedAt = lastUpdate
-                cameraManager.isUserControlling = false
-                cameraManager.lastFollowedCurrentPoint = spot.point
-            }
+            open(seatId: seatId)
         }
         cameraManager.dragStartInWindow = nil
         cameraManager.dragStartFocus = nil
         cameraManager.clickedSeatId = nil
+    }
+
+    /// その机のセッションを開き、カメラをその席へ寄せる。
+    /// 机を押したときと ⌘1〜⌘9 を叩いたときで、同じ入口を通す
+    private func open(seatId: String) {
+        onOpen?(seatId)
+        guard let spot = findSeatPoint(id: seatId) else { return }
+        cameraManager.focus = spot.point
+        cameraManager.focusedIsland = spot.island
+        cameraManager.switchedAt = lastUpdate
+        cameraManager.isUserControlling = false
+        cameraManager.lastFollowedCurrentPoint = spot.point
+    }
+
+    /// ⌘1〜⌘9 で、その番号の札を貼った机のタブを開く。
+    ///
+    /// 板の左上に出ている「⌘1」のバッジがそのまま押せる、という見立て。
+    /// 番号は iTerm2 のタブ番号なので、拾えるのはタブ番号を出す設定のときだけになる
+    /// (切ってあると誰も番号を持たないので、何も起きないまま素通りする)。
+    /// - Returns: 拾ったかどうか。拾わなかった打鍵は呼び出し側が次の responder へ流す
+    func handleTabShortcut(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard modifiers == .command else { return false }
+        guard let typed = event.charactersIgnoringModifiers,
+              let number = Int(typed), (1...9).contains(number) else { return false }
+        guard let seat = islands.lazy.flatMap(\.allSeats)
+            .first(where: { $0.tabNumber == number }) else { return false }
+        open(seatId: seat.id)
+        return true
     }
 
     private func findSeatPoint(id: String) -> (island: Int, point: CGPoint)? {

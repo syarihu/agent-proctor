@@ -185,6 +185,7 @@ private struct OfficeView: View {
                  running: store.collecting,
                  persistenceKey: "OfficeWindow",
                  style: .suites,
+                 takesKeyboard: true,
                  onOpen: onOpen)
             .background(Color(nsColor: .windowBackgroundColor))
     }
