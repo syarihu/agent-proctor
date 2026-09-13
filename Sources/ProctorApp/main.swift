@@ -239,8 +239,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 guard self.appearance.hidesOfficeOnDeactivate else { return }
                 guard bundleID != Bundle.main.bundleIdentifier,
-                      bundleID != ItermBridge.bundleID,
-                      bundleID != self.officeHostApp else { return }
+                      bundleID != ItermBridge.bundleID else { return }
+                // 窓を出したときに前にいたアプリが戻ってきた。人が移ったのではなく、
+                // 端末が退いた穴を埋めただけ。ただし戻ってきた側は自分のウィンドウを
+                // 持ち上げるので、同じ高さにいるオフィス窓はその後ろに回る。
+                // 隠さないだけでは足りず、上に出し直すところまでが「そのまま残す」
+                if bundleID == self.officeHostApp {
+                    self.officeWindow.raise()
+                    return
+                }
                 self.officeWindow.hide()
             }
         }

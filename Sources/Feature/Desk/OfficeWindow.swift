@@ -6,8 +6,8 @@ import SwiftUI
 
 /// 独立したオフィス（見取り図）ウィンドウのコントローラ。
 ///
-/// メニューバー常駐アプリ（.accessory）のため、表示中は一時的に activationPolicy を .regular に昇格させ、
-/// 閉じた際に他に開いているウィンドウが無ければ .accessory に戻す。
+/// メニューバー常駐アプリ（.accessory）のまま、アプリを前面に出さずに窓だけを重ねる。
+/// activationPolicy は動かさない（動かすと Stage Manager がアプリの切り替えとして扱う）。
 @MainActor
 public final class OfficeWindow {
     /// アプリ終了処理中フラグ。通常クローズと終了時クローズを区別する
@@ -74,6 +74,16 @@ public final class OfficeWindow {
         onClose?()
     }
 
+    /// 出ている窓を、もう一度一番手前へ出す。
+    ///
+    /// 端末が退いて前面を返されたアプリは、自分のウィンドウを持ち上げる。
+    /// 同じ高さにいるこの窓はその後ろへ回るので、出し直して上に戻す。
+    /// 出ていないときは何もしない (勝手に出てくる窓になってしまう)
+    public func raise() {
+        guard isVisible else { return }
+        window?.orderFrontRegardless()
+    }
+
     /// ホットキーの1押しぶん。出ていれば引っ込める、出ていなければ出す。
     ///
     /// 前面にいるかどうかは見ない。この窓は iTerm2 が前に出ても退かずに下に残るので、
@@ -100,16 +110,17 @@ public final class OfficeWindow {
         let window = NSPanel(contentViewController: hosting)
         window.title = Localized.text("app.office.window_title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .nonactivatingPanel]
-        // 普通のウィンドウより1段だけ高いところに置く。
+        // 普通のウィンドウと同じ高さに置く。
         //
-        // 同じ高さに置くと、前に出たアプリが自分のウィンドウを持ち上げた時点でその後ろに埋まる。
-        // iTerm2 を引っ込めた拍子にこの窓が消えたように見えるのは、消えているのではなく、
-        // 前面を返されたアプリの後ろへ回っているため。覗きに来た床が覗いた先に隠れては困る。
+        // 一度は1段上げた。前面を返されたアプリがこの窓を埋めてしまうからで、それ自体は起きる。
+        // だが上げると、端末がこの窓の下に潜るようになる。それを避けるために iTerm2 側で
+        // hotkey window を浮かせてもらったところ、**浮いた hotkey window は焦点を取らない**ので、
+        // 端末を呼んだ直後に打てなくなった。回避のために入れた設定が、端末の一番の仕事を奪った。
         //
-        // 浮かせきらない (`.floating`) のは、iTerm2 の hotkey window に上を取らせるため。
-        // あちらは浮く設定なので、1段の差があれば重なる順は狙いどおりになる
+        // なので高さは戻し、埋まるほうは `raise()` で出し直して対処する。
+        // 端末に上を取らせたいときは、ただ後から持ち上げてもらえばよい
         window.isFloatingPanel = false
-        window.level = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue + 1)
+        window.level = .normal
         // Stage Manager に「この窓は集合に加わらない」と伝える。
         // 加わると、覗きに来ただけの窓が相手のステージの一員になってしまう
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .auxiliary]

@@ -6,10 +6,11 @@ proctor 用の iTerm2 hotkey window プロファイルを作成・更新する�
 
 Window Style: No title bar (Window Type: 12)
 Pin hotkey window: OFF (HotKey Window AutoHides: True)
-Floating window: ON (HotKey Window Floats: True)
-  浮かせるのは、オフィス窓が通常のウィンドウより1段高いところにいるため。
-  浮いていない hotkey window は普通の高さ (0) にいるので、端末を呼んでも
-  オフィス窓の下に潜り、見取り図を見てから端末で手を動かす往復が成り立たない。
+Floating window: OFF (HotKey Window Floats: False)
+  **浮かせない。浮いた hotkey window は焦点を取らないので、呼んだ直後に打てない。**
+  一度は浮かせる設定にしていた。オフィス窓を通常より1段高いところに置いたせいで
+  端末がその下に潜ったためで、こちら側の都合を iTerm2 の設定で埋め合わせていた。
+  オフィス窓は通常の高さに戻したので、この設定は要らないどころか害になる。
 """
 
 import plistlib
@@ -53,7 +54,7 @@ def main():
     target["Window Type"] = 12  # No title bar
     target["Has Hotkey"] = True
     target["HotKey Window AutoHides"] = True
-    target["HotKey Window Floats"] = True
+    target["HotKey Window Floats"] = False
     target["HotKey Window Reopens On Activation"] = False
     target["HotKey Window Dock Click Action"] = 0
     target["Space"] = -1

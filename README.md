@@ -122,7 +122,7 @@ agent-proctor runs quietly in your macOS menu bar. The menu bar icon displays a 
 
 The office window answers to a hotkey of its own (⌥⌘O by default, changeable in Settings), the way an iTerm2 hotkey window does: press it to look over the floor, and it steps aside when you switch to another app. It stays put while iTerm2 is in front, so reading the floor and then working in the terminal does not mean summoning it again.
 
-The three windows stack in a fixed order — sidebar over terminal over office floor — and that order comes from window levels rather than from whichever was clicked last. It needs iTerm2's hotkey window to be a floating one: a terminal on the ordinary level comes up *underneath* the office window, since the office window sits a step above ordinary so the app it was opened over cannot bury it. `scripts/setup-iterm-hotkey.py` turns that on, or check "Floating window" under Settings → Profiles → Keys → Configure Hotkey Window.
+The sidebar floats over the terminal, and the terminal comes down over the office floor. Nothing has to be configured in iTerm2 for that: the office window sits at the ordinary window level, so a terminal summoned after it simply arrives on top, and the floor puts itself back in front when the terminal steps away again.
 
 ## Architecture & Design
 
