@@ -100,10 +100,16 @@ public final class OfficeWindow {
         let window = NSPanel(contentViewController: hosting)
         window.title = Localized.text("app.office.window_title")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .nonactivatingPanel]
-        // パネルは既定で最前面に浮くが、この窓は浮かせない。
-        // iTerm2 の hotkey window (こちらは浮く設定) が上に重なれる高さに置いておく
+        // 普通のウィンドウより1段だけ高いところに置く。
+        //
+        // 同じ高さに置くと、前に出たアプリが自分のウィンドウを持ち上げた時点でその後ろに埋まる。
+        // iTerm2 を引っ込めた拍子にこの窓が消えたように見えるのは、消えているのではなく、
+        // 前面を返されたアプリの後ろへ回っているため。覗きに来た床が覗いた先に隠れては困る。
+        //
+        // 浮かせきらない (`.floating`) のは、iTerm2 の hotkey window に上を取らせるため。
+        // あちらは浮く設定なので、1段の差があれば重なる順は狙いどおりになる
         window.isFloatingPanel = false
-        window.level = .normal
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue + 1)
         // Stage Manager に「この窓は集合に加わらない」と伝える。
         // 加わると、覗きに来ただけの窓が相手のステージの一員になってしまう
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .auxiliary]
