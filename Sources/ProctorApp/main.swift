@@ -49,6 +49,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 「窓を出したとき前にいたアプリ」を今の前面から読むと自分自身になる。
     /// 人が戻る先はその1つ手前なので、そちらを覚えておく
     private var lastForeignApp: String?
+    /// オフィス窓がいま一番手前にいるか。
+    ///
+    /// 出したときに一番手前へ出て、次にどれかのアプリが前に出た時点でその座を譲る。
+    /// アプリを前面に出さない窓なので、手前かどうかを尋ねられる相手がいない。
+    /// 出し入れと、アプリが前に出た合図の2つから、こちらで数えておく
+    private var officeIsFrontmost = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)  // Dock アイコンを出さない
@@ -95,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sidebar.onVisibilityChange = { [weak self] _ in
             self?.updateCollectingState()
         }
-        sidebar.officeIsShowing = { [weak self] in self?.officeWindow?.isVisible ?? false }
+        sidebar.officeIsFrontmost = { [weak self] in self?.officeIsFrontmost ?? false }
 
         officeWindow = OfficeWindow(
             store: store, appearance: appearance,
@@ -107,6 +113,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 出した時点で前にいたアプリを覚える。アプリを前に出さずに窓だけ重ねるので、
             // このアプリは窓が出ている間ずっと前にいるまま
             if visible { self.officeHostApp = self.hostApp() }
+            // 出した窓は一番手前に出る。引っ込めたらその座も無くなる
+            self.officeIsFrontmost = visible
             // サイドバーはオフィス窓の下へ回る。あちらが前面に出ない窓なので、
             // 通知では気づけず、ここから知らせるほかない
             self.sidebar?.refreshLevel()
@@ -222,6 +230,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 if let bundleID, bundleID != Bundle.main.bundleIdentifier {
                     self.lastForeignApp = bundleID
+                }
+                // 前に出たアプリは自分のウィンドウを持ち上げるので、
+                // オフィス窓は手前ではなくなる。サイドバーは端末の上へ戻ってよい
+                if self.officeIsFrontmost {
+                    self.officeIsFrontmost = false
+                    self.sidebar?.refreshLevel()
                 }
                 guard self.appearance.hidesOfficeOnDeactivate else { return }
                 guard bundleID != Bundle.main.bundleIdentifier,
