@@ -67,7 +67,6 @@ final class DeskScene: SKScene {
 
     private var roomWidth: CGFloat { plan.size.width }
     private var roomHeight: CGFloat { plan.size.height }
-    private var seatColumns: Int { plan.seatColumns }
 
     var layout: DeskLayout { DeskLayout(plan: plan) }
 

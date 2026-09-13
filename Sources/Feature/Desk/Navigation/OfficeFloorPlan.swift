@@ -27,23 +27,25 @@ enum OfficeLayoutStyle {
 /// 高さの上端を決めているのが机ではなく**背後の自立ホワイトボード**であることに注意。
 /// 見た目を変えずに間取りだけ組み替えるため、この数値は描画側と必ず一致させる
 enum OfficeMetrics {
-    /// 席の机1つが床に占める幅（連続帳票用紙の幅）
-    static let seatCellWidth: CGFloat = 226
-    /// 机の中心から上端（自立ホワイトボードの天面）まで
+    /// 席の机の中心から上端（自立ホワイトボードの天面）まで
     static let seatCellTop: CGFloat = 115
-    /// 机の中心から下端（連続帳票用紙の末端）まで
+    /// 席の机の中心から下端（連続帳票用紙の末端）まで
     static let seatCellBottom: CGFloat = 76
-    /// ハブ机の中心から上端（自立ホワイトボードの天面）まで
+    /// ハブ机の中心から上端（自立ホワイトボードの天面）まで。
+    /// 席より 2pt 高いので、格子の上端で揃えるとホワイトボードの天面が並ぶ
     static let hubCellTop: CGFloat = 117
-    /// ハブ机の中心から下端（天板の前面）まで
-    static let hubCellBottom: CGFloat = 21
 
-    /// ハブ机から最初の席の行までの間隔
-    static let hubRowSpacing: CGFloat = 145
-    /// 席の行と行の間隔
-    static let rowSpacing: CGFloat = 185
-    /// 席の列と列の最小間隔（連続帳票用紙 226pt ＋ 隙間 16pt）
-    static let minColumnPitch: CGFloat = 242
+    /// 机1つが占める格子の幅（連続帳票用紙の幅。天板 184pt より広い）
+    static let cellWidth: CGFloat = 226
+    /// 机1つが占める格子の高さ（ホワイトボードの天面から用紙の末端まで）
+    static let cellHeight: CGFloat = seatCellTop + seatCellBottom
+    /// 机と机の間。
+    ///
+    /// ハブ机は席の机より幅も高さも小さい（160×138 に対して席は 226×191）ので、
+    /// 同じ格子の左上に置くだけで、ハブのまわりだけ自然に広く空く。
+    /// 隙間そのものは詰めておいて、余白の差はその寸法差に任せる
+    static let cellGapX: CGFloat = 12
+    static let cellGapY: CGFloat = 10
 
     /// 区画の中身と区画枠の間に取る余白
     static let zonePadding: CGFloat = 24
@@ -221,11 +223,10 @@ struct OfficeFloorPlan {
     let style: OfficeLayoutStyle
     let suites: [Suite]
     let lounge: Lounge?
-    /// 席の列数（区画1つの中に何列の机を並べるか）
-    let seatColumns: Int
+    /// 区画1つの中に何列の机を並べるか（ハブ机も1つとして数える）
+    let deskColumns: Int
     /// 区画の列数（スイート1つの中に何列の区画を並べるか）
     let zoneColumns: Int
-    let columnPitch: CGFloat
     /// 島の索引から区画を引くための表
     private let zonesByIsland: [Int: RepoZone]
 
@@ -281,20 +282,20 @@ extension OfficeFloorPlan {
         let maxZones = groups.map(\.indices.count).max() ?? 1
         let zoneColumns = max(1, min(budget, Int(ceil(Double(maxZones).squareRoot()))))
 
-        // 列の間隔はバジェットぶんの列数から出す。実際に使う列数で割ってしまうと、
-        // 席が1つしかないときに机同士が窓幅いっぱいまで離れてしまう
-        let pitchColumns = max(1, budget / zoneColumns)
-        let columnPitch = max(OfficeMetrics.minColumnPitch,
-                              (viewport.width - 24) / CGFloat(pitchColumns * zoneColumns))
+        // 机はハブも席も同じ格子に流し込む。ハブが左上、続けて席が右・下へ並ぶ。
+        //
+        //   hub    agent1
+        //   agent2 agent3
+        //
+        // ハブを中央に置いて席を下にぶら下げると、席が1つでもハブの真下に
+        // 1行ぶんの高さが要る。格子に混ぜると、その1行が席で埋まる
+        let cellBudget = max(1, budget / zoneColumns)
+        let maxCells = 1 + (islands.map(\.seats.count).max() ?? 0)
+        // 縦横がなるべく揃う列数にする。横一列に伸ばすより占有面積が小さい
+        let deskColumns = max(1, min(cellBudget, Int(ceil(Double(maxCells).squareRoot()))))
 
-        // 実際に使う列数は席の数までに抑える。席1つに3列ぶんの幅を取ると、
-        // 区画の左右が空きカーペットになる
-        let maxSeats = islands.map(\.seats.count).max() ?? 0
-        let seatColumns = max(1, min(pitchColumns, maxSeats))
-
-        // 区画1つの幅は席の列数だけで決まるので、どの区画も同じ幅になる
-        let zoneWidth = OfficeMetrics.seatCellWidth
-            + columnPitch * CGFloat(seatColumns - 1)
+        let zoneWidth = OfficeMetrics.cellWidth * CGFloat(deskColumns)
+            + OfficeMetrics.cellGapX * CGFloat(deskColumns - 1)
             + OfficeMetrics.zonePadding * 2
 
         let showsWalls = style.showsWalls
@@ -306,23 +307,16 @@ extension OfficeFloorPlan {
         let plateBandHeight = OfficeMetrics.plateBand
 
         // 各スイートの中身の高さを先に出す（部屋全体の高さが要るため）
-        func seatRows(_ index: Int) -> Int {
-            let count = islands[index].seats.count
-            guard count > 0 else { return 0 }
-            return (count + seatColumns - 1) / seatColumns
+        /// 区画に並ぶ机の数。ハブ1つ＋席
+        func deskRows(_ index: Int) -> Int {
+            let cells = 1 + islands[index].seats.count
+            return (cells + deskColumns - 1) / deskColumns
         }
 
         func zoneHeight(_ index: Int) -> CGFloat {
-            let rows = seatRows(index)
-            let content: CGFloat
-            if rows == 0 {
-                content = OfficeMetrics.hubCellTop + OfficeMetrics.hubCellBottom
-            } else {
-                content = OfficeMetrics.hubCellTop
-                    + OfficeMetrics.hubRowSpacing
-                    + OfficeMetrics.rowSpacing * CGFloat(rows - 1)
-                    + OfficeMetrics.seatCellBottom
-            }
+            let rows = deskRows(index)
+            let content = OfficeMetrics.cellHeight * CGFloat(rows)
+                + OfficeMetrics.cellGapY * CGFloat(rows - 1)
             return content + OfficeMetrics.zonePadding * 2
         }
 
@@ -402,18 +396,29 @@ extension OfficeFloorPlan {
                     let frame = CGRect(x: zoneX, y: rowTop - rowHeight,
                                        width: zoneWidth, height: rowHeight)
 
-                    let centerX = frame.midX
-                    let hubY = frame.maxY - OfficeMetrics.zonePadding - OfficeMetrics.hubCellTop
-                    let hub = CGPoint(x: centerX, y: hubY)
+                    // 格子の左上から順に机を置く。0番がハブ、1番以降が席
+                    let gridLeft = frame.minX + OfficeMetrics.zonePadding
+                    let gridTop = frame.maxY - OfficeMetrics.zonePadding
 
-                    let spread = columnPitch * CGFloat(seatColumns - 1)
-                    let order = DeskLayout.columnOrder(seatColumns: seatColumns)
+                    func cellCenterX(_ cell: Int) -> CGFloat {
+                        let column = cell % deskColumns
+                        return gridLeft
+                            + (OfficeMetrics.cellWidth + OfficeMetrics.cellGapX) * CGFloat(column)
+                            + OfficeMetrics.cellWidth / 2
+                    }
+                    func cellTop(_ cell: Int) -> CGFloat {
+                        let row = cell / deskColumns
+                        return gridTop
+                            - (OfficeMetrics.cellHeight + OfficeMetrics.cellGapY) * CGFloat(row)
+                    }
+
+                    // 机の位置は上端（ホワイトボードの天面）で揃える。
+                    // ハブと席では机から天面までの高さが違うので、中心をそのまま揃えると板がずれる
+                    let hub = CGPoint(x: cellCenterX(0), y: cellTop(0) - OfficeMetrics.hubCellTop)
                     let seats = (0..<islands[islandIndex].seats.count).map { index -> CGPoint in
-                        let seatRow = index / seatColumns
-                        let seatCol = order[index % seatColumns]
-                        return CGPoint(x: centerX - spread / 2 + columnPitch * CGFloat(seatCol),
-                                       y: hubY - OfficeMetrics.hubRowSpacing
-                                           - OfficeMetrics.rowSpacing * CGFloat(seatRow))
+                        let cell = index + 1
+                        return CGPoint(x: cellCenterX(cell),
+                                       y: cellTop(cell) - OfficeMetrics.seatCellTop)
                     }
 
                     let zone = RepoZone(islandIndex: islandIndex,
@@ -528,9 +533,8 @@ extension OfficeFloorPlan {
                                style: style,
                                suites: suites,
                                lounge: lounge,
-                               seatColumns: seatColumns,
+                               deskColumns: deskColumns,
                                zoneColumns: zoneColumns,
-                               columnPitch: columnPitch,
                                zonesByIsland: zonesByIsland,
                                contentCenterX: centerX,
                                mainAisleX: mainAisleX)

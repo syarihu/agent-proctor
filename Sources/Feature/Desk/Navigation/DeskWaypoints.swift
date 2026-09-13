@@ -12,8 +12,6 @@ struct DeskLayout {
     var roomWidth: CGFloat { plan.size.width }
     var roomHeight: CGFloat { plan.size.height }
     var wallHeight: CGFloat { OfficeMetrics.wallHeight }
-    var seatColumns: Int { plan.seatColumns }
-    var columnPitch: CGFloat { plan.columnPitch }
 
     let deskWidth: CGFloat = 184
     let deskDepth: CGFloat = 24
@@ -81,23 +79,7 @@ struct DeskLayout {
         plan.zone(island: island)?.hubPoint ?? CGPoint(x: roomWidth / 2, y: roomHeight / 2)
     }
 
-    /// 各行において人間（中央の見出し机）に近い順に並べた列インデックスの配列。
-    /// ウィンドウを大きくした際も、中央の人間の目の前から左右交互に外側へと席を埋めていく。
-    static func columnOrder(seatColumns: Int) -> [Int] {
-        guard seatColumns > 1 else { return [0] }
-        let center = CGFloat(seatColumns - 1) / 2.0
-        return (0..<seatColumns).sorted { a, b in
-            let distA = abs(CGFloat(a) - center)
-            let distB = abs(CGFloat(b) - center)
-            if abs(distA - distB) < 0.001 {
-                // 距離が同じ（左右対称）の場合は、左側から順に配置する
-                return a < b
-            }
-            return distA < distB
-        }
-    }
-
-    /// 島の中の机の位置。上の段から、人間（中央の hub 机）に近い列から順に配置していく
+    /// 島の中の机の位置。ハブ机を左上として、右・下へ順に並ぶ格子の中の1つ
     func seatPoint(island: Int, index: Int) -> CGPoint {
         guard let zone = plan.zone(island: island), index < zone.seatPoints.count else {
             return hubPoint(island: island)
