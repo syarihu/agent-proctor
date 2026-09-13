@@ -95,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sidebar.onVisibilityChange = { [weak self] _ in
             self?.updateCollectingState()
         }
+        sidebar.officeIsShowing = { [weak self] in self?.officeWindow?.isVisible ?? false }
 
         officeWindow = OfficeWindow(
             store: store, appearance: appearance,
@@ -106,6 +107,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 出した時点で前にいたアプリを覚える。アプリを前に出さずに窓だけ重ねるので、
             // このアプリは窓が出ている間ずっと前にいるまま
             if visible { self.officeHostApp = self.hostApp() }
+            // サイドバーはオフィス窓の下へ回る。あちらが前面に出ない窓なので、
+            // 通知では気づけず、ここから知らせるほかない
+            self.sidebar?.refreshLevel()
             self.updateCollectingState()
         }
         officeWindow.onClose = { [weak self] in
@@ -202,7 +206,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///   そこで消えると押し直しになる
     /// - 窓を出したときに前にいたアプリ (`officeHostApp`)。iTerm2 の hotkey window を
     ///   引っ込めると、その裏にいたこのアプリが自動で前へ戻ってくる。移ったのは人ではなく、
-    ///   端末が退いた結果でしかない
+    ///   端末が退いた結果でしかない。
+    ///   なお、このアプリは窓を出している間ずっと前にいるので、そこを押しても通知は飛ばない。
+    ///   前へ「出てくる」のは他所から戻ってきたときだけで、それがまさにこの場合になる
     ///
     /// この3つ以外が前に出たときだけが、人が本当に別の作業へ移った合図になる。
     /// iTerm2 の hotkey window は自分で引っ込むので、そのとき両方まとめて消える

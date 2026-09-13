@@ -74,6 +74,12 @@ public final class SidebarPanel: NSObject {
     /// 表示状態の変更通知コールバック（非表示時のバックグラウンド処理抑制用）
     public var onVisibilityChange: ((Bool) -> Void)?
 
+    /// オフィス窓が出ているかを答えるクロージャ。
+    ///
+    /// あちらはアプリを前面に出さずに重なるパネルなので、前面アプリを見ても出ていることが分からない。
+    /// 出ている間サイドバーを浮かせたままにすると、端末ではなくオフィス窓の上に貼り付く
+    public var officeIsShowing: (() -> Bool)?
+
     public init(appearance: Appearance, content: some View) {
         self.appearance = appearance
         super.init()
@@ -182,7 +188,25 @@ public final class SidebarPanel: NSObject {
     /// iTerm2 がアクティブな場合は端末の前面に表示するため .floating に設定し、
     /// 本アプリの別ウィンドウ（オフィス窓など）や他のアプリがアクティブな場合は
     /// 作業の妨げにならないよう .normal に下げて背面に潜らせる。
+    /// オフィス窓の出入りに合わせて高さを見直す。
+    ///
+    /// あちらはアプリを前面に出さないので、アクティブ化もキーウィンドウの移動も起きない。
+    /// 通知では気づけないので、窓を出し入れした側から声をかけてもらう
+    public func refreshLevel() {
+        updateLevel()
+    }
+
     private func updateLevel() {
+        // オフィス窓が出ている間は浮かせない。
+        //
+        // あちらは通常のレベルに、アプリを前面に出さないまま重なる。
+        // 前面アプリを見て決めていると、前面が iTerm2 のままなので下げる条件に当たらず、
+        // サイドバーだけがオフィス窓の上に取り残される
+        if officeIsShowing?() == true {
+            panel.level = .normal
+            return
+        }
+
         // 前面アプリの特定に失敗した場合はちらつき防止のためレベル変更を行わない
         guard let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         else { return }
