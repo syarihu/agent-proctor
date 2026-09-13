@@ -91,7 +91,7 @@ public final class SidebarPanel: NSObject {
             contentRect: NSRect(x: 0, y: 0, width: width, height: 600),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: false)
-        panel.level = .floating
+        panel.level = Self.alongsideTerminalLevel
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -184,9 +184,19 @@ public final class SidebarPanel: NSObject {
         updateLevel()
     }
 
+    /// 端末に寄り添っているときの高さ。iTerm2 の hotkey window より1段上。
+    ///
+    /// あちらを浮かせる設定 (Floating window) にすると `.floating` で並ぶので、
+    /// こちらも `.floating` のままだと、あとから出てきた端末の下に隠れてサイドバーが消える。
+    /// 浮かせる設定そのものは、オフィス窓 (通常より1段上) の下に端末が潜らないために要る。
+    /// 3段の取り合いにせず、サイドバーが一番上に立つことで3枚の順序が決まる:
+    /// サイドバー > iTerm2 の hotkey window > オフィス窓 > 普通のウィンドウ
+    private static let alongsideTerminalLevel =
+        NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
+
     /// 前面アプリケーションおよび前面ウィンドウに応じてパネルのウィンドウレベル（level）を更新する。
     ///
-    /// iTerm2 がアクティブな場合は端末の前面に表示するため .floating に設定し、
+    /// iTerm2 がアクティブな場合は端末の前面に表示するため `alongsideTerminalLevel` に設定し、
     /// 本アプリの別ウィンドウ（オフィス窓など）や他のアプリがアクティブな場合は
     /// 作業の妨げにならないよう .normal に下げて背面に潜らせる。
     /// オフィス窓の出入りに合わせて高さを見直す。
@@ -224,7 +234,7 @@ public final class SidebarPanel: NSObject {
         } else {
             alongsideTerminal = false
         }
-        panel.level = alongsideTerminal ? .floating : .normal
+        panel.level = alongsideTerminal ? Self.alongsideTerminalLevel : .normal
     }
 
     private func wakeUp() {
