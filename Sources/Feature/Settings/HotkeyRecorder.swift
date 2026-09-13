@@ -20,8 +20,10 @@ struct HotkeyRecorder: View {
     var body: some View {
         HStack(spacing: 6) {
             Button(action: toggleRecording) {
+                // 等幅にしない。⌘ や ⇧ は字送りが文字と同じ幅に詰められると潰れる。
+                // macOS 自身がメニューのキー表示に使っているのもシステムフォント
                 Text(caption)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: 13))
                     .frame(minWidth: 78)
             }
             .help(Localized.text("app.settings.hotkey.help"))

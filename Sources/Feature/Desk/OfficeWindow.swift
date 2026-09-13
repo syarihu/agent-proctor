@@ -48,6 +48,9 @@ public final class OfficeWindow {
         if window == nil { window = make() }
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        // 仕舞われている窓は前へ出すだけでは戻らない。
+        // ホットキーを押したのに Dock で跳ねるだけ、という見え方になる
+        if window?.isMiniaturized == true { window?.deminiaturize(nil) }
         window?.makeKeyAndOrderFront(nil)
         Self.setOpenState(true)
         onVisibilityChange?(true)
@@ -66,12 +69,13 @@ public final class OfficeWindow {
         onClose?()
     }
 
-    /// ホットキーの1押しぶん。
+    /// ホットキーの1押しぶん。出ていれば引っ込める、出ていなければ出す。
     ///
-    /// 出ていても後ろに回っているなら、引っ込めるのではなく前へ出す。
-    /// 端末の後ろに隠れた窓を呼ぶつもりで押したときに消えると、押し直すことになる
+    /// 前面にいるかどうかは見ない。この窓は iTerm2 が前に出ても退かずに下に残るので、
+    /// 「出ているが手前ではない」が普段の状態になる。そこで前面に出すほうを選ぶと、
+    /// 端末で手を動かしたあと片付けるのに2回押すことになる
     public func toggle() {
-        if isVisible && NSApp.isActive {
+        if isVisible {
             hide()
         } else {
             show()
