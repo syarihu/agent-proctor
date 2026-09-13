@@ -111,7 +111,7 @@ final class EntranceDoorNode: SKNode {
         exitSign.lineWidth = 0.6
         exitSign.zPosition = -9940
 
-        let exitLabel = SKLabelNode(fontNamed: "SFMono-Bold")
+        let exitLabel = SKLabelNode(fontNamed: "Menlo-Bold")
         exitLabel.fontSize = 5.2
         exitLabel.fontColor = .white
         exitLabel.text = "EXIT"

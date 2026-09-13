@@ -14,6 +14,10 @@ final class DeskFurnitureNode: SKNode {
     static let deskDepth: CGFloat = 24
     static let hubDeskWidth: CGFloat = 104
     static let maxSheetsPerSide = 6
+    /// 連続帳票用紙の幅
+    static let paperWidth: CGFloat = 226
+    /// 紙の左右の余白（14pt ずつ）を除いた、文字に使える幅
+    static let paperTextWidth: CGFloat = 226 - 28
     static let sheetWidth: CGFloat = 18
     static let sheetHeight: CGFloat = 5
 
@@ -262,7 +266,7 @@ final class DeskFurnitureNode: SKNode {
 
         if seat != nil {
             // 連続帳票用紙
-            let paperNode = Self.createPrintedPaperNode(width: 226, height: 60)
+            let paperNode = Self.createPrintedPaperNode(width: Self.paperWidth, height: 60)
             addChild(paperNode)
             self.paper = paperNode
 
@@ -350,7 +354,12 @@ final class DeskFurnitureNode: SKNode {
         for lineIndex in 0..<3 {
             let lineLabel = paper?.childNode(withName: "paperLine\(lineIndex)") as? SKLabelNode
             if lineIndex < termLines.count {
-                lineLabel?.text = termLines[lineIndex].text
+                // ログはファイルパスやコマンドがそのまま載るので、紙幅で切る。
+                // 文字数で切ると日本語のタスク名やパスが紙からはみ出す
+                if let lineLabel {
+                    LabelFitting.fit(lineLabel, text: termLines[lineIndex].text,
+                                     maxWidth: Self.paperTextWidth)
+                }
                 lineLabel?.fontColor = termLines[lineIndex].color
             } else {
                 lineLabel?.text = nil
@@ -647,7 +656,7 @@ final class DeskFurnitureNode: SKNode {
         // 印刷された作業ログ3行
         let textLeft = -hw + 14.0
         for lineIndex in 0..<3 {
-            let lineLabel = SKLabelNode(fontNamed: "SFMono-Bold")
+            let lineLabel = SKLabelNode(fontNamed: "Menlo-Bold")
             lineLabel.name = "paperLine\(lineIndex)"
             lineLabel.fontSize = 9.8
             lineLabel.horizontalAlignmentMode = .left
@@ -701,7 +710,7 @@ final class DeskFurnitureNode: SKNode {
         node.addChild(pinR)
 
         // モデル名ラベル
-        let label = SKLabelNode(fontNamed: "SFMono-Bold")
+        let label = SKLabelNode(fontNamed: "Menlo-Bold")
         label.name = "nameplateLabel"
         label.fontSize = 7.5
         label.fontColor = nameplateTextColor
@@ -728,13 +737,15 @@ final class DeskFurnitureNode: SKNode {
               let pinL = nameplate.childNode(withName: "nameplatePinL") as? SKShapeNode,
               let pinR = nameplate.childNode(withName: "nameplatePinR") as? SKShapeNode else { return }
 
-        let truncated = SpeechBubbleNode.truncateScreenText(text, limit: 26)
-        label.text = truncated
+        // プレートの最大幅に収まるまで文字を削る。
+        // 先に文字数で切っていたが、プレート幅は測った文字幅から決めるので、
+        // 収まらない文字数だとプレートだけが上限で止まって文字がはみ出す
+        let maxW: CGFloat = isHub ? (Self.hubDeskWidth - 12) : 136
+        LabelFitting.fit(label, text: text, maxWidth: maxW - 14)
         label.fontColor = Self.nameplateTextColor
 
         // 文字幅に応じてプレート幅を動的に設定（左右マージンと留め金具の余白を考慮）
         let measured = label.frame.width
-        let maxW: CGFloat = isHub ? (Self.hubDeskWidth - 12) : 136
         let plateW = min(maxW, max(46, measured + 14))
         let plateH: CGFloat = 11.5
 

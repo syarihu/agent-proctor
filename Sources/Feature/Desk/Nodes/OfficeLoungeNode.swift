@@ -217,15 +217,15 @@ final class OfficeLoungeNode: SKNode {
                 let heading = entry.name == entry.repo
                     ? entry.name
                     : "\(entry.name)  \(entry.repo)"
-                Self.fit(row.title, text: heading, maxWidth: detailMaxWidth)
+                LabelFitting.fit(row.title, text: heading, maxWidth: detailMaxWidth)
                 row.title.fontColor = Self.boardInkColor
 
-                let wrapped = Self.wrap(entry.request ?? "",
+                let wrapped = LabelFitting.wrap(entry.request ?? "",
                                         maxWidth: detailMaxWidth,
                                         lineCount: row.lines.count,
                                         probe: row.lines[0])
                 for (lineIndex, line) in row.lines.enumerated() {
-                    Self.fit(line,
+                    LabelFitting.fit(line,
                              text: lineIndex < wrapped.count ? wrapped[lineIndex] : "",
                              maxWidth: detailMaxWidth)
                     line.fontColor = tint.withAlphaComponent(0.85)
@@ -239,73 +239,6 @@ final class OfficeLoungeNode: SKNode {
                 for line in row.lines { line.text = "" }
             }
         }
-    }
-
-    /// ラベルに文字を入れ、幅に収まらなければ末尾を削って「…」を付ける。
-    ///
-    /// 文字数ではなく実寸で見るのは、日本語と英数字で1文字の幅が倍近く違うため。
-    /// 文字数で切ると、日本語ならはみ出し、英数字なら余白が余る
-    private static func fit(_ label: SKLabelNode, text: String, maxWidth: CGFloat) {
-        label.text = text
-        guard !text.isEmpty, maxWidth > 0, label.frame.width > maxWidth else { return }
-
-        var chars = Array(text)
-        while chars.count > 1 {
-            chars.removeLast()
-            label.text = String(chars) + "…"
-            if label.frame.width <= maxWidth { return }
-        }
-    }
-
-    /// 幅で折り返して複数行に分ける。
-    ///
-    /// `probe` は幅を測るためだけに使う。表示中のラベルを渡してよい
-    /// （このあと `fit` で本来の文字を入れ直すため）
-    private static func wrap(_ text: String, maxWidth: CGFloat,
-                             lineCount: Int, probe: SKLabelNode) -> [String] {
-        let flat = text.replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !flat.isEmpty, maxWidth > 0, lineCount > 0 else { return [] }
-
-        var lines: [String] = []
-        var rest = flat
-
-        for _ in 0..<lineCount {
-            guard !rest.isEmpty else { break }
-            probe.text = rest
-            if probe.frame.width <= maxWidth {
-                lines.append(rest)
-                rest = ""
-                break
-            }
-
-            // 収まる最長の前半を二分探索で探す
-            let chars = Array(rest)
-            var low = 1
-            var high = chars.count
-            var fitCount = 1
-            while low <= high {
-                let mid = (low + high) / 2
-                probe.text = String(chars[0..<mid])
-                if probe.frame.width <= maxWidth {
-                    fitCount = mid
-                    low = mid + 1
-                } else {
-                    high = mid - 1
-                }
-            }
-
-            // 単語の途中で切らないよう、近くの空白まで戻す
-            var splitAt = fitCount
-            if let space = chars[0..<fitCount].lastIndex(of: " "), space > fitCount / 2 {
-                splitAt = space
-            }
-
-            lines.append(String(chars[0..<splitAt]).trimmingCharacters(in: .whitespaces))
-            rest = String(chars[splitAt...]).trimmingCharacters(in: .whitespaces)
-        }
-
-        return lines
     }
 
     // MARK: - 部品

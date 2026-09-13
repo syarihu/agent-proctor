@@ -281,7 +281,7 @@ final class DeskCameraManager {
             badgeBg.lineWidth = 1.0
             badge.addChild(badgeBg)
 
-            let badgeLabel = SKLabelNode(fontNamed: "SFMono-Bold")
+            let badgeLabel = SKLabelNode(fontNamed: "Menlo-Bold")
             badgeLabel.name = "seat:\(seat.id)"
             badgeLabel.fontSize = 9.0
             badgeLabel.fontColor = callingBadgeTextColor
@@ -305,7 +305,7 @@ final class DeskCameraManager {
         node.addChild(hand)
         leftX += 22
 
-        let label = SKLabelNode(fontNamed: "SFMono-Bold")
+        let label = SKLabelNode(fontNamed: "Menlo-Bold")
         label.name = "seat:\(seat.id)"
         label.fontSize = 11.0
         label.fontColor = .labelColor
@@ -316,7 +316,7 @@ final class DeskCameraManager {
         label.text = SpeechBubbleNode.truncateScreenText(seat.name, limit: maxChars)
         node.addChild(label)
 
-        let arrow = SKLabelNode(fontNamed: "SFMono-Bold")
+        let arrow = SKLabelNode(fontNamed: "Menlo-Bold")
         arrow.name = "seat:\(seat.id)"
         arrow.fontSize = 10.0
         arrow.fontColor = callingBadgeStrokeColor

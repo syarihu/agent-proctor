@@ -22,6 +22,8 @@ final class DeskWhiteboardNode: SKNode {
 
     /// 右上に貼るブランチ名の付箋
     var branchLabel: SKLabelNode?
+    /// ブランチ名に使える幅。板面幅が席とハブで違うので生成時に決める
+    private let branchMaxWidth: CGFloat
 
     // タブ番号マグネットバッジ（⌘1など）
     var tabBadge: SKNode?
@@ -38,6 +40,9 @@ final class DeskWhiteboardNode: SKNode {
         let boardBottomY: CGFloat = 58
         let centerY: CGFloat = boardBottomY + height / 2
         self.boardWidth = isHub ? 158 : 174
+        // ブランチ名の右端はステータスマグネットの手前（bw/2 - 14）、
+        // 左端は左上のタブバッジの右端（-bw/2 + 29）
+        self.branchMaxWidth = (self.boardWidth / 2 - 14) - (-self.boardWidth / 2 + 29)
         self.boardHeight = height
         self.boardCenterY = centerY
 
@@ -70,14 +75,14 @@ final class DeskWhiteboardNode: SKNode {
         statusMagnet.zPosition = 6
 
         // 板書テキスト（1行目・2行目）
-        label1 = SKLabelNode(fontNamed: "SFMono-Bold")
+        label1 = SKLabelNode(fontNamed: "Menlo-Bold")
         label1.name = "whiteboardLabel1"
         label1.fontColor = Self.markerInkColor(isHub: isHub)
         label1.horizontalAlignmentMode = .left
         label1.verticalAlignmentMode = .center
         label1.zPosition = 6
 
-        label2 = SKLabelNode(fontNamed: "SFMono-Bold")
+        label2 = SKLabelNode(fontNamed: "Menlo-Bold")
         label2.name = "whiteboardLabel2"
         label2.fontColor = Self.markerInkColor(isHub: isHub)
         label2.horizontalAlignmentMode = .left
@@ -229,7 +234,7 @@ final class DeskWhiteboardNode: SKNode {
             badgeBg.lineWidth = colors.width
             badge.addChild(badgeBg)
 
-            let badgeLabel = SKLabelNode(fontNamed: "SFMono-Bold")
+            let badgeLabel = SKLabelNode(fontNamed: "Menlo-Bold")
             badgeLabel.name = "tabBadgeLabel"
             badgeLabel.fontSize = 8.5
             badgeLabel.fontColor = colors.text
@@ -253,23 +258,32 @@ final class DeskWhiteboardNode: SKNode {
 
     /// テキストを1行または2行に整形して配置する（ホワイトボードへの板書らしく左寄せで配置）
     private func applyText(_ text: String) {
-        let lines = Self.formatWhiteboardLines(text, limitPerLine: isHub ? 20 : 23)
         let textLeft = -boardWidth / 2 + 12
-        if lines.count == 1 {
-            label1.text = lines[0]
+        // 左右に同じだけ余白を取る。右端はブランチ名やマグネットには当たらない
+        // （あちらは本文より上の帯にいる）ので、板面の内寸いっぱいまで使える
+        let maxWidth = boardWidth - 24
+
+        let oneLineSize: CGFloat = isHub ? 12.5 : 11.2
+        let twoLineSize: CGFloat = isHub ? 11.0 : 10.2
+
+        // まず1行で収まるか試す。収まらなければ2行に折る
+        label1.fontSize = oneLineSize
+        label1.text = text
+        if label1.frame.width <= maxWidth {
             label1.position = CGPoint(x: textLeft, y: boardCenterY)
-            label1.fontSize = isHub ? 12.5 : 11.2
             label2.text = nil
             label2.isHidden = true
         } else {
-            label1.text = lines[0]
+            label1.fontSize = twoLineSize
+            label2.fontSize = twoLineSize
+            let lines = LabelFitting.wrap(text, maxWidth: maxWidth, lineCount: 2, probe: label1)
+            LabelFitting.fit(label1, text: lines.first ?? text, maxWidth: maxWidth)
             label1.position = CGPoint(x: textLeft, y: boardCenterY + 7.5)
-            label1.fontSize = isHub ? 11.0 : 10.2
-            label2.text = lines[1]
+            LabelFitting.fit(label2, text: lines.count > 1 ? lines[1] : "", maxWidth: maxWidth)
             label2.position = CGPoint(x: textLeft, y: boardCenterY - 7.5)
-            label2.fontSize = isHub ? 11.0 : 10.2
             label2.isHidden = false
         }
+
         label1.fontColor = Self.markerInkColor(isHub: isHub)
         label2.fontColor = Self.markerInkColor(isHub: isHub)
     }
@@ -277,7 +291,10 @@ final class DeskWhiteboardNode: SKNode {
     /// テキスト・枠線色・アクティブ状態・タブ番号を更新する
     func update(text: String, isCurrent: Bool, tabNumber: Int?, branch: String?, strokeColor: NSColor) {
         applyText(text)
-        branchLabel?.text = Self.formatBranchName(branch ?? "", limit: Self.branchLimit)
+        if let branchLabel {
+            LabelFitting.fitKeepingTail(branchLabel, text: branch ?? "",
+                                        maxWidth: branchMaxWidth)
+        }
 
         // ステータスカラー帯とマグネットの更新（タスク状態を視覚的に通知）
         if isHub {
@@ -364,76 +381,6 @@ final class DeskWhiteboardNode: SKNode {
                 width: 0.8
             )
         }
-    }
-
-    /// 1行に収まらない場合に自然な区切りで2行に分割する
-    static func formatWhiteboardLines(_ text: String, limitPerLine: Int = 23) -> [String] {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.count <= limitPerLine {
-            return [trimmed]
-        }
-
-        // 2行に分割する最適な分割点を探す
-        let targetSplit = min(limitPerLine, max(8, trimmed.count / 2 + 2))
-        let chars = Array(trimmed)
-
-        // 1. 空白文字での分割を優先探索
-        var bestIndex: Int?
-        var minDistance = Int.max
-        for i in 6...min(limitPerLine, chars.count - 4) {
-            if chars[i] == " " || chars[i] == "\t" {
-                let dist = abs(i - targetSplit)
-                if dist < minDistance {
-                    minDistance = dist
-                    bestIndex = i
-                }
-            }
-        }
-
-        // 2. 空白がなければ区切り記号（/、-、_、:、・、など）を探す
-        if bestIndex == nil {
-            let delimiters: Set<Character> = ["/", "-", "_", ":", "：", "・", "、", "。", " ", "　"]
-            for i in 6...min(limitPerLine, chars.count - 3) {
-                if delimiters.contains(chars[i]) {
-                    let dist = abs(i - targetSplit)
-                    if dist < minDistance {
-                        minDistance = dist
-                        // 区切り記号を行末に残すため i + 1 で分割
-                        bestIndex = i + 1
-                    }
-                }
-            }
-        }
-
-        // 3. 区切りがなければ limitPerLine または targetSplit で分割
-        let splitAt = bestIndex ?? min(limitPerLine, targetSplit)
-
-        let line1 = String(chars[0..<splitAt]).trimmingCharacters(in: .whitespaces)
-        var line2 = String(chars[splitAt..<chars.count]).trimmingCharacters(in: .whitespaces)
-
-        // 2行目が長すぎる場合は末尾を省略
-        if line2.count > limitPerLine {
-            line2 = String(line2.prefix(limitPerLine - 1)) + "…"
-        }
-
-        return [line1, line2]
-    }
-
-    /// 右上のブランチ名に使える文字数。
-    ///
-    /// 板面 174pt のうち、左上のタブバッジの右端（-58）から
-    /// ステータスマグネットの手前（73）までの 131pt が使える幅。
-    /// Menlo 7.5pt で実測すると 28文字 = 129pt、30文字 = 138pt なので 28 で止める
-    static let branchLimit = 28
-
-    /// ブランチ名を右上の幅に収める。
-    ///
-    /// 削るのは前。`feature/` `fix/` のような接頭辞は複数の机で共通しがちで、
-    /// そこを残しても机同士の区別が付かない
-    static func formatBranchName(_ branch: String, limit: Int) -> String {
-        let trimmed = branch.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard limit > 1, trimmed.count > limit else { return trimmed }
-        return "…" + String(trimmed.suffix(limit - 1))
     }
 
     /// 画面幅に収まるよう文字数を切り詰める（単一行切り詰め用互換関数）

@@ -138,10 +138,11 @@ final class WhiteboardNode: SKNode {
         let h = Self.boardHeight
 
         // 見出しタイトル（ツール表示名）
-        let titleLabel = SKLabelNode(fontNamed: "SFMono-Bold")
+        let titleLabel = SKLabelNode(fontNamed: "Menlo-Bold")
         titleLabel.fontSize = 8.2
         titleLabel.fontColor = markerColor(for: summary.agent)
-        titleLabel.text = formattedTitle()
+        // アカウント名付きの表示名は板幅を超えることがある
+        LabelFitting.fit(titleLabel, text: formattedTitle(), maxWidth: w - 16)
         titleLabel.horizontalAlignmentMode = .center
         titleLabel.verticalAlignmentMode = .center
         titleLabel.position = CGPoint(x: 0, y: h / 2 - 11)
@@ -168,7 +169,7 @@ final class WhiteboardNode: SKNode {
         let w = Self.boardWidth
 
         // 枠ラベル ("5h" / "7d")
-        let lbl = SKLabelNode(fontNamed: "SFMono-Bold")
+        let lbl = SKLabelNode(fontNamed: "Menlo-Bold")
         lbl.fontSize = 7.5
         lbl.fontColor = NSColor(white: 0.35, alpha: 0.95)
         lbl.text = label
@@ -178,7 +179,8 @@ final class WhiteboardNode: SKNode {
         node.addChild(lbl)
 
         let gaugeX = -w / 2 + 30
-        let gaugeWidth: CGFloat = 46
+        // 右端のリセット時刻に幅を回すため、ゲージは板幅の 3 割弱に留める
+        let gaugeWidth: CGFloat = 40
         let gaugeHeight: CGFloat = 6
 
         // ゲージ背景
@@ -200,7 +202,7 @@ final class WhiteboardNode: SKNode {
             }
 
             // パーセント数値
-            let pctLabel = SKLabelNode(fontNamed: "SFMono-Bold")
+            let pctLabel = SKLabelNode(fontNamed: "Menlo-Bold")
             pctLabel.fontSize = 7.2
             pctLabel.fontColor = gaugeColor(percent: clamped)
             pctLabel.text = "\(clamped)%"
@@ -209,20 +211,22 @@ final class WhiteboardNode: SKNode {
             pctLabel.position = CGPoint(x: gaugeX + gaugeWidth + 5, y: 0)
             node.addChild(pctLabel)
 
-            // リセット時刻（板書上で確認できるよう配置）
+            // リセット時刻（板書上で確認できるよう配置）。
+            // 右揃えなので、左隣の使用率の右端までが使える幅
             if let r = formatResetTime(window.resetsAt) {
-                let resetLabel = SKLabelNode(fontNamed: "SFMono-Regular")
+                let resetLabel = SKLabelNode(fontNamed: "Menlo")
                 resetLabel.fontSize = 6.0
                 resetLabel.fontColor = NSColor(white: 0.42, alpha: 0.95)
-                resetLabel.text = r
                 resetLabel.horizontalAlignmentMode = .right
                 resetLabel.verticalAlignmentMode = .center
-                resetLabel.position = CGPoint(x: w / 2 - 10, y: 0)
+                resetLabel.position = CGPoint(x: w / 2 - 8, y: 0)
+                let free = (w / 2 - 8) - (pctLabel.position.x + pctLabel.frame.width + 4)
+                LabelFitting.fit(resetLabel, text: r, maxWidth: free)
                 node.addChild(resetLabel)
             }
         } else {
             // 未計測またはリミットなし
-            let pctLabel = SKLabelNode(fontNamed: "SFMono-Regular")
+            let pctLabel = SKLabelNode(fontNamed: "Menlo")
             pctLabel.fontSize = 6.8
             pctLabel.fontColor = NSColor(white: 0.55, alpha: 0.9)
             pctLabel.text = "--%"
@@ -231,7 +235,7 @@ final class WhiteboardNode: SKNode {
             pctLabel.position = CGPoint(x: gaugeX + gaugeWidth + 5, y: 0)
             node.addChild(pctLabel)
 
-            let noLimitLabel = SKLabelNode(fontNamed: "SFMono-Regular")
+            let noLimitLabel = SKLabelNode(fontNamed: "Menlo")
             noLimitLabel.fontSize = 6.0
             noLimitLabel.fontColor = NSColor(white: 0.60, alpha: 0.9)
             noLimitLabel.text = "--"
@@ -401,7 +405,7 @@ final class WhiteboardNode: SKNode {
         bubble.addChild(divider)
 
         for (i, lineText) in lines.enumerated() {
-            let lbl = SKLabelNode(fontNamed: i == 0 ? "SFMono-Bold" : "SFMono-Regular")
+            let lbl = SKLabelNode(fontNamed: i == 0 ? "Menlo-Bold" : "Menlo")
             lbl.fontSize = i == 0 ? 8.5 : 7.6
             lbl.fontColor = i == 0 ? markerColor(for: summary.agent) : .labelColor
             lbl.text = lineText
