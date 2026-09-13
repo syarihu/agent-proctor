@@ -122,6 +122,8 @@ agent-proctor runs quietly in your macOS menu bar. The menu bar icon displays a 
 
 The office window answers to a hotkey of its own (⌥⌘O by default, changeable in Settings), the way an iTerm2 hotkey window does: press it to look over the floor, and it steps aside when you switch to another app. It stays put while iTerm2 is in front, so reading the floor and then working in the terminal does not mean summoning it again.
 
+The three windows stack in a fixed order — sidebar over terminal over office floor — and that order comes from window levels rather than from whichever was clicked last. It needs iTerm2's hotkey window to be a floating one: a terminal on the ordinary level comes up *underneath* the office window, since the office window sits a step above ordinary so the app it was opened over cannot bury it. `scripts/setup-iterm-hotkey.py` turns that on, or check "Floating window" under Settings → Profiles → Keys → Configure Hotkey Window.
+
 ## Architecture & Design
 
 agent-proctor is designed as a modular, multi-target Swift Package Manager application adhering to strict layer separation:
@@ -129,7 +131,7 @@ agent-proctor is designed as a modular, multi-target Swift Package Manager appli
 - **Core (`Model`, `Utility`, `Resources`)**: Basic data models, process execution, and localization tables. Free of business logic.
 - **Repository (`RepositoryLedger`, `RepositoryGit`, `RepositoryGitHub`, `RepositoryAdjutant`)**: External I/O gateways managing disk state synchronization, git processes, GitHub CLI interactions, and the hub records left behind by [agent-adjutant](https://github.com/syarihu/agent-adjutant).
 - **UseCase (`UseCaseTask`, `UseCaseSession`, `UseCaseWorktree`, `UseCaseNotice`)**: Encapsulates single-responsibility domain workflows and decisions.
-- **Design & Bridges (`DesignSystem`, `ItermBridge`)**: Shared UI tokens, status glyphs, and AppleScript terminal automation.
+- **Design & Bridges (`DesignSystem`, `ItermBridge`, `HotkeyBridge`)**: Shared UI tokens, status glyphs, AppleScript terminal automation, and the app-wide hotkey.
 - **Application State (`AppState`)**: Thread-safe observable stores (`TaskStore`) bridging background polling with SwiftUI views.
 - **Features (`FeatureSidebar`, `FeatureMenuBar`, `FeatureSettings`)**: Modular UI views and controllers.
 - **Entry Points (`proctor`, `ProctorApp`)**: CLI executable and macOS menu bar application.

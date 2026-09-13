@@ -124,6 +124,8 @@ agent-proctor は macOS のメニューバーに常駐します。アイコン�
 
 オフィス窓は iTerm2 の hotkey window と同じように、専用のホットキー（既定は ⌥⌘O、設定で変更できます）で呼び出せます。押して作業場を見渡し、別のアプリに移ると引っ込みます。iTerm2 が前に出ている間は残るので、見取り図を見てから端末で手を動かすまで出し直さずに済みます。
 
+3枚の窓は「サイドバー > 端末 > オフィス窓」の順に重なります。この順序は最後に押した窓ではなくウィンドウの層で決まるため、**iTerm2 の hotkey window を浮かせる設定が必要です**。オフィス窓は「開いた相手のウィンドウに埋められない」よう通常より1段上にいるので、浮いていない端末はその**下**に出てしまいます。`scripts/setup-iterm-hotkey.py` がこの設定を入れます。手で入れる場合は Settings → Profiles → Keys → Configure Hotkey Window の「Floating window」です。
+
 ## アーキテクチャと設計
 
 agent-proctor は、明確な層分離原則に基づき、Swift Package Manager のマルチターゲット構成で設計されています：
@@ -131,7 +133,7 @@ agent-proctor は、明確な層分離原則に基づき、Swift Package Manager
 - **基盤層 (Core: `Model`, `Utility`, `Resources`)**: 基本データ構造、低レイヤのプロセス実行、多言語リソース。業務判断は含まない。
 - **リポジトリ層 (Repository: `RepositoryLedger`, `RepositoryGit`, `RepositoryGitHub`, `RepositoryAdjutant`)**: ディスク台帳の同期、git コマンド、GitHub CLI、[agent-adjutant](https://github.com/syarihu/agent-adjutant) が残すハブの記録との出入り口。
 - **ユースケース層 (UseCase: `UseCaseTask`, `UseCaseSession`, `UseCaseWorktree`, `UseCaseNotice`)**: 1 UseCase 1 責務に特化した業務判断とドメイン処理。
-- **デザイン & ブリッジ層 (Design & Bridges: `DesignSystem`, `ItermBridge`)**: UI デザイントークン、状態グリフ、AppleScript による iTerm2 操作ブリッジ。
+- **デザイン & ブリッジ層 (Design & Bridges: `DesignSystem`, `ItermBridge`, `HotkeyBridge`)**: UI デザイントークン、状態グリフ、AppleScript による iTerm2 操作ブリッジ、全体ホットキーの登録。
 - **状態管理層 (Application State: `AppState`)**: バックグラウンドのポーリング結果を SwiftUI に橋渡しする `@MainActor` 状態ストア (`TaskStore`)。
 - **UI / 機能層 (Features: `FeatureSidebar`, `FeatureMenuBar`, `FeatureSettings`)**: 画面コンポーネントおよびビューコントローラ。
 - **エントリポイント (Entry Points: `proctor`, `ProctorApp`)**: CLI 実行ファイルおよび macOS メニューバーアプリ。
