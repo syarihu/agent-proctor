@@ -177,17 +177,20 @@ final class SidebarRoom {
                       width: screen.frame.width, height: screen.frame.height)
     }
 
-    /// 追いかける iTerm2 ウィンドウの層。通常のウィンドウ (0) と、浮かせたもの (3)。
-    ///
-    /// hotkey window は「Floating window」を入れると浮いた層へ移る。0 だけを見ていると、
-    /// その設定の人では端末が見つからず、サイドバーは相手を見失った扱いで引っ込む
-    /// (覆われるのではなく、出てこない)。
-    /// 浮かせる設定はオフィス窓の下に端末が潜らないために要るので、こちらが両方を拾う。
-    /// 補完候補のような小さいパネルも同じ層に来るが、あとの大きさの条件で落ちる
-    private static let windowLayers = 0...NSWindow.Level.floating.rawValue
-
     /// CGWindowList から最前面の iTerm2 ウィンドウ矩形を取得する
-    static func currentItermBounds() -> CGRect? {
+    static func currentItermBounds() -> CGRect? { currentItermWindow()?.bounds }
+
+    /// 最前面の iTerm2 ウィンドウの矩形と、それが載っている層。
+    ///
+    /// 層まで返すのは、サイドバーがその1つ上に立つため。
+    /// hotkey window の高さは iTerm2 が決めるもので、こちらから決め打ちできない
+    /// (「Floating window」を入れた実機では 22 だった)。読んでから並ぶ。
+    ///
+    /// 層で絞り込まないのも同じ理由。通常のウィンドウ (0) だけを見ていた頃は、
+    /// 浮かせた hotkey window が条件から外れて「端末が消えた」扱いになり、
+    /// サイドバーが覆われるのではなく出てこなくなっていた。
+    /// 補完候補のような小さいパネルは、あとの大きさの条件で落ちる
+    static func currentItermWindow() -> (bounds: CGRect, layer: Int)? {
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID)
                 as? [[String: Any]] else { return nil }
@@ -195,14 +198,14 @@ final class SidebarRoom {
         for window in list {
             let owner = window[kCGWindowOwnerName as String] as? String ?? ""
             let layer = window[kCGWindowLayer as String] as? Int ?? -1
-            guard owner == "iTerm2", windowLayers.contains(layer),
+            guard owner == "iTerm2", layer >= 0,
                   let box = window[kCGWindowBounds as String] as? [String: CGFloat]
             else { continue }
             let width = box["Width"] ?? 0
             let height = box["Height"] ?? 0
             if width >= 400 && height >= 300 {
-                return CGRect(x: box["X"] ?? 0, y: box["Y"] ?? 0,
-                              width: width, height: height)
+                return (CGRect(x: box["X"] ?? 0, y: box["Y"] ?? 0,
+                               width: width, height: height), layer)
             }
         }
         return nil

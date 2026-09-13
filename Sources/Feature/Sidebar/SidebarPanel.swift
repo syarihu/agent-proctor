@@ -91,7 +91,7 @@ public final class SidebarPanel: NSObject {
             contentRect: NSRect(x: 0, y: 0, width: width, height: 600),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: false)
-        panel.level = Self.alongsideTerminalLevel
+        panel.level = .floating
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -184,15 +184,23 @@ public final class SidebarPanel: NSObject {
         updateLevel()
     }
 
-    /// 端末に寄り添っているときの高さ。iTerm2 の hotkey window より1段上。
+    /// 最後に見つけた iTerm2 ウィンドウの層。サイドバーはこの1つ上に立つ
+    private var itermLayer = NSWindow.Level.floating.rawValue
+
+    /// 端末に寄り添っているときの高さ。相手の1つ上。
     ///
-    /// あちらを浮かせる設定 (Floating window) にすると `.floating` で並ぶので、
-    /// こちらも `.floating` のままだと、あとから出てきた端末の下に隠れてサイドバーが消える。
-    /// 浮かせる設定そのものは、オフィス窓 (通常より1段上) の下に端末が潜らないために要る。
-    /// 3段の取り合いにせず、サイドバーが一番上に立つことで3枚の順序が決まる:
+    /// 決め打ちにしないのは、hotkey window の高さを決めるのが iTerm2 だから。
+    /// 「Floating window」を入れた実機では 22 で、`.floating` (3) のつもりでいると
+    /// あっさり下に回られる。見つけた層を読んで、そこへ1段足す。
+    ///
+    /// 下限を `.floating` にしてあるのは、端末が通常の層 (0) にいるときに
+    /// サイドバーまで低いところへ降りてしまわないため。
+    ///
+    /// この段の取り合いで、4枚の順序が決まる:
     /// サイドバー > iTerm2 の hotkey window > オフィス窓 > 普通のウィンドウ
-    private static let alongsideTerminalLevel =
-        NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
+    private var alongsideTerminalLevel: NSWindow.Level {
+        NSWindow.Level(rawValue: max(itermLayer + 1, NSWindow.Level.floating.rawValue))
+    }
 
     /// 前面アプリケーションおよび前面ウィンドウに応じてパネルのウィンドウレベル（level）を更新する。
     ///
@@ -234,7 +242,7 @@ public final class SidebarPanel: NSObject {
         } else {
             alongsideTerminal = false
         }
-        panel.level = alongsideTerminal ? Self.alongsideTerminalLevel : .normal
+        panel.level = alongsideTerminal ? alongsideTerminalLevel : .normal
     }
 
     private func wakeUp() {
@@ -255,8 +263,6 @@ public final class SidebarPanel: NSObject {
     }
 
     /// iTerm2 のウィンドウ矩形取得（SidebarRoom と共通のロジックを使用）
-    private func itermBounds() -> CGRect? { SidebarRoom.currentItermBounds() }
-
     /// iTerm2 の幅・位置調整を保留すべき状態かどうかを判定する。
     /// 幅変更操作中やマウスボタン押下中など、ユーザー操作中のウィンドウ移動競合を防ぐ。
     private var handsOff: Bool {
@@ -271,7 +277,15 @@ public final class SidebarPanel: NSObject {
             return
         }
 
-        guard let bounds = itermBounds() else {
+        // 一覧を歩くのは1回だけ。ここは動いている間 60fps で回る
+        let iterm = SidebarRoom.currentItermWindow()
+        // 端末が層を変えたら (浮く設定の入り切り、全画面への出入り) 付いていく
+        if let iterm, iterm.layer != itermLayer {
+            itermLayer = iterm.layer
+            updateLevel()
+        }
+
+        guard let bounds = iterm?.bounds else {
             if isShowing {
                 panel.orderOut(nil)
                 isShowing = false
