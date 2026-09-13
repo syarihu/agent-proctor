@@ -26,6 +26,8 @@ public struct DeskSeat: Equatable {
     /// 人を待っている内容 (`CollectedTask.currentRequest`)、または終わったときの締め
     /// (`currentSummary`)。ラウンジの確認待ちディスプレイに出す
     public let request: String?
+    /// 作業しているブランチ。机のホワイトボードの右上に出す
+    public let branch: String?
     /// 現在 iTerm2 で人間が見ているタブかどうか
     public let isCurrent: Bool
     /// 対応するタブ番号（⌘1 など）
@@ -38,7 +40,8 @@ public struct DeskSeat: Equatable {
     public init(id: String, name: String, status: String, needsPerson: Bool,
                 contextPercent: Int?, subagents: Int, helpers: [DeskHelper],
                 activity: String?, isCurrent: Bool, tabNumber: Int?,
-                model: String? = nil, agent: String? = nil, request: String? = nil) {
+                model: String? = nil, agent: String? = nil, request: String? = nil,
+                branch: String? = nil) {
         self.id = id
         self.name = name
         self.status = status
@@ -48,6 +51,7 @@ public struct DeskSeat: Equatable {
         self.helpers = helpers
         self.activity = activity
         self.request = request
+        self.branch = branch
         self.isCurrent = isCurrent
         self.tabNumber = tabNumber
         self.model = model

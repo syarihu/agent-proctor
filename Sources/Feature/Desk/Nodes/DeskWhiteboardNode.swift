@@ -20,6 +20,9 @@ final class DeskWhiteboardNode: SKNode {
     let statusBar: SKShapeNode
     let statusMagnet: SKShapeNode
 
+    /// 右上に貼るブランチ名の付箋
+    var branchLabel: SKLabelNode?
+
     // タブ番号マグネットバッジ（⌘1など）
     var tabBadge: SKNode?
     var tabBadgeBg: SKShapeNode?
@@ -193,6 +196,22 @@ final class DeskWhiteboardNode: SKNode {
         addChild(label2)
         applyText(initialText)
 
+        // MARK: 5. 右上のブランチ名
+        // 板書の本文（左寄せ・上下中央）とタブバッジ（左上）を避けて右上に置く。
+        // 右端はステータスマグネット（bw/2 - 8）の左に収める
+        if !isHub {
+            let branch = SKLabelNode(fontNamed: "Menlo")
+            branch.name = "branchLabel"
+            branch.fontSize = 7.5
+            branch.fontColor = Self.branchInkColor
+            branch.horizontalAlignmentMode = .right
+            branch.verticalAlignmentMode = .center
+            branch.position = CGPoint(x: bw / 2 - 14, y: centerY + bh / 2 - 9)
+            branch.zPosition = 6
+            addChild(branch)
+            self.branchLabel = branch
+        }
+
         // MARK: 5. マグネット式タブ番号バッジ（⌘1など）
         if !isHub {
             let badge = SKNode()
@@ -256,8 +275,9 @@ final class DeskWhiteboardNode: SKNode {
     }
 
     /// テキスト・枠線色・アクティブ状態・タブ番号を更新する
-    func update(text: String, isCurrent: Bool, tabNumber: Int?, strokeColor: NSColor) {
+    func update(text: String, isCurrent: Bool, tabNumber: Int?, branch: String?, strokeColor: NSColor) {
         applyText(text)
+        branchLabel?.text = Self.formatBranchName(branch ?? "", limit: Self.branchLimit)
 
         // ステータスカラー帯とマグネットの更新（タスク状態を視覚的に通知）
         if isHub {
@@ -294,6 +314,13 @@ final class DeskWhiteboardNode: SKNode {
     }
 
     // MARK: - カラー定数
+
+    /// ブランチ名のインク。本文より一段落として、板書の脇書きに見せる
+    static let branchInkColor = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(red: 0.36, green: 0.42, blue: 0.52, alpha: 0.95)
+            : NSColor(red: 0.42, green: 0.48, blue: 0.58, alpha: 0.95)
+    }
 
     static let metalFrameColor = NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -390,6 +417,23 @@ final class DeskWhiteboardNode: SKNode {
         }
 
         return [line1, line2]
+    }
+
+    /// 右上のブランチ名に使える文字数。
+    ///
+    /// 板面 174pt のうち、左上のタブバッジの右端（-58）から
+    /// ステータスマグネットの手前（73）までの 131pt が使える幅。
+    /// Menlo 7.5pt で実測すると 28文字 = 129pt、30文字 = 138pt なので 28 で止める
+    static let branchLimit = 28
+
+    /// ブランチ名を右上の幅に収める。
+    ///
+    /// 削るのは前。`feature/` `fix/` のような接頭辞は複数の机で共通しがちで、
+    /// そこを残しても机同士の区別が付かない
+    static func formatBranchName(_ branch: String, limit: Int) -> String {
+        let trimmed = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard limit > 1, trimmed.count > limit else { return trimmed }
+        return "…" + String(trimmed.suffix(limit - 1))
     }
 
     /// 画面幅に収まるよう文字数を切り詰める（単一行切り詰め用互換関数）

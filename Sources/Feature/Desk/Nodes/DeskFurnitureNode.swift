@@ -288,7 +288,7 @@ final class DeskFurnitureNode: SKNode {
         let move = DeskGesture.from(activity: seat.activity)
         let crew = seat.helpers.map { "\($0.id):\($0.activity ?? "-")" }.joined(separator: ",")
         let signature = """
-            \(seat.status)/\(seat.needsPerson)/\(seat.subagents)/\(move)/\(crew)/\(isAway)/\(seat.activity ?? "-")/\(seat.isCurrent)/\(seat.tabNumber ?? -1)/\(seat.model ?? "-")/\(seat.agent ?? "-")
+            \(seat.status)/\(seat.needsPerson)/\(seat.subagents)/\(move)/\(crew)/\(isAway)/\(seat.activity ?? "-")/\(seat.isCurrent)/\(seat.tabNumber ?? -1)/\(seat.model ?? "-")/\(seat.agent ?? "-")/\(seat.branch ?? "-")
             """
         if userData == nil { userData = NSMutableDictionary() }
         let unchanged = userData?["dressed"] as? String == signature
@@ -389,7 +389,8 @@ final class DeskFurnitureNode: SKNode {
             strokeColor = .secondaryLabelColor.withAlphaComponent(0.35)
         }
 
-        whiteboard.update(text: seat.name, isCurrent: seat.isCurrent, tabNumber: seat.tabNumber, strokeColor: strokeColor)
+        whiteboard.update(text: seat.name, isCurrent: seat.isCurrent, tabNumber: seat.tabNumber,
+                          branch: seat.branch, strokeColor: strokeColor)
         alpha = seat.status == TaskStatus.missing ? 0.45 : 1
     }
 
