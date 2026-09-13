@@ -177,6 +177,15 @@ final class SidebarRoom {
                       width: screen.frame.width, height: screen.frame.height)
     }
 
+    /// 追いかける iTerm2 ウィンドウの層。通常のウィンドウ (0) と、浮かせたもの (3)。
+    ///
+    /// hotkey window は「Floating window」を入れると浮いた層へ移る。0 だけを見ていると、
+    /// その設定の人では端末が見つからず、サイドバーは相手を見失った扱いで引っ込む
+    /// (覆われるのではなく、出てこない)。
+    /// 浮かせる設定はオフィス窓の下に端末が潜らないために要るので、こちらが両方を拾う。
+    /// 補完候補のような小さいパネルも同じ層に来るが、あとの大きさの条件で落ちる
+    private static let windowLayers = 0...NSWindow.Level.floating.rawValue
+
     /// CGWindowList から最前面の iTerm2 ウィンドウ矩形を取得する
     static func currentItermBounds() -> CGRect? {
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
@@ -186,7 +195,7 @@ final class SidebarRoom {
         for window in list {
             let owner = window[kCGWindowOwnerName as String] as? String ?? ""
             let layer = window[kCGWindowLayer as String] as? Int ?? -1
-            guard owner == "iTerm2", layer == 0,
+            guard owner == "iTerm2", windowLayers.contains(layer),
                   let box = window[kCGWindowBounds as String] as? [String: CGFloat]
             else { continue }
             let width = box["Width"] ?? 0
