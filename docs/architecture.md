@@ -40,6 +40,7 @@ graph TD
         RepositoryLedger["RepositoryLedger"]
         RepositoryGit["RepositoryGit"]
         RepositoryGitHub["RepositoryGitHub"]
+        RepositoryAdjutant["RepositoryAdjutant"]
     end
 
     subgraph Core["Core Layer (Foundation)"]
@@ -88,6 +89,7 @@ graph TD
     UseCaseTask --> RepositoryLedger
     UseCaseTask --> RepositoryGit
     UseCaseTask --> RepositoryGitHub
+    UseCaseTask --> RepositoryAdjutant
 
     UseCaseSession --> RepositoryLedger
     UseCaseSession --> RepositoryGit
@@ -109,7 +111,8 @@ graph TD
 | **Repository** | `RepositoryLedger` | Gateway to the on-disk JSON state ledger (`~/.local/state/proctor/state.json`) with file-lock synchronization. |
 | | `RepositoryGit` | Gateway to local git process execution (worktree listing, status checks, diff counts). |
 | | `RepositoryGitHub` | Gateway to `gh` CLI (credential checks, PR lookups, avatar URLs) and `curl` (avatar image downloads). |
-| **UseCase** | `UseCaseTask` | Task collection and diff change counting (`CollectTasks`, `CountChanges`, `CollectRecentRepos`, `ResolveRepoOrigin`, `ResolvePullRequest`, `ForgetTask`, `CheckOrganizationAvailability`, `FetchOrganizationAvatar`). |
+| | `RepositoryAdjutant` | Reader for the hub records [agent-adjutant](https://github.com/syarihu/agent-adjutant) writes under its state directory. Read-only; absent when adjutant is not installed. |
+| **UseCase** | `UseCaseTask` | Task collection and diff change counting (`CollectTasks`, `CountChanges`, `CollectRecentRepos`, `ResolveRepoOrigin`, `ResolvePullRequest`, `ForgetTask`, `CheckOrganizationAvailability`, `FetchOrganizationAvatar`, `ResolveHubSessions`). |
 | | `UseCaseSession` | Session state transitions, hooks, approvals, and reaping (`RecordHookEvent`, `RecordPendingApproval`, `RecordSessionStats`, `MarkSessionSeen`, `NameSession`, `ClearAttention`, `ReapClosedSessions`). |
 | | `UseCaseWorktree` | Git worktree gathering, idle time measurement, and removable checks (`CollectWorktrees`). |
 | | `UseCaseNotice` | User notification resolution and recency pacing (`CollectNotices`, `PaceRecounts`). |

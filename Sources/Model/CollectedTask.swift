@@ -75,6 +75,11 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
     /// 最後に状態が動いてからの時間。実行中のまま長いと、
     /// 考え込んでいるのか止まっているのかの手がかりになる
     public var idleSeconds: Int
+    /// このリポジトリの常駐ハブとして動いているセッションか。
+    ///
+    /// adjutant (`adj hub`) が残す記録と突き合わせて決まる。
+    /// 見取り図ではリポジトリの見出し机に座り、普通の席からは外れる
+    public var isHub: Bool
 
     /// 一覧に出す見出し。
     ///
@@ -159,7 +164,8 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
 
     public init(record: TaskRecord, repoName: String, origin: RepoOrigin?,
                 exists: Bool, status: String,
-                diff: DiffCounts, ageSeconds: Int, idleSeconds: Int, now: Int) {
+                diff: DiffCounts, ageSeconds: Int, idleSeconds: Int, now: Int,
+                isHub: Bool = false) {
         id = record.id
         repo = record.repo
         branch = record.branch
@@ -196,5 +202,6 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         self.diff = diff
         self.ageSeconds = ageSeconds
         self.idleSeconds = idleSeconds
+        self.isHub = isHub
     }
 }

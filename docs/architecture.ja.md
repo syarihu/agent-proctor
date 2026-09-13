@@ -42,6 +42,7 @@ graph TD
         RepositoryLedger["RepositoryLedger"]
         RepositoryGit["RepositoryGit"]
         RepositoryGitHub["RepositoryGitHub"]
+        RepositoryAdjutant["RepositoryAdjutant"]
     end
 
     subgraph Core["基盤層 (Core)"]
@@ -90,6 +91,7 @@ graph TD
     UseCaseTask --> RepositoryLedger
     UseCaseTask --> RepositoryGit
     UseCaseTask --> RepositoryGitHub
+    UseCaseTask --> RepositoryAdjutant
 
     UseCaseSession --> RepositoryLedger
     UseCaseSession --> RepositoryGit
@@ -111,7 +113,8 @@ graph TD
 | **リポジトリ (Repository)** | `RepositoryLedger` | ローカルディスク上の JSON 状態台帳 (`~/.local/state/proctor/state.json`) の読み書き口。ファイルロック同期を管理。 |
 | | `RepositoryGit` | ローカルの git コマンド実行との出入り口 (worktree 一覧取得、状態確認、差分集計)。 |
 | | `RepositoryGitHub` | `gh` CLI (資格情報確認・PR取得・アバターURL取得) および `curl` (アバター画像ダウンロード) との出入り口。 |
-| **ユースケース (UseCase)** | `UseCaseTask` | タスクの集計と変更カウント (`CollectTasks`, `CountChanges`, `CollectRecentRepos`, `ResolveRepoOrigin`, `ResolvePullRequest`, `ForgetTask`, `CheckOrganizationAvailability`, `FetchOrganizationAvatar`)。 |
+| | `RepositoryAdjutant` | [agent-adjutant](https://github.com/syarihu/agent-adjutant) が状態ディレクトリに残すハブの記録を読むだけの窓口。adjutant を入れていなければ置き場ごと無く、常に空を返す。 |
+| **ユースケース (UseCase)** | `UseCaseTask` | タスクの集計と変更カウント (`CollectTasks`, `CountChanges`, `CollectRecentRepos`, `ResolveRepoOrigin`, `ResolvePullRequest`, `ForgetTask`, `CheckOrganizationAvailability`, `FetchOrganizationAvatar`, `ResolveHubSessions`)。 |
 | | `UseCaseSession` | セッション状態遷移、フック受信、承認記録、セッション刈り込み (`RecordHookEvent`, `RecordPendingApproval`, `RecordSessionStats`, `MarkSessionSeen`, `NameSession`, `ClearAttention`, `ReapClosedSessions`)。 |
 | | `UseCaseWorktree` | git worktree の収集、アイドル時間計測、削除可能判定 (`CollectWorktrees`)。 |
 | | `UseCaseNotice` | ユーザー通知イベントの解決と通知ペース制御 (`CollectNotices`, `PaceRecounts`)。 |

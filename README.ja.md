@@ -127,7 +127,7 @@ agent-proctor は macOS のメニューバーに常駐します。アイコン�
 agent-proctor は、明確な層分離原則に基づき、Swift Package Manager のマルチターゲット構成で設計されています：
 
 - **基盤層 (Core: `Model`, `Utility`, `Resources`)**: 基本データ構造、低レイヤのプロセス実行、多言語リソース。業務判断は含まない。
-- **リポジトリ層 (Repository: `RepositoryLedger`, `RepositoryGit`, `RepositoryGitHub`)**: ディスク台帳の同期、git コマンド、GitHub CLI との出入り口。
+- **リポジトリ層 (Repository: `RepositoryLedger`, `RepositoryGit`, `RepositoryGitHub`, `RepositoryAdjutant`)**: ディスク台帳の同期、git コマンド、GitHub CLI、[agent-adjutant](https://github.com/syarihu/agent-adjutant) が残すハブの記録との出入り口。
 - **ユースケース層 (UseCase: `UseCaseTask`, `UseCaseSession`, `UseCaseWorktree`, `UseCaseNotice`)**: 1 UseCase 1 責務に特化した業務判断とドメイン処理。
 - **デザイン & ブリッジ層 (Design & Bridges: `DesignSystem`, `ItermBridge`)**: UI デザイントークン、状態グリフ、AppleScript による iTerm2 操作ブリッジ。
 - **状態管理層 (Application State: `AppState`)**: バックグラウンドのポーリング結果を SwiftUI に橋渡しする `@MainActor` 状態ストア (`TaskStore`)。

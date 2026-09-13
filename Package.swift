@@ -45,6 +45,10 @@ let package = Package(
             dependencies: ["Model", "Utility"],
             path: "Sources/Repository/GitHub",
             swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(
+            name: "RepositoryAdjutant",
+            path: "Sources/Repository/Adjutant",
+            swiftSettings: [.swiftLanguageMode(.v5)]),
 
         // -------------------------------------------------------------
         // ユースケース層 (ドメイン・機能ごとに小分け)
@@ -53,7 +57,7 @@ let package = Package(
             name: "UseCaseTask",
             dependencies: [
                 "Model", "Utility", "Resources",
-                "RepositoryLedger", "RepositoryGit", "RepositoryGitHub"
+                "RepositoryLedger", "RepositoryGit", "RepositoryGitHub", "RepositoryAdjutant"
             ],
             path: "Sources/UseCase/Task",
             swiftSettings: [.swiftLanguageMode(.v5)]),

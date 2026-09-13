@@ -125,7 +125,7 @@ agent-proctor runs quietly in your macOS menu bar. The menu bar icon displays a 
 agent-proctor is designed as a modular, multi-target Swift Package Manager application adhering to strict layer separation:
 
 - **Core (`Model`, `Utility`, `Resources`)**: Basic data models, process execution, and localization tables. Free of business logic.
-- **Repository (`RepositoryLedger`, `RepositoryGit`, `RepositoryGitHub`)**: External I/O gateways managing disk state synchronization, git processes, and GitHub CLI interactions.
+- **Repository (`RepositoryLedger`, `RepositoryGit`, `RepositoryGitHub`, `RepositoryAdjutant`)**: External I/O gateways managing disk state synchronization, git processes, GitHub CLI interactions, and the hub records left behind by [agent-adjutant](https://github.com/syarihu/agent-adjutant).
 - **UseCase (`UseCaseTask`, `UseCaseSession`, `UseCaseWorktree`, `UseCaseNotice`)**: Encapsulates single-responsibility domain workflows and decisions.
 - **Design & Bridges (`DesignSystem`, `ItermBridge`)**: Shared UI tokens, status glyphs, and AppleScript terminal automation.
 - **Application State (`AppState`)**: Thread-safe observable stores (`TaskStore`) bridging background polling with SwiftUI views.

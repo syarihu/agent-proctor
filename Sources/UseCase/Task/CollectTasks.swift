@@ -27,6 +27,7 @@ public enum CollectTasks {
         }
 
         let now = Int(Date().timeIntervalSince1970)
+        let hubIDs = ResolveHubSessions.hubIDs(among: records)
         return ordered(records).map { record in
             let exists = FileManager.default.fileExists(atPath: record.worktree)
             return CollectedTask(
@@ -39,12 +40,15 @@ public enum CollectTasks {
                 diff: exists && countDiff ? diff(for: record) : DiffCounts(),
                 ageSeconds: max(0, now - record.createdAt),
                 idleSeconds: max(0, now - record.updatedAt),
-                now: now)
+                now: now,
+                isHub: hubIDs.contains(record.id))
         }
     }
 
     /// Git コマンドを実行せず、台帳由来の更新（status、tool、経過時間等）のみを高速に再適用する。
     /// 差分や worktree 存在確認は前回の集計値を引き継ぐ。
+    /// ハブ判定も引き継ぐ（ハブが立つ・落ちるときはセッションの増減を伴うので、
+    /// その回は完全再集計のほうへ落ちる）。
     /// セッション構成（ID 一覧）に変更があった場合は前回の値と整合しないため nil を返す（呼び出し元で完全再集計を行う）。
     public static func reapplied(_ tasks: [CollectedTask], records: [TaskRecord],
                                  now: Int = Int(Date().timeIntervalSince1970))
@@ -66,7 +70,8 @@ public enum CollectTasks {
                 diff: old.diff,
                 ageSeconds: max(0, now - record.createdAt),
                 idleSeconds: max(0, now - record.updatedAt),
-                now: now)
+                now: now,
+                isHub: old.isHub)
         }
     }
 
