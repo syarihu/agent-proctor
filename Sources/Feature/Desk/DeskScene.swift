@@ -838,6 +838,16 @@ final class DeskScene: SKScene {
                 walker = existing
                 walker.removeAction(forKey: "walk")
                 wasSeated = false
+            } else if let existing = resting.removeValue(forKey: seatId)
+                        ?? leavingLounge.removeValue(forKey: seatId) {
+                // ラウンジで休憩している最中に終わったセッション。
+                // 席を外している人は机に座っていないので、下の occupant を見る分岐では拾えない。
+                // 拾い漏らすと、そのまま次の組み直しでノードごと消えて、帰らずに消えたように見える
+                walker = existing
+                walker.userData?.removeObject(forKey: "seat")
+                walker.removeAction(forKey: "walk")
+                restSeats.removeValue(forKey: seatId)
+                wasSeated = false
             } else if let desk = desk, !desk.occupant.isHidden {
                 let newWalker = PersonNode(kind: .agent)
                 newWalker.setScale(1.2)
