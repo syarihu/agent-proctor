@@ -52,11 +52,6 @@ public struct HotkeyCombo: Codable, Equatable, Sendable {
         self.label = label
     }
 
-    /// 既定のホットキー (⌥⌘O)。`kVK_ANSI_O` は 31
-    public static let officeDefault = HotkeyCombo(keyCode: 31,
-                                                  modifiers: [.option, .command],
-                                                  label: "O")
-
     /// 設定画面やメニューに出す表記
     public var displayText: String { modifiers.symbols + label }
 

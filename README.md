@@ -120,7 +120,7 @@ proctor skill worktree
 
 agent-proctor runs quietly in your macOS menu bar. The menu bar icon displays a live tally of waiting and running sessions, and clicking it opens a menu listing every active session with instant navigation to its iTerm2 tab.
 
-The office window answers to a hotkey of its own (⌥⌘O by default, changeable in Settings), the way an iTerm2 hotkey window does: press it to look over the floor, and it steps aside when you switch to another app. It stays put while iTerm2 is in front, so reading the floor and then working in the terminal does not mean summoning it again.
+The office window answers to a hotkey of its own (none to begin with; pick one in Settings), the way an iTerm2 hotkey window does: press it to look over the floor, and it steps aside when you switch to another app. It stays put while iTerm2 is in front, so reading the floor and then working in the terminal does not mean summoning it again.
 
 Each whiteboard shows which iTerm2 tab its session is in, and while the floor has the keyboard those badges are live: ⌘1 through ⌘9 focus that tab, the same as clicking the desk.
 

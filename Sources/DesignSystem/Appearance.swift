@@ -286,13 +286,11 @@ public final class Appearance: ObservableObject {
         countChanges = UserDefaults.standard
             .object(forKey: Self.countChangesKey) as? Bool ?? true
 
-        // 保存が無ければ既定のキー (⌥⌘O)。空文字は「自分で外した」なので登録しない。
-        // 未設定と空文字を分けないと、外したそばから既定が戻ってくる
-        if let saved = UserDefaults.standard.string(forKey: Self.officeHotkeyKey) {
-            officeHotkey = HotkeyCombo(stored: saved)
-        } else {
-            officeHotkey = .officeDefault
-        }
+        // 既定は無し。設定で選ぶまで登録しない。
+        // 以前は ⌥⌘O を既定にしていたが、そのキーを他所に取られている環境では
+        // 「入っているのに効かない」欄が最初から出るだけだった
+        officeHotkey = HotkeyCombo(
+            stored: UserDefaults.standard.string(forKey: Self.officeHotkeyKey) ?? "")
         // 既定はオン。ホットキーで出し入れする使い方を想定しているので、
         // 別のアプリへ移ったら引っ込むほうを既定にする
         hidesOfficeOnDeactivate = UserDefaults.standard
