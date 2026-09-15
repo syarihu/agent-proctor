@@ -27,6 +27,7 @@ public enum Palette {
     public static let claude = Color(red: 0.878, green: 0.478, blue: 0.345)       // #e07a58 (テラコッタ)
     public static let antigravity = Color(red: 0.353, green: 0.647, blue: 0.980)  // #5aa5fa (ブルー)
     public static let codex = Color(red: 0.063, green: 0.639, blue: 0.498)        // #10a37f (グリーン)
+    public static let copilot = Color(red: 0.537, green: 0.341, blue: 0.898)      // #8957e5 (パープル)
 
     /// PR の状態。同じ行に並ぶ diff バッジと同じ濃さで持つ。
     ///

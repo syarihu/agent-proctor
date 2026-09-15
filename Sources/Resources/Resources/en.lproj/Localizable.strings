@@ -28,7 +28,7 @@
 "error.task_id.exhausted" = "Cannot assign an ID";
 
 /* proctor --help。行の並びがそのまま画面に出る */
-"cli.usage" = "Usage: proctor <command> [options]\n\nWatches coding agents working in worktrees and tells you when one raises its hand.\n\n  ls             list the agents that are running\n                   --all              cover every repository\n                   --json             print JSON (for AI and the sidebar)\n  worktree ls    list the worktrees, running or not\n                   --all              cover every repository\n                   --json             print JSON (for AI)\n  skill [NAME]   print a procedure for your agent to follow (no name lists them)\n  setup [AGENT]  print how to wire proctor up (no name lists the agents)\n  attach <ID>    open that session's agent (claude / agy / codex), resuming it\n  rm <ID>        drop one entry from the ledger (the worktree is left alone)\n  title <text>   name the session you are in (empty text clears it)\n  sidebar        launch the sidebar that clings to iTerm2 (Agent Proctor.app)\n  --version      print the version\n\nIt neither creates nor cleans up worktrees itself. It shows what is there, and\n`skill worktree` hands your agent the procedure for the rest.";
+"cli.usage" = "Usage: proctor <command> [options]\n\nWatches coding agents working in worktrees and tells you when one raises its hand.\n\n  ls             list the agents that are running\n                   --all              cover every repository\n                   --json             print JSON (for AI and the sidebar)\n  worktree ls    list the worktrees, running or not\n                   --all              cover every repository\n                   --json             print JSON (for AI)\n  skill [NAME]   print a procedure for your agent to follow (no name lists them)\n  setup [AGENT]  print how to wire proctor up (no name lists the agents)\n  attach <ID>    open that session's agent (claude / agy / codex / copilot), resuming it\n  rm <ID>        drop one entry from the ledger (the worktree is left alone)\n  title <text>   name the session you are in (empty text clears it)\n  sidebar        launch the sidebar that clings to iTerm2 (Agent Proctor.app)\n  --version      print the version\n\nIt neither creates nor cleans up worktrees itself. It shows what is there, and\n`skill worktree` hands your agent the procedure for the rest.";
 
 "cli.unknown_command" = "unknown command: %@";
 "cli.outside_repo" = "Not in a git repository, so every session is listed";
@@ -90,6 +90,8 @@
 "setup.agy.summary" = "hooks and statusLine for Antigravity (agy)";
 "setup.codex.title" = "Wiring proctor up to Codex";
 "setup.codex.summary" = "hooks for Codex, and what proctor cannot see there";
+"setup.copilot.title" = "Wiring proctor up to Copilot CLI";
+"setup.copilot.summary" = "hooks and statusLine for Copilot CLI, and what proctor cannot see there";
 "setup.other.title" = "Wiring proctor up to any other agent";
 "setup.other.summary" = "what a hook has to send for an agent proctor has no guide for";
 "setup.all.title" = "Wiring proctor up to your agent";

@@ -601,6 +601,37 @@ PY
     payload t3 "$LAB/work" | "$BIN" _touch clear
     payload t4 "$LAB/work" | "$BIN" _touch clear
 
+    # エージェント種別は行の色とアイコンだけでなく、`attach` が起動するバイナリを
+    # 決める。取り違えると別のエージェントを開きに行くので、4種別ぶん固定しておく。
+    # とりわけ Copilot の camelCase の payload は Antigravity と同じ `transcriptPath`
+    # を持つので、HookPayload.agent の判定順を入れ替えると agy に化ける
+    kind() {
+        printf '%s' "$2" | "$BIN" _touch running > /dev/null
+        echo "$1: [$(field "$3" agent)]"
+        printf '%s' "$2" | "$BIN" _touch clear > /dev/null
+    }
+
+    say "エージェント種別の判定 (名乗り無しで payload の形だけから決める)"
+    kind claude "{\"session_id\":\"k1\",\"cwd\":\"$LAB/work\",\"transcript_path\":\"$LAB/.claude/projects/p/k1.jsonl\"}" k1
+    kind agy "{\"conversationId\":\"k2\",\"cwd\":\"$LAB/work\",\"transcriptPath\":\"$LAB/.antigravity/brain/k2/.system_generated/logs/transcript.jsonl\"}" k2
+    kind codex "{\"session_id\":\"k3\",\"cwd\":\"$LAB/work\",\"transcript_path\":\"$LAB/.codex/sessions/rollout-k3.jsonl\"}" k3
+    kind copilot "{\"sessionId\":\"k4\",\"cwd\":\"$LAB/work\",\"transcriptPath\":\"$LAB/.copilot/session-state/k4/events.jsonl\"}" k4
+
+    # payload の形が Claude Code と同じでも、名乗れば名乗ったほうになる。
+    # Copilot の PascalCase の payload はここに当たるので、手引きは --agent を必須にしている
+    say "--agent で名乗れば payload の形より優先される"
+    printf '{"session_id":"k5","cwd":"%s"}' "$LAB/work" | "$BIN" _touch running --agent=copilot > /dev/null
+    echo "名乗り: [$(field k5 agent)]"
+    printf '{"session_id":"k5","cwd":"%s"}' "$LAB/work" | "$BIN" _touch clear > /dev/null
+
+    # Copilot の notification と subagentStart には PascalCase の綴りが無く、
+    # camelCase の sessionId でしか来ない。両方載っていたら既存の鍵のほうを採る
+    say "session_id と sessionId が両方あれば session_id で引く"
+    printf '{"session_id":"k6","sessionId":"k7","cwd":"%s"}' "$LAB/work" \
+        | "$BIN" _touch running --agent=copilot > /dev/null
+    echo "k6: [$(field k6 agent)] / k7: [$(field k7 agent)]"
+    printf '{"session_id":"k6","cwd":"%s"}' "$LAB/work" | "$BIN" _touch clear > /dev/null
+
     say "skill ls"
     "$BIN" skill ls
     "$BIN" skill ls --json
