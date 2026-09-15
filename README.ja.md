@@ -8,7 +8,7 @@
 
 > 英語版が正本 ([README.md](README.md))
 
-git worktree と iTerm2 タブで並行稼働する AI コーディングエージェント（Claude Code、Antigravity、Codex など）を一元監視・管理する macOS アプリ & CLI ツール。
+git worktree と iTerm2 タブで並行稼働する AI コーディングエージェント（Claude Code、Antigravity、Codex、Copilot CLI など）を一元監視・管理する macOS アプリ & CLI ツール。
 
 ## 概要
 
@@ -71,7 +71,7 @@ proctor には、AI エージェント自身に読み込ませて自動設定で
 # 利用可能なセットアップガイドの一覧を表示
 proctor setup ls
 
-# 特定のエージェント（claude, agy, codex など）向けのセットアップ手順を出力
+# 特定のエージェント（claude, agy, codex, copilot など）向けのセットアップ手順を出力
 proctor setup claude
 
 # すべてのセットアップ手順を出力

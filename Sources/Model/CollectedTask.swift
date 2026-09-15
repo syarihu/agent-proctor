@@ -133,7 +133,7 @@ public struct CollectedTask: Encodable, Identifiable, Equatable {
         status == TaskStatus.running || status == TaskStatus.waiting ? runs : []
     }
 
-    /// エージェント種別の解決 ("claude" / "agy" / "codex")
+    /// エージェント種別の解決 ("claude" / "agy" / "codex" / "copilot")
     public var resolvedAgent: String {
         if let agent, !agent.isEmpty { return agent }
         if let model, let guessed = AgentKind.guessed(fromModel: model) { return guessed }

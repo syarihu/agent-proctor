@@ -7,7 +7,7 @@ import Resources
 /// 環境に応じた指示文を提供する。エージェントごとの設定手順を個別またはまとめて出力する。
 public enum SetupLibrary {
     /// エージェント種別の識別子一覧
-    static let agentIDs = ["claude", "agy", "codex", "other"]
+    static let agentIDs = ["claude", "agy", "codex", "copilot", "other"]
 
     /// `proctor setup ls` に出る順
     static let ids = agentIDs + ["all"]

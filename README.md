@@ -6,7 +6,7 @@ English | [日本語](README.ja.md)
 
 # agent-proctor
 
-A macOS companion app and CLI designed to monitor, track, and manage concurrent AI coding agents (Claude Code, Antigravity, Codex) working across git worktrees and iTerm2 tabs.
+A macOS companion app and CLI designed to monitor, track, and manage concurrent AI coding agents (Claude Code, Antigravity, Codex, Copilot CLI) working across git worktrees and iTerm2 tabs.
 
 ## Overview
 
@@ -69,7 +69,7 @@ proctor provides built-in setup guides formatted specifically for AI agents to f
 # List available agent setup guides
 proctor setup ls
 
-# Output setup instructions for a specific agent (e.g. claude, agy, codex)
+# Output setup instructions for a specific agent (e.g. claude, agy, codex, copilot)
 proctor setup claude
 
 # Output all setup instructions

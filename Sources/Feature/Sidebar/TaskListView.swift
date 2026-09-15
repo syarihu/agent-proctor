@@ -1614,6 +1614,8 @@ private struct AgentIcon: View {
         case AgentKind.antigravity: return "atom"
         // OpenAI に近い六角形グリッドのシンボルを使用する
         case AgentKind.codex: return "circle.hexagongrid.fill"
+        // Copilot のマスコットが掛けているゴーグルに寄せる
+        case AgentKind.copilot: return "eyeglasses"
         default: return "terminal.fill"
         }
     }
@@ -1622,6 +1624,7 @@ private struct AgentIcon: View {
         switch agent {
         case AgentKind.antigravity: return Palette.antigravity
         case AgentKind.codex: return Palette.codex
+        case AgentKind.copilot: return Palette.copilot
         default: return Palette.claude
         }
     }

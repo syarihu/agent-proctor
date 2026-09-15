@@ -44,7 +44,7 @@ func cmdLs(_ args: Args) throws -> Int32 {
     return 0
 }
 
-/// セッションのエージェント（claude / agy / codex）を起動し、会話を再開する。
+/// セッションのエージェント（claude / agy / codex / copilot）を起動し、会話を再開する。
 /// プロセスを execvp で置き換えるため、正常時はこのプロセスには戻らない。
 func cmdAttach(_ args: Args) throws -> Int32 {
     let task = try LedgerStore.find(id: try args.require(0, Localized.text("cli.arg.session_id")))
@@ -62,6 +62,10 @@ func cmdAttach(_ args: Args) throws -> Int32 {
     case AgentKind.codex:
         binary = "codex"
         if let session = task.sessionId { resumption = ["resume", session] }
+    case AgentKind.copilot:
+        binary = "copilot"
+        // `--resume` は値が任意のオプションなので、`=` で繋いだ1引数として渡す
+        if let session = task.sessionId { resumption = ["--resume=\(session)"] }
     default:
         binary = "claude"
         if let session = task.sessionId { resumption = ["--resume", session] }
