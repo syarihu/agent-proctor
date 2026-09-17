@@ -76,11 +76,16 @@ has no PascalCase spelling for it, so this is the only way to reach it.
 
 Write each one as the absolute path where proctor actually lives — run
 `command -v proctor` to find it, and use that; the examples below assume
-`$HOME/bin/proctor`. Pass `--agent=copilot`, and throw the output away. The hook
+`$HOME/bin/proctor`. Pass `--agent=copilot`, and throw the output away on every
+event **except `UserPromptSubmit`** — that one is explained below. The hook
 execution environment does not always have proctor's directory on PATH, and the
 `[ -x ... ]` guard keeps it from running a binary that is no longer there:
 
     [ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _touch running --agent=copilot >/dev/null 2>&1
+
+`UserPromptSubmit` gets the same line without the redirect:
+
+    [ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _touch running --agent=copilot
 
 So `~/.copilot/hooks/proctor.json` looks like this (one entry shown):
 
@@ -109,9 +114,15 @@ So `~/.copilot/hooks/proctor.json` looks like this (one entry shown):
   hook records nothing useful. Where no PascalCase spelling exists —
   `subagentStart` — proctor reads the camelCase keys instead.
 - **Why the output is thrown away**: several of these events read what a hook
-  prints as an instruction — `UserPromptSubmit` can rewrite the prompt, `Stop` can
-  refuse to end the turn. proctor prints the status it recorded, which is meant
-  for a terminal, not for Copilot.
+  prints as an instruction — `Stop` can refuse to end the turn. proctor prints
+  the status it recorded, which is meant for a terminal, not for Copilot.
+- **Why `UserPromptSubmit` is the exception**: while a session still has no name
+  in the sidebar, proctor answers that one event with a `hookSpecificOutput`
+  asking that `proctor title "<name>"` be run, and redirecting the hook's stdout
+  throws that request away. Copilot's hook layer knows the `hookSpecificOutput`
+  key, so it should arrive the same way it does in Claude Code — that end of it
+  has not been watched happen, but keeping the output costs nothing if it turns
+  out to be ignored, and losing it is certain if you redirect.
 - **Why neither `PermissionRequest` nor `notification` is in the table**:
   neither can tell you that a session is blocked on you. `PermissionRequest`
   fires on every tool decision, including the auto-approved ones you never see.
@@ -152,8 +163,12 @@ Copilot hands the statusLine command the same JSON keys Claude Code does
 
 - **If you already use a statusLine**: do not break the existing display. stdin
   can only be read once, so read the JSON to completion inside your existing
-  script and hand the same content to `proctor _stats` as well. Swallow any
-  failure so the display never stops. It is called on every render, but proctor
+  script and hand the same content to `proctor _stats --agent=copilot` as well —
+  **the flag matters here as much as in the example above**, because the
+  statusLine payload hands over the session-state directory rather than the
+  transcript file, and a `_stats` that cannot tell which agent it is looking at
+  writes its guess back over the row on every render. Swallow any failure so the
+  display never stops. It is called on every render, but proctor
   does not write when nothing changed, so the ledger's modification time stays put.
   Check while you are in there that `footer.showCustom` in
   `~/.copilot/settings.json` is not set to `false`: the command still runs when

@@ -319,16 +319,22 @@ public struct HookPayload {
 
     /// transcript の置き場所から Copilot CLI のセッションかどうかを判定する。
     ///
-    /// 置き場所は `<copilot home>/session-state/<セッションID>/events.jsonl` で、
-    /// ホームは `COPILOT_HOME` で動かせるため末尾の形だけを見る。
+    /// 同じ `transcript_path` でも、寄越す形が2つある。hooks は
+    /// `<copilot home>/session-state/<セッションID>/events.jsonl` を、
+    /// statusLine は同じ `<セッションID>` のディレクトリそのものを渡してくる。
+    /// 後者を落とすと、statusLine が描画のたびに Copilot の行を Claude Code へ書き戻す。
+    /// ホームは `COPILOT_HOME` で動かせるため、末尾の形だけを見る。
     /// Antigravity の transcript は `transcript.jsonl` なので取り違えない。
     private var isCopilotTranscript: Bool {
         for key in ["transcriptPath", "transcript_path"] {
             guard let path = box[key] as? String, !path.isEmpty else { continue }
-            let url = URL(fileURLWithPath: path)
-            guard url.lastPathComponent == "events.jsonl" else { continue }
-            if url.deletingLastPathComponent().deletingLastPathComponent()
-                .lastPathComponent == "session-state" { return true }
+            var url = URL(fileURLWithPath: path)
+            if url.lastPathComponent == "events.jsonl" {
+                url = url.deletingLastPathComponent()
+            }
+            if url.deletingLastPathComponent().lastPathComponent == "session-state" {
+                return true
+            }
         }
         return false
     }

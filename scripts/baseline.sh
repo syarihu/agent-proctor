@@ -626,6 +626,17 @@ PY
 
     # Copilot の notification と subagentStart には PascalCase の綴りが無く、
     # camelCase の sessionId でしか来ない。両方載っていたら既存の鍵のほうを採る
+    # statusLine が渡してくる transcript_path は、hooks と違って events.jsonl では
+    # なく session-state のディレクトリそのもの。ここを取りこぼすと、描画のたびに
+    # _stats が Copilot の行を Claude Code へ書き戻す
+    say "statusLine の payload でも Copilot の行が Copilot のまま残る"
+    printf '{"session_id":"k8","cwd":"%s"}' "$LAB/work" | "$BIN" _touch running --agent=copilot > /dev/null
+    echo "hooks のあと: [$(field k8 agent)]"
+    printf '{"session_id":"k8","cwd":"%s","transcript_path":"%s","model":{"display_name":"Claude Sonnet 5"},"context_window":{"used_percentage":12}}' \
+        "$LAB/work" "$LAB/.copilot/session-state/k8" | "$BIN" _stats
+    echo "_stats のあと: [$(field k8 agent)]"
+    printf '{"session_id":"k8","cwd":"%s"}' "$LAB/work" | "$BIN" _touch clear > /dev/null
+
     say "session_id と sessionId が両方あれば session_id で引く"
     printf '{"session_id":"k6","sessionId":"k7","cwd":"%s"}' "$LAB/work" \
         | "$BIN" _touch running --agent=copilot > /dev/null

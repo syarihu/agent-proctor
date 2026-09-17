@@ -73,11 +73,16 @@ Copilot にはこれの PascalCase の綴りが無いので、これが唯一の
 
 コマンドは proctor が実際に置かれている絶対パスで書いてください
 （`command -v proctor` で調べて、その値を使ってください。以下の例は
-`$HOME/bin/proctor` を前提にしています）。`--agent=copilot` を付け、出力は捨てます。
+`$HOME/bin/proctor` を前提にしています）。`--agent=copilot` を付け、
+**`UserPromptSubmit` を除いて**出力は捨てます（そこだけ別扱いな理由は下に書きます）。
 フックの実行環境に proctor の置き場が PATH に入っているとは限らず、
 `[ -x ... ]` のガードは、消えた実行ファイルを叩かないようにするためのものです:
 
     [ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _touch running --agent=copilot >/dev/null 2>&1
+
+`UserPromptSubmit` だけは、同じ行からリダイレクトを外したものにします:
+
+    [ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _touch running --agent=copilot
 
 `~/.copilot/hooks/proctor.json` は1件だけ書くとこうなります:
 
@@ -106,9 +111,14 @@ Copilot にはこれの PascalCase の綴りが無いので、これが唯一の
   何も記録できない。PascalCase の綴りが無い `subagentStart` については、
   proctor 側が camelCase の鍵を読む。
 - **出力を捨てる理由**: ここに挙げたイベントのいくつかは、フックが出力したものを
-  指示として読む——`UserPromptSubmit` はプロンプトを書き換えられるし、`Stop` は
-  ターンの終了を拒める。proctor が出すのは記録した状態で、端末に向けたもので
-  あって Copilot に向けたものではない。
+  指示として読む——`Stop` はターンの終了を拒める。proctor が出すのは記録した状態で、
+  端末に向けたものであって Copilot に向けたものではない。
+- **`UserPromptSubmit` だけ例外にする理由**: サイドバーでそのセッションにまだ名前が
+  無いあいだ、proctor はこのイベントにだけ `hookSpecificOutput` を返して
+  `proctor title "<名前>"` を実行するよう頼む。リダイレクトするとその依頼ごと捨てる
+  ことになる。Copilot のフック層は `hookSpecificOutput` という鍵を知っているので、
+  Claude Code と同じように届くはず——そこまでは見届けていないが、無視される側に
+  転んでも残しておく損は無く、リダイレクトすれば確実に失う。
 - **`PermissionRequest` も `notification` も表に入れていない理由**: どちらも
   「セッションが自分の返事で止まっている」ことを伝えられない。`PermissionRequest` は
   自動承認されて画面に出ないものも含めて、ツールの判定ごとに毎回飛ぶ。
@@ -145,8 +155,11 @@ proctor はこれらも出したいので、そちらから渡してください
 
 - **既に statusLine を使っている場合**: 既存の表示を壊さないでください。標準入力は
   一度しか読めないので、既存のスクリプトの中で JSON を最後まで読み切り、
-  同じ内容を `proctor _stats` にも渡してください。失敗は握り潰して、表示が
-  止まらないようにします。描画のたびに呼ばれますが、proctor は何も変わっていなければ
+  同じ内容を `proctor _stats --agent=copilot` にも渡してください。**ここでも
+  フラグは上の例と同じくらい大事です**。statusLine の payload が渡してくるのは
+  transcript のファイルではなく session-state のディレクトリなので、どのエージェント
+  なのか分からないままの `_stats` は、描画のたびに自分の推測を行へ書き戻します。
+  失敗は握り潰して、表示が止まらないようにします。描画のたびに呼ばれますが、proctor は何も変わっていなければ
   書かないので、台帳の更新時刻は動きません。
   ついでに `~/.copilot/settings.json` の `footer.showCustom` が `false` に
   なっていないか確認してください。`false` でもコマンドは動きますが何も描かれないので、
