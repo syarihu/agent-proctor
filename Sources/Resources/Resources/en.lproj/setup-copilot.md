@@ -127,7 +127,7 @@ this is `PostToolUse`, one of the events that *does* get the redirect):
 - **Why neither `PermissionRequest` nor `notification` is in the table**:
   neither can tell you that a session is blocked on you. `PermissionRequest`
   fires on every tool decision, including the auto-approved ones you never see.
-  no kind `notification` can carry means that you are the one being waited on —
+  No kind `notification` can carry means that you are the one being waited on —
   wiring it would knock a session into *waiting* because a background shell
   returned, and never once because you were actually asked. Leaving both out
   costs nothing that was working.
