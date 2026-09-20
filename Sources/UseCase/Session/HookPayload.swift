@@ -4,7 +4,7 @@ import RepositoryLedger
 import Utility
 
 /// hooks と statusline から渡される JSON payload を解釈する。
-/// Claude Code、Antigravity、Codex の各フォーマットに対応する。
+/// Claude Code、Antigravity、Codex、Copilot CLI の各フォーマットに対応する。
 public struct HookPayload {
     /// ツールの引数から操作内容を抽出する際のキー一覧（優先度順）。
     /// Antigravity は PascalCase のキーを使用するため、大文字小文字の両方を含める。
@@ -78,7 +78,12 @@ public struct HookPayload {
     }
 
     private var rawSessionID: String? {
-        for key in ["session_id", "conversationId", "conversation_id"] {
+        // `sessionId` は Copilot CLI 用。あちらは同じイベントを PascalCase (Claude Code 互換) と
+        // camelCase の2形式で撃ち分けるが、subagentStart には PascalCase 版が無く、
+        // camelCase の `sessionId` でしか来ない。
+        // 末尾に置いているのは、両方を載せる payload が将来現れたときに、
+        // 既存の鍵で引けていたセッションを後から入れた鍵に奪わせないため
+        for key in ["session_id", "conversationId", "conversation_id", "sessionId"] {
             if let value = box[key] as? String, !value.isEmpty { return value }
         }
         return nil
@@ -285,9 +290,15 @@ public struct HookPayload {
         return rest.hasPrefix(". ") || rest.hasPrefix(") ")
     }
 
-    /// エージェント種別（"claude" / "agy" / "codex"）を判定する。
+    /// エージェント種別（"claude" / "agy" / "codex" / "copilot"）を判定する。
+    ///
+    /// Copilot CLI の payload は Claude Code と同じ形（`session_id` / `cwd` / `tool_name`）なので、
+    /// ここでは見分けが付かない。`--agent=copilot` を名乗ってもらう前提で、手引きにもそう書いてある。
     public var agent: String? {
         if let explicit = box["agent"] as? String, !explicit.isEmpty { return explicit }
+        // Antigravity より先に見る。Copilot の camelCase の payload も `transcriptPath` を持つので、
+        // 順序を逆にすると名乗り忘れたフックが Antigravity に化ける（attach が agy を叩きに行く）
+        if isCopilotTranscript { return AgentKind.copilot }
         if box["conversationId"] != nil || box["conversation_id"] != nil
             || box["transcriptPath"] != nil || box["artifactDirectoryPath"] != nil {
             return AgentKind.antigravity
@@ -302,6 +313,28 @@ public struct HookPayload {
         for key in ["transcript_path", "agent_transcript_path"] {
             guard let path = box[key] as? String, !path.isEmpty else { continue }
             if URL(fileURLWithPath: path).lastPathComponent.hasPrefix("rollout-") { return true }
+        }
+        return false
+    }
+
+    /// transcript の置き場所から Copilot CLI のセッションかどうかを判定する。
+    ///
+    /// 同じ `transcript_path` でも、寄越す形が2つある。hooks は
+    /// `<copilot home>/session-state/<セッションID>/events.jsonl` を、
+    /// statusLine は同じ `<セッションID>` のディレクトリそのものを渡してくる。
+    /// 後者を落とすと、statusLine が描画のたびに Copilot の行を Claude Code へ書き戻す。
+    /// ホームは `COPILOT_HOME` で動かせるため、末尾の形だけを見る。
+    /// Antigravity の transcript は `transcript.jsonl` なので取り違えない。
+    private var isCopilotTranscript: Bool {
+        for key in ["transcriptPath", "transcript_path"] {
+            guard let path = box[key] as? String, !path.isEmpty else { continue }
+            var url = URL(fileURLWithPath: path)
+            if url.lastPathComponent == "events.jsonl" {
+                url = url.deletingLastPathComponent()
+            }
+            if url.deletingLastPathComponent().lastPathComponent == "session-state" {
+                return true
+            }
         }
         return false
     }
@@ -324,13 +357,16 @@ public struct HookPayload {
         }
         if let configDir = box["config_dir"] as? String {
             let last = URL(fileURLWithPath: configDir).lastPathComponent
-            if last != ".claude" && last != ".gemini" && last != ".codex" && !last.isEmpty {
+            if last != ".claude" && last != ".gemini" && last != ".codex"
+                && last != ".copilot" && !last.isEmpty {
                 return last.replacingOccurrences(of: ".claude-", with: "")
                     .replacingOccurrences(of: ".claude_", with: "")
                     .replacingOccurrences(of: ".gemini-", with: "")
                     .replacingOccurrences(of: ".gemini_", with: "")
                     .replacingOccurrences(of: ".codex-", with: "")
                     .replacingOccurrences(of: ".codex_", with: "")
+                    .replacingOccurrences(of: ".copilot-", with: "")
+                    .replacingOccurrences(of: ".copilot_", with: "")
             }
         }
         return nil

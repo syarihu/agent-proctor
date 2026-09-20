@@ -15,6 +15,7 @@ public struct RateLimitWindow: Codable, Equatable {
 
 /// エージェントのレートリミット使用状況（短期間枠・長期間枠）。
 /// Claude Code と Antigravity は statusline 経由、Codex はフックイベント経由で収集される。
+/// Copilot CLI は枠の消費率を外に出す口が hooks にも statusLine にも無いため、常に空になる。
 public struct AgentRateLimits: Codable, Equatable {
     public var fiveHour: RateLimitWindow?
     public var sevenDay: RateLimitWindow?
@@ -34,7 +35,7 @@ public struct AgentQuotaSummary: Equatable, Identifiable {
     public var id: String { key }
     /// 集約キー ("claude", "claude:work", "agy" など)
     public var key: String
-    /// エージェント種別 ("claude" / "agy" / "codex")
+    /// エージェント種別 ("claude" / "agy" / "codex" / "copilot")
     public var agent: String
     /// アカウント名 (例: "work", "personal", nil)
     public var account: String?
