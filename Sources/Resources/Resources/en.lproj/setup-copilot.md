@@ -87,12 +87,13 @@ execution environment does not always have proctor's directory on PATH, and the
 
     [ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _touch running --agent=copilot
 
-So `~/.copilot/hooks/proctor.json` looks like this (one entry shown):
+So `~/.copilot/hooks/proctor.json` looks like this (one entry shown — note that
+this is `PostToolUse`, one of the events that *does* get the redirect):
 
     {
       "version": 1,
       "hooks": {
-        "UserPromptSubmit": [
+        "PostToolUse": [
           {
             "type": "command",
             "bash": "[ -x \"$HOME/bin/proctor\" ] && \"$HOME/bin/proctor\" _touch running --agent=copilot >/dev/null 2>&1",
@@ -126,7 +127,7 @@ So `~/.copilot/hooks/proctor.json` looks like this (one entry shown):
 - **Why neither `PermissionRequest` nor `notification` is in the table**:
   neither can tell you that a session is blocked on you. `PermissionRequest`
   fires on every tool decision, including the auto-approved ones you never see.
-  `notification` only ever reports that something finished or was discovered —
+  no kind `notification` can carry means that you are the one being waited on —
   wiring it would knock a session into *waiting* because a background shell
   returned, and never once because you were actually asked. Leaving both out
   costs nothing that was working.

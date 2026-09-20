@@ -84,12 +84,13 @@ Copilot にはこれの PascalCase の綴りが無いので、これが唯一の
 
     [ -x "$HOME/bin/proctor" ] && "$HOME/bin/proctor" _touch running --agent=copilot
 
-`~/.copilot/hooks/proctor.json` は1件だけ書くとこうなります:
+`~/.copilot/hooks/proctor.json` は1件だけ書くとこうなります（ここに出しているのは
+リダイレクトを**付ける**側の `PostToolUse` です）:
 
     {
       "version": 1,
       "hooks": {
-        "UserPromptSubmit": [
+        "PostToolUse": [
           {
             "type": "command",
             "bash": "[ -x \"$HOME/bin/proctor\" ] && \"$HOME/bin/proctor\" _touch running --agent=copilot >/dev/null 2>&1",
@@ -122,7 +123,7 @@ Copilot にはこれの PascalCase の綴りが無いので、これが唯一の
 - **`PermissionRequest` も `notification` も表に入れていない理由**: どちらも
   「セッションが自分の返事で止まっている」ことを伝えられない。`PermissionRequest` は
   自動承認されて画面に出ないものも含めて、ツールの判定ごとに毎回飛ぶ。
-  `notification` が運ぶのは「何かが終わった」「何かが見つかった」だけで、繋ぐと
+  `notification` の種別はどれも「待たれているのはあなただ」を意味しないので、繋ぐと
   背後のシェルが返ってきただけでセッションが確認待ちに落ちるうえ、本当に聞かれた
   ときには一度も飛ばない。どちらも外したところで、動いていたものは何も減らない。
 - **`PostToolUse` を入れる理由**: 長いターンの間、プロンプトから `Stop` までを

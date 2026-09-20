@@ -624,8 +624,14 @@ PY
     echo "名乗り: [$(field k5 agent)]"
     printf '{"session_id":"k5","cwd":"%s"}' "$LAB/work" | "$BIN" _touch clear > /dev/null
 
-    # Copilot の notification と subagentStart には PascalCase の綴りが無く、
-    # camelCase の sessionId でしか来ない。両方載っていたら既存の鍵のほうを採る
+    # Copilot の subagentStart には PascalCase の綴りが無く、camelCase の sessionId で
+    # しか来ない。両方載っていたら既存の鍵のほうを採る
+    say "session_id と sessionId が両方あれば session_id で引く"
+    printf '{"session_id":"k6","sessionId":"k7","cwd":"%s"}' "$LAB/work" \
+        | "$BIN" _touch running --agent=copilot > /dev/null
+    echo "k6: [$(field k6 agent)] / k7: [$(field k7 agent)]"
+    printf '{"session_id":"k6","cwd":"%s"}' "$LAB/work" | "$BIN" _touch clear > /dev/null
+
     # statusLine が渡してくる transcript_path は、hooks と違って events.jsonl では
     # なく session-state のディレクトリそのもの。ここを取りこぼすと、描画のたびに
     # _stats が Copilot の行を Claude Code へ書き戻す
@@ -636,12 +642,6 @@ PY
         "$LAB/work" "$LAB/.copilot/session-state/k8" | "$BIN" _stats
     echo "_stats のあと: [$(field k8 agent)]"
     printf '{"session_id":"k8","cwd":"%s"}' "$LAB/work" | "$BIN" _touch clear > /dev/null
-
-    say "session_id と sessionId が両方あれば session_id で引く"
-    printf '{"session_id":"k6","sessionId":"k7","cwd":"%s"}' "$LAB/work" \
-        | "$BIN" _touch running --agent=copilot > /dev/null
-    echo "k6: [$(field k6 agent)] / k7: [$(field k7 agent)]"
-    printf '{"session_id":"k6","cwd":"%s"}' "$LAB/work" | "$BIN" _touch clear > /dev/null
 
     say "skill ls"
     "$BIN" skill ls
