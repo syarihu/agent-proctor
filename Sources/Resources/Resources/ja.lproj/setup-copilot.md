@@ -179,9 +179,11 @@ Copilot CLI を新しく起動して、`proctor ls` でセッションが一覧�
 
     printf '{"session_id":"test-1","cwd":"'"$PWD"'","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"echo hi"}}' | proctor _touch running --agent=copilot
 
-そのうえで、Claude Code ではなく Copilot の行として入ったことを確かめます:
+そのうえで、Claude Code ではなく Copilot の行として入ったことを確かめます。鍵だけで
+なく値まで見てください。`"agent"` だけを grep すると Claude Code の行でも通ってしまい、
+何も確かめたことになりません:
 
-    proctor ls --json | grep '"agent"'
+    proctor ls --json | grep -E '"agent"[[:space:]]*:[[:space:]]*"copilot"'
 
 これは台帳に行を残します。その行の ID は worktree のディレクトリ名から採られるもので、
 **渡したセッション ID ではありません**。`proctor ls` に出た ID を読んで

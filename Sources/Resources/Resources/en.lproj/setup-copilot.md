@@ -190,9 +190,11 @@ inside a git repository (printing `running` is correct):
 
     printf '{"session_id":"test-1","cwd":"'"$PWD"'","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"echo hi"}}' | proctor _touch running --agent=copilot
 
-Then confirm it landed as a Copilot row rather than a Claude Code one:
+Then confirm it landed as a Copilot row rather than a Claude Code one. Match the
+value, not just the key — grepping for `"agent"` alone succeeds on a Claude Code
+row too, so it tells you nothing:
 
-    proctor ls --json | grep '"agent"'
+    proctor ls --json | grep -E '"agent"[[:space:]]*:[[:space:]]*"copilot"'
 
 That leaves a row behind. Its id is taken from the name of the worktree
 directory, **not** from the session id you passed, so read the id out of
