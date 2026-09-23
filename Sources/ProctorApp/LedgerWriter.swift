@@ -14,9 +14,11 @@ final class LedgerWriter {
     /// - Parameters:
     ///   - write: 台帳書き込み処理。変更があった場合は true を返す（専用キュー上で実行される）
     ///   - changed: 書き換え完了時にメインスレッドで呼ばれるコールバック
+    /// - Returns: 受け付けたら true。前の書き込みが走行中で破棄した場合は false
+    @discardableResult
     func submit(_ write: @escaping @Sendable () -> Bool,
-                changed: @escaping @MainActor () -> Void) {
-        guard !inFlight else { return }
+                changed: @escaping @MainActor () -> Void) -> Bool {
+        guard !inFlight else { return false }
         inFlight = true
         LedgerWriter.queue.async {
             let didChange = write()
@@ -25,5 +27,6 @@ final class LedgerWriter {
                 if didChange { changed() }
             }
         }
+        return true
     }
 }

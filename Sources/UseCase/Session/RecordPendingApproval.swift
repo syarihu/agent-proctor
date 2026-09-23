@@ -16,8 +16,8 @@ public enum RecordPendingApproval {
         for task in LedgerStore.tasks() where task.agent == AgentKind.antigravity {
             guard let conversation = task.sessionId, !conversation.isEmpty else { continue }
             // 判定結果が不明（nil）の場合は誤解除・誤設定を防ぐため変更対象に含めない
-            let waiting = AntigravityMetadataReader.isAwaitingApproval(
-                conversationID: conversation)
+            let waiting = awaitingApproval(
+                [conversation] + (task.subagentRuns ?? []).map(\.id))
             switch task.status {
             case TaskStatus.running, TaskStatus.idle:
                 if waiting == true { raise.insert(task.id) }
@@ -52,6 +52,22 @@ public enum RecordPendingApproval {
             }
         }
         return changed
+    }
+
+    /// 親とサブエージェントの会話をまとめて判定する。
+    /// agy のサブエージェントは親とは別の会話 DB を持ち、子の承認待ちは親の DB に現れない。
+    /// どれか1つでも待っていれば true。false はすべて読めて、どれも待っていないときだけ返す
+    /// (読めなかった子を「待っていない」と見なすと、子が待っている最中に ⏳ が降りる)。
+    static func awaitingApproval(_ conversations: [String]) -> Bool? {
+        var unknown = false
+        for id in conversations {
+            switch AntigravityMetadataReader.isAwaitingApproval(conversationID: id) {
+            case true?: return true
+            case nil: unknown = true
+            case false?: continue
+            }
+        }
+        return unknown ? nil : false
     }
 
     /// 承認待ちへ遷移可能な状態かどうか（running または idle）

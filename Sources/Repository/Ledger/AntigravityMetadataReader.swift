@@ -308,6 +308,27 @@ public enum AntigravityMetadataReader {
         (cliHome as NSString).appendingPathComponent("conversations")
     }
 
+    /// 会話 DB が書き換わったかを見分けるための印。`.db` と `-wal` の更新時刻とサイズから作る。
+    ///
+    /// agy は会話 DB を開いたまま書き続けるので、書き込みでは FSEvents が出ない
+    /// (出るのはファイルの作成・削除だけ)。SQLite にも別プロセスの書き込みを知らせる仕組みは無い。
+    /// なので見る側から stat して前回と比べる。DB を開きっぱなしにしないのは、
+    /// agy が接続を閉じるときに `-wal`/`-shm` を片付けられなくなるため。
+    /// `.db` も含めるのは、接続を閉じると `-wal` の中身が `.db` へ移って `-wal` が消えるため。
+    ///
+    /// - Returns: どちらのファイルも無ければ nil
+    public static func writeStamp(conversationID: String) -> String? {
+        guard !conversationID.isEmpty else { return nil }
+        let dbPath = (conversationsDirectory as NSString)
+            .appendingPathComponent("\(conversationID).db")
+        let parts = [dbPath, dbPath + "-wal"].map { path -> String in
+            var info = stat()
+            guard stat(path, &info) == 0 else { return "-" }
+            return "\(info.st_mtimespec.tv_sec).\(info.st_mtimespec.tv_nsec):\(info.st_size)"
+        }
+        return parts.allSatisfy { $0 == "-" } ? nil : parts.joined(separator: "|")
+    }
+
     /// 指定した会話が現在ユーザーの承認待ちで停止しているかどうかを判定する。
     ///
     /// Antigravity は確認待ち遷移時のフックを発火しないため、会話 DB のステップ状態を直接確認する。
