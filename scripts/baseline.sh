@@ -28,7 +28,7 @@ export PROCTOR_STATE_DIR="$LAB/state"
 # 秒の境目を跨いだかどうかだけで出力が入れ替わる (CollectTasks.ordered)。
 # そこで _touch のたびに、同じ秒に並んだ行の古いほうを1秒ずつ過去へずらし、
 # いつ走らせても「秒を跨いだとき」の並びに揃える。
-# 直に仕込んだ前後 (台帳の後ろほど古い) には手を出さない。
+# 秒の違う行どうしの前後は変えない (直に仕込んだ並びもそのまま残る)。
 # 均す必要が無ければ書き込まない (台帳の更新時刻を見る節があるため)。
 # env 越しにも呼べるよう、関数ではなく実行ファイルにする
 mkdir -p "$LAB/bin"
@@ -44,11 +44,15 @@ path = sys.argv[1]
 box = json.load(open(path))
 tasks = box["tasks"]
 orig = [t["createdAt"] for t in tasks]
-# 後ろから見ていき、次の行 (均したあと) に追いついた行だけを下げる。
-# 元から次の行より新しい行は、仕込まれた並びなので触らない
-for i in range(len(tasks) - 2, -1, -1):
-    if orig[i] <= orig[i + 1] and tasks[i]["createdAt"] >= tasks[i + 1]["createdAt"]:
-        tasks[i]["createdAt"] = tasks[i + 1]["createdAt"] - 1
+# 見せたい並び (新しい順、同じ秒なら台帳の後ろが先) を先に決め、
+# その順に1秒ずつ下がるよう上から詰める。隣の行だけを見て下げると、
+# 下げた行が秒の違う行を追い越すことがある ([100, 100, 100, 99] で 99 が割り込む)
+order = sorted(range(len(tasks)), key=lambda i: (orig[i], i), reverse=True)
+floor = None
+for i in order:
+    if floor is not None and tasks[i]["createdAt"] >= floor:
+        tasks[i]["createdAt"] = floor - 1
+    floor = tasks[i]["createdAt"]
 if [t["createdAt"] for t in tasks] != orig:
     json.dump(box, open(path, "w"), ensure_ascii=False)
 PY
