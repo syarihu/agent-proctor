@@ -18,10 +18,47 @@ mkdir -p "$OUT_DIR"
 swift build --package-path "$ROOT" >/dev/null 2>&1 || {
     echo "ビルドに失敗しました" >&2; exit 1
 }
-BIN="$(swift build --package-path "$ROOT" --show-bin-path)/proctor"
+REAL_BIN="$(swift build --package-path "$ROOT" --show-bin-path)/proctor"
 
 LAB="$(mktemp -d)"
 export PROCTOR_STATE_DIR="$LAB/state"
+
+# createdAt は秒なので、続けて登録した行は同じ秒に並んだり並ばなかったりする。
+# 並ぶと一覧は台帳の順 (古いほうが先)、並ばなければ新しいほうが先になり、
+# 秒の境目を跨いだかどうかだけで出力が入れ替わる (CollectTasks.ordered)。
+# そこで _touch のたびに、同じ秒に並んだ行の古いほうを1秒ずつ過去へずらし、
+# いつ走らせても「秒を跨いだとき」の並びに揃える。
+# 秒の違う行どうしの前後は変えない (直に仕込んだ並びもそのまま残る)。
+# 均す必要が無ければ書き込まない (台帳の更新時刻を見る節があるため)。
+# env 越しにも呼べるよう、関数ではなく実行ファイルにする
+mkdir -p "$LAB/bin"
+BIN="$LAB/bin/proctor"
+cat > "$BIN" <<EOF
+#!/bin/bash
+"$REAL_BIN" "\$@"
+rc=\$?
+[ "\${1:-}" = _touch ] && [ -f "\$PROCTOR_STATE_DIR/state.json" ] || exit \$rc
+python3 - "\$PROCTOR_STATE_DIR/state.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+box = json.load(open(path))
+tasks = box["tasks"]
+orig = [t["createdAt"] for t in tasks]
+# 見せたい並び (新しい順、同じ秒なら台帳の後ろが先) を先に決め、
+# その順に1秒ずつ下がるよう上から詰める。隣の行だけを見て下げると、
+# 下げた行が秒の違う行を追い越すことがある ([100, 100, 100, 99] で 99 が割り込む)
+order = sorted(range(len(tasks)), key=lambda i: (orig[i], i), reverse=True)
+floor = None
+for i in order:
+    if floor is not None and tasks[i]["createdAt"] >= floor:
+        tasks[i]["createdAt"] = floor - 1
+    floor = tasks[i]["createdAt"]
+if [t["createdAt"] for t in tasks] != orig:
+    json.dump(box, open(path, "w"), ensure_ascii=False)
+PY
+exit \$rc
+EOF
+chmod +x "$BIN"
 
 # 時刻に依存する項目は毎回変わるので伏せる。
 # 見たいのは構造と文言であって、何秒経ったかではない
